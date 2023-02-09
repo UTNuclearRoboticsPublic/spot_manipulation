@@ -243,21 +243,6 @@ class SpotManipulationDriver(object):
         self.verify_power_and_estop()
         self.robot.logger.info("Arm is about to move.")
 
-        # assert self.robot.has_arm(), "Robot requires arm to execute this trajectory"
-
-        # self.verify_estop()
-
-        # with bosdyn.client.lease.LeaseKeepAlive(
-        #     self.lease_client, must_acquire=True, return_at_exit=True
-        # ):
-
-        # self.robot.logger.info(
-        #     "Powering on robot... This may take a several seconds."
-        # )
-        # self.robot.power_on(timeout_sec=20)
-        # assert self.robot.is_powered_on(), "Robot power on failed."
-        # self.robot.logger.info("Robot powered on.")
-
         # Get to the start configuration of the trajectory before we execute it
         start_time = time.time()
         ref_time = seconds_to_timestamp(start_time)
@@ -341,18 +326,25 @@ class SpotManipulationDriver(object):
         traj_index = 1
         end_index = len(traj_point_positions) - 1
 
-        while traj_index <= end_index:
+        # Execute gripper position requested by MoveIt but ignore trajectory times
+        position = traj_point_positions[end_index]
+        robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(position)
+        self.command_client.robot_command(robot_cmd)
+        time.sleep(time_since_ref[end_index])
 
-            # Extract a point at a time and execute
-            positions = traj_point_positions[traj_index]
+        # Execute gripper position requested by MoveIt but account for trajectory times
+        # while traj_index <= end_index:
 
-            robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(
-                traj_point_positions[traj_index]
-            )
-            self.command_client.robot_command(robot_cmd)
+        #     # Extract a point at a time and execute
+        #     positions = traj_point_positions[traj_index]
 
-            time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
-            traj_index = traj_index + 1
+        #     robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(
+        #         positions
+        #     )
+        #     self.command_client.robot_command(robot_cmd)
+
+        #     time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
+        #     traj_index = traj_index + 1
 
     def stow_arm(self):
         robot_cmd = RobotCommandBuilder.arm_stow_command()
