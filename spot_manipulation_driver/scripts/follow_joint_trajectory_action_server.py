@@ -34,9 +34,6 @@ import threading
 
 import rclpy
 from action_tutorials_interfaces.action import Fibonacci
-# from control_msgs.msgs import (FollowJointTrajectoryAction,
-#                               FollowJointTrajectoryFeedback,
-#                               FollowJointTrajectoryResult)
 from control_msgs.action import FollowJointTrajectory
 from rclpy.action import ActionServer
 from rclpy.node import Node
@@ -46,62 +43,37 @@ from spot_manipulation_driver.manipulation_driver_util import \
     SpotManipulationDriver
 
 
-class FollowJointTrajectory(Node, SpotManipulationDriver):
-    # Initialize action servers and joint state publisher, and start action servers
-    # Arm-related attributes
-    arm_feedback = FollowJointTrajectory.Feedback()
-    arm_result = FollowJointTrajectory.Result()
-    arm_feedback_publish_flag = None
-
-    # Finger-related attributes
-    finger_feedback = FollowJointTrajectory.Feedback()
-    finger_result = FollowJointTrajectory.Result()
-    finger_feedback_publish_flag = None
-
-    # Joint state publisher
-    joint_states_pub = None
-
-    # Other helper attributes
-    rate = None
-
+class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
     def __init__(self, argv):
+
         Node.__init__(self, "follow_joint_trajectory_node")
+
         # Authenticate robot, claim lease, and power on
         # SpotManipulationDriver.authenticate_robot(self, argv)
         # SpotManipulationDriver.init_clients(self)
         # SpotManipulationDriver.claim(self)
         # SpotManipulationDriver.verify_power_and_estop(self)
 
-        print("Before initializing arm action server")
-        print(type(ActionServer))
-        # self.arm_action_server = ActionServer(
-        #     self,
-        #     Fibonacci,
-        #     "/spot_arm/arm_controller/follow_joint_trajectory",
-        #     self.arm_goal_callback,
-        # )
+        # Initialize action servers and joint state publisher, and start action servers
         self.arm_action_server = ActionServer(
             self,
             FollowJointTrajectory,
             "/spot_arm/arm_controller/follow_joint_trajectory",
             self.arm_goal_callback,
         )
-        print("After initializing arm action server")
         self.finger_action_server = ActionServer(
             self,
             FollowJointTrajectory,
             "/spot_arm/finger_controller/follow_joint_trajectory",
-            self.arm_goal_callback,
+            self.finger_goal_callback,
         )
 
         self.joint_states_pub = self.create_publisher(
-            JointState, "/spot_arm/joint_states", queue_size=10
+            JointState, "/spot_arm/joint_states", 10
         )
 
-        self.arm_action_server.start()
-        self.finger_action_server.start()
-
-        self.rate = rospy.Rate(10)
+        self.rate = Node.create_rate(self, 10)
+        print("End of the constructor")
 
     def arm_goal_callback(self, goal_handle):
         """Callback for arm_action_server"""
@@ -212,7 +184,7 @@ class FollowJointTrajectory(Node, SpotManipulationDriver):
         """Method to constantly publish joint states"""
         joint_states = JointState()
 
-        while not rospy.is_shutdown():
+        while rclpy.ok():
             # Get joint states
             joint_states_source = SpotManipulationDriver.get_joint_states(self)
             joint_states.header.stamp = rospy.Time(
@@ -228,28 +200,24 @@ class FollowJointTrajectory(Node, SpotManipulationDriver):
             self.rate.sleep()
 
 
-# def main(argv):
 def main():
 
     argv = rclpy.utilities.remove_ros_args(args=sys.argv)[1:]
 
     rclpy.init(args=argv)
-    follow_joint_trajectory = FollowJointTrajectory(argv)
+    follow_joint_trajectory_action_server = FollowJointTrajectoryActionServer(argv)
     joint_states_pub_thread = threading.Thread(
-        target=follow_joint_trajectory.publish_joint_states()
+        target=follow_joint_trajectory_action_server.publish_joint_states()
     )
     joint_states_pub_thread.start()
 
-    rclpy.spin(follow_joint_trajectory)
+    rclpy.spin(follow_joint_trajectory_action_server)
     rclpy.shutdown()
 
     joint_states_pub_thread.join()
-    follow_joint_trajectory.disconnect()
+    follow_joint_trajectory_action_server.disconnect()
 
 
 if __name__ == "__main__":
-    main()
-    # # rospy.init_node("follow_joint_trajectory_node")
-    # argv = rclpy.utilities.remove_ros_args(args=sys.argv)
-    # if not main(argv[1:]):
-    #     sys.exit(1)
+    if not main():
+        sys.exit(1)

@@ -4,7 +4,7 @@
   <name>spot_manipulation_driver</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="blakeanderson@utexas.edu">spot</maintainer>
+  <maintainer email="jpanthi@utexas.edu">spot</maintainer>
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
