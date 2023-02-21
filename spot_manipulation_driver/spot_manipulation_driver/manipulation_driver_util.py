@@ -202,7 +202,10 @@ class SpotManipulationDriver(object):
             traj_point_velocities.append(
                 list(map(lambda joint_name: vel_dict[joint_name], joint_order))
             )
-            time_since_ref.append(msg.trajectory.points[i].time_from_start.to_sec())
+            time_since_ref.append(
+                msg.trajectory.points[i].time_from_start.sec
+                + msg.trajectory.points[i].time_from_start.nanosec * 1e-9
+            )
 
         return traj_point_positions, traj_point_velocities, time_since_ref
 

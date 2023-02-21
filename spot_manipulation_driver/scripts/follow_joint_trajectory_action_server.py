@@ -99,7 +99,6 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
         SpotManipulationDriver.arm_long_trajectory_executor(
             self, traj_point_positions, traj_point_velocities, time_since_ref
         )
-        time.sleep(4.0)
 
         self.arm_feedback_publish_flag = False
         arm_feedback_thread.join()
@@ -126,7 +125,9 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
                 goal_handle.request.trajectory.points[i].positions[0]
             )
             time_since_ref.append(
-                goal_handle.request.trajectory.points[i].time_from_start.to_sec()
+                goal_handle.request.trajectory.points[i].time_from_start.sec
+                + goal_handle.request.trajectory.points[i].time_from_start.nanosec
+                * 1e-9
             )
 
         self.finger_feedback_publish_flag = True
@@ -134,7 +135,6 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
             target=self.finger_follow_joint_trajectory_feedback, args=(goal_handle,)
         )
         finger_feedback_thread.start()
-        time.sleep(4.0)
 
         SpotManipulationDriver.gripper_trajectory_executor(
             self, traj_point_positions, time_since_ref
