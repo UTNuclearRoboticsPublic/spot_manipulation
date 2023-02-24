@@ -56,7 +56,7 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
         SpotManipulationDriver.forceClaim(self)
         SpotManipulationDriver.verify_power_and_estop(self)
 
-        # Initialize action servers and joint state publisher, and start action servers
+        # Initialize action servers
         self.arm_action_server = ActionServer(
             self,
             FollowJointTrajectory,
@@ -70,21 +70,27 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
             self.finger_goal_callback,
         )
 
+        # Initialize action messages
+        # Arm-related attributes
         self.arm_feedback = FollowJointTrajectory.Feedback()
-        self.finger_feedback = FollowJointTrajectory.Feedback()
         self.arm_result = FollowJointTrajectory.Result()
-        self.finger_result = FollowJointTrajectory.Result()
         self.arm_feedback_publish_flag = False
-        print("End of the constructor")
+
+        # Finger-related attributes
+        self.finger_feedback = FollowJointTrajectory.Feedback()
+        self.finger_result = FollowJointTrajectory.Result()
+        self.finger_feedback_publish_flag = False
 
     def arm_goal_callback(self, goal_handle):
-        """Callback for arm_action_server"""
+        """Callback for the /spot_arm/arm_controller/follow_joint_trajectory action server """
 
-        self.get_logger().info("Executing follow_joint_trajectory arm goal")
+        self.get_logger().info(
+            "Executing goal for the /spot_arm/arm_controller/follow_joint_trajectory action server"
+        )
 
         success = True
 
-        # Translate message, and execute trajectory while publishing feedback
+        # Translate message and execute trajectory while publishing feedback
         # TODO: Implement goal preemption
         traj_point_positions, traj_point_velocities, time_since_ref = SpotManipulationDriver.convert_ros_trajectory_msg(
             self, goal_handle.request
@@ -105,17 +111,19 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
 
         if success:
             goal_handle.succeed()
-            self.get_logger().info("Successfully executed trajectory")
+            self.get_logger().info("Successfully executed arm trajectory")
         return self.arm_result
 
     def finger_goal_callback(self, goal_handle):
-        """Callback for finger_action_server"""
+        """Callback for the /spot_arm/finger_controller/follow_joint_trajectory action server """
 
-        self.get_logger().info("Executing follow_joint_trajectory finger goal")
+        self.get_logger().info(
+            "Executing goal for the /spot_arm/finger_controller/follow_joint_trajectory action server"
+        )
 
         success = True
 
-        # Translate message, and execute trajectory while publishing feedback
+        # Translate message and execute trajectory while publishing feedback
         # TODO: Implement goal preemption
         traj_point_positions = []
         time_since_ref = []
@@ -145,11 +153,11 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
 
         if success:
             goal_handle.succeed()
-            self.get_logger().info("Successfully executed trajectory")
+            self.get_logger().info("Successfully executed finger trajectory")
         return self.finger_result
 
     def arm_follow_joint_trajectory_feedback(self, goal_handle):
-        """Feedback for arm_action_server"""
+        """Feedback for arm action server"""
         # Currently feedback only publishes actual states of the joints. TODO: Publish desired states and errors
 
         while self.arm_feedback_publish_flag:
@@ -167,7 +175,7 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
             time.sleep(0.5)  # TODO: Replace this sleep with ros2 compatible sleep
 
     def finger_follow_joint_trajectory_feedback(self, goal_handle):
-        """Feedback for arm_action_server"""
+        """Feedback for finger action server"""
         # Currently feedback only publishes actual states of the joints. TODO: Publish desired states and errors
 
         while self.finger_feedback_publish_flag:
@@ -186,11 +194,15 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
 
 
 class JointStatePublisher(Node):
+    """Node to publish joint states"""
+
     def __init__(self, follow_joint_trajectory_action_server):
+        super().__init__("joint_state_publisher_node")
+
+        # Initialize the action server node object and joint states publisher
         self.follow_joint_trajectory_action_server = (
             follow_joint_trajectory_action_server
         )
-        super().__init__("joint_state_publisher_node")
         self.joint_states_pub = self.create_publisher(
             JointState, "/spot_arm/joint_states", 10
         )
@@ -213,7 +225,7 @@ class JointStatePublisher(Node):
         joint_states.velocity = joint_states_source[3]
         joint_states.effort = joint_states_source[4]
 
-        # Publish and sleep
+        # Publish
         self.joint_states_pub.publish(joint_states)
 
 
@@ -232,6 +244,7 @@ def main():
         executor.add_node(joint_states_publisher)
 
         try:
+            # Spin the two nodes in separate threads
             executor.spin()
         finally:
             executor.shutdown()
