@@ -357,6 +357,20 @@ class SpotManipulationDriver(object):
             time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
             traj_index = traj_index + 1
 
+    def ee_velocity_msg_executor(self, vel_msg):
+        # convert velocity msg
+        cmd_vel = bosdyn.api.robot_state_pb2.SE3VelocityCommand()
+        cmd_vel.twist.linear.x = msg.linear.x
+        cmd_vel.twist.linear.y = msg.linear.y
+        cmd_vel.twist.linear.z = msg.linear.z
+        cmd_vel.twist.angular.x = msg.angular.x
+        cmd_vel.twist.angular.y = msg.angular.y
+        cmd_vel.twist.angular.z = msg.angular.z
+
+        # send velocity to robot
+        robot_cmd = RobotCommandBuilder.arm_velocity_command.CopyFrom(cmd_vel).build()
+        self.command_client.robot_command(robot_cmd)
+
     def stow_arm(self):
         robot_cmd = RobotCommandBuilder.arm_stow_command()
         cmd_id = self.command_client.robot_command(robot_cmd)
