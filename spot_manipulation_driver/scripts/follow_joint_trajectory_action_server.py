@@ -36,6 +36,7 @@ import time
 import rclpy
 from builtin_interfaces.msg import Time as ROSTime
 from control_msgs.action import FollowJointTrajectory
+from geometry_msgs.msg import Twist
 from rclpy.action import ActionServer
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -233,6 +234,7 @@ class JointStatePublisher(Node):
         # Publish
         self.joint_states_pub.publish(joint_states)
 
+
 class SpacenavEEControl(Node):
     """Node to control EE with Spacenav"""
 
@@ -243,17 +245,26 @@ class SpacenavEEControl(Node):
         self.follow_joint_trajectory_action_server = (
             follow_joint_trajectory_action_server
         )
-    self.spacenav_subscriber = self.create_subscription(
-                Twist,
-                '/spot_arm/ee/cmd_vel',
-                self.spacenav_callback,
-                10)
-        timer_period = 0.25
-        self.timer = self.create_timer(timer_period, self.publish_joint_states)
+        self.spacenav_subscriber = self.create_subscription(
+            Twist, "/spacenav/twist", self.spacenav_callback, 10
+        )
 
     def spacenav_callback(self, msg):
         """Callback for spacenav subscriber"""
-        follow_joint_trajectory_action_server.ee_velocity_msg_executor(msg)
+        self.follow_joint_trajectory_action_server.ee_velocity_msg_executor(msg)
+        # self.get_logger().info("I heard msg.linear.x: %f", msg.linear.x)
+        # self.get_logger().info("I heard msg.linear.y: %f", msg.linear.x)
+        # self.get_logger().info("I heard msg.linear.z: %f", msg.linear.x)
+        # self.get_logger().info("I heard msg.angular.x: %f", msg.angular.x)
+        # self.get_logger().info("I heard msg.angular.y: %f", msg.angular.y)
+        # self.get_logger().info("I heard msg.angular.z: %f", msg.angular.z)
+        # print("I heard msg.linear.x: %f", msg.linear.x)
+        # print("I heard msg.linear.y: %f", msg.linear.x)
+        # print("I heard msg.linear.z: %f", msg.linear.x)
+        # print("I heard msg.angular.x: %f", msg.angular.x)
+        # print("I heard msg.angular.y: %f", msg.angular.y)
+        # print("I heard msg.angular.z: %f", msg.angular.z)
+
 
 def main():
 
@@ -265,9 +276,7 @@ def main():
         joint_states_publisher = JointStatePublisher(
             follow_joint_trajectory_action_server
         )
-        spacenav_listener = SpacenavEEControl(
-            follow_joint_trajectory_action_server
-        )
+        spacenav_listener = SpacenavEEControl(follow_joint_trajectory_action_server)
         executor = MultiThreadedExecutor(num_threads=4)
         executor.add_node(follow_joint_trajectory_action_server)
         executor.add_node(joint_states_publisher)

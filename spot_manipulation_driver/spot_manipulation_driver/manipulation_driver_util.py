@@ -37,7 +37,7 @@ from typing import Text, Tuple
 import bosdyn.client
 import bosdyn.client.util
 import yaml
-from bosdyn.api import estop_pb2
+from bosdyn.api import arm_command_pb2, estop_pb2, geometry_pb2
 from bosdyn.client import ResponseError, RpcError, create_standard_sdk, power
 from bosdyn.client.estop import EstopClient, EstopEndpoint, EstopKeepAlive
 from bosdyn.client.lease import (InvalidResourceError, LeaseClient,
@@ -357,19 +357,40 @@ class SpotManipulationDriver(object):
             time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
             traj_index = traj_index + 1
 
-    def ee_velocity_msg_executor(self, vel_msg):
+    def ee_velocity_msg_executor(self, msg):
         # convert velocity msg
-        cmd_vel = bosdyn.api.robot_state_pb2.SE3VelocityCommand()
-        cmd_vel.twist.linear.x = msg.linear.x
-        cmd_vel.twist.linear.y = msg.linear.y
-        cmd_vel.twist.linear.z = msg.linear.z
-        cmd_vel.twist.angular.x = msg.angular.x
-        cmd_vel.twist.angular.y = msg.angular.y
-        cmd_vel.twist.angular.z = msg.angular.z
+        # cmd_vel = robot_command_pb2.SE3VelocityCommand()
+        # cmd_vel = arm_command_pb2.ArmVelocityCommand(
+        #     end_effector_velocity=arm_command_pb2.ArmVelocity(
+        #         x=msg.linear.x,
+        #         y=msg.linear.y,
+        #         z=msg.linear.z,
+        #         w_x=msg.angular.x,
+        #         w_y=msg.angular.y,
+        #         w_z=msg.angular.z,
+        #     )
+        # )
 
+        cmd_vel = arm_command_pb2.ArmVelocityCommand()
+        ee_vel = geometry_pb2.Vec3(x=msg.linear.x, y=msg.linear.y, z=msg.linear.z)
+
+        # # cmd_vel = geometry_pb2.TwistCommand()
+        # cmd_vel.twist.linear.x = msg.linear.x
+        # cmd_vel.twist.linear.y = msg.linear.y
+        # cmd_vel.twist.linear.z = msg.linear.z
+        # cmd_vel.twist.angular.x = msg.angular.x
+        # cmd_vel.twist.angular.y = msg.angular.y
+        # cmd_vel.twist.angular.z = msg.angular.z
+
+        # # arm_vel_cmd = robot_command_pb2.RobotCommand(ee_velocity_command=cmd_vel)
+        # arm_vel_cmd = robot_command_pb2.ArmCommand.Request(arm_velocity_command=cmd_vel)
         # send velocity to robot
-        robot_cmd = RobotCommandBuilder.arm_velocity_command.CopyFrom(cmd_vel).build()
-        self.command_client.robot_command(robot_cmd)
+        # robot_cmd = RobotCommandBuilder.arm_velocity_command.CopyFrom(cmd_vel).build()
+        # robot_cmd = RobotCommandBuilder.set_end_effector_velocity_command(
+        #     cmd_vel
+        # ).build()
+        print("successfully built commands")
+        # self.command_client.robot_command(robot_cmd)
 
     def stow_arm(self):
         robot_cmd = RobotCommandBuilder.arm_stow_command()
