@@ -360,13 +360,18 @@ class SpotManipulationDriver(object):
 
     def ee_velocity_msg_executor(self, msg):
         # Create a vector for the linear and angular components of the twist
-        linear = geometry_pb2.Vec3(x=msg.linear.x, y=msg.linear.y, z=msg.linear.z)
-        angular = geometry_pb2.Vec3(x=msg.angular.x, y=msg.angular.y, z=msg.angular.z)
+        scale = 0.5
+        linear = geometry_pb2.Vec3(
+            x=msg.linear.x * scale, y=msg.linear.y * scale, z=msg.linear.z * scale
+        )
+        angular = geometry_pb2.Vec3(
+            x=msg.angular.x * scale, y=msg.angular.y * scale, z=msg.angular.z * scale
+        )
 
-        end_time = seconds_to_timestamp(time.time() + 1.0)
+        end_time = seconds_to_timestamp(time.time() + 0.25)
 
         end_effector_velocity = bosdyn.api.arm_command_pb2.ArmVelocityCommand.CartesianVelocity(
-            frame_name="hand", velocity_in_frame_name=linear
+            frame_name="body", velocity_in_frame_name=linear
         )
         arm_velocity_command = bosdyn.api.arm_command_pb2.ArmVelocityCommand.Request(
             cartesian_velocity=end_effector_velocity,
@@ -385,7 +390,7 @@ class SpotManipulationDriver(object):
 
         print("RobotCommand:")
         print(robot_cmd)
-        command_client.robot_command(robot_command)
+        self.command_client.robot_command(robot_cmd)
         print("successfully built commands")
 
     def stow_arm(self):

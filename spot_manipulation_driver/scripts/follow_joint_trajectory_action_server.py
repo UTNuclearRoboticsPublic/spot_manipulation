@@ -41,6 +41,7 @@ from rclpy.action import ActionServer
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+
 from spot_manipulation_driver.manipulation_driver_util import \
     SpotManipulationDriver
 
@@ -51,10 +52,10 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
         Node.__init__(self, "follow_joint_trajectory_node")
 
         # Authenticate robot, claim lease, and power on
-        # SpotManipulationDriver.authenticate_robot(self, argv)
-        # SpotManipulationDriver.init_clients(self)
-        # SpotManipulationDriver.forceClaim(self)
-        # SpotManipulationDriver.verify_power_and_estop(self)
+        SpotManipulationDriver.authenticate_robot(self, argv)
+        SpotManipulationDriver.init_clients(self)
+        SpotManipulationDriver.forceClaim(self)
+        SpotManipulationDriver.verify_power_and_estop(self)
 
         # Initialize action servers
         self.arm_action_server = ActionServer(
@@ -272,13 +273,13 @@ def main():
     rclpy.init(args=argv)
     try:
         follow_joint_trajectory_action_server = FollowJointTrajectoryActionServer(argv)
-        # joint_states_publisher = JointStatePublisher(
-        #     follow_joint_trajectory_action_server
-        # )
+        joint_states_publisher = JointStatePublisher(
+            follow_joint_trajectory_action_server
+        )
         spacenav_listener = SpacenavEEControl(follow_joint_trajectory_action_server)
         executor = MultiThreadedExecutor(num_threads=4)
         executor.add_node(follow_joint_trajectory_action_server)
-        # executor.add_node(joint_states_publisher)
+        executor.add_node(joint_states_publisher)
         executor.add_node(spacenav_listener)
 
         try:
@@ -288,7 +289,7 @@ def main():
             executor.shutdown()
             follow_joint_trajectory_action_server.disconnect()
             follow_joint_trajectory_action_server.destroy_node()
-            # joint_states_publisher.destroy_node()
+            joint_states_publisher.destroy_node()
             spacenav_listener.destroy_node()
     finally:
         rclpy.shutdown()
