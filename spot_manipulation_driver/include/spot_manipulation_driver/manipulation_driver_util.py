@@ -36,17 +36,18 @@ from typing import Text, Tuple
 
 import bosdyn.client
 import bosdyn.client.util
+import numpy as np
 import yaml
-from bosdyn.api import estop_pb2
-from bosdyn.client import ResponseError, RpcError, create_standard_sdk, power
+from bosdyn.api import (estop_pb2, geometry_pb2, robot_command_pb2,
+                        synchronized_command_pb2)
+from bosdyn.client import ResponseError, RpcError
 from bosdyn.client.estop import EstopClient, EstopEndpoint, EstopKeepAlive
-from bosdyn.client.lease import (InvalidResourceError, LeaseClient,
-                                 LeaseKeepAlive, NotAuthoritativeServiceError,
+from bosdyn.client.lease import (InvalidResourceError, LeaseKeepAlive,
+                                 NotAuthoritativeServiceError,
                                  ResourceAlreadyClaimedError)
 from bosdyn.client.robot_command import (RobotCommandBuilder,
                                          RobotCommandClient,
-                                         block_until_arm_arrives,
-                                         blocking_stand)
+                                         block_until_arm_arrives)
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.util import seconds_to_timestamp
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -63,14 +64,13 @@ class SpotManipulationDriver(object):
     estop_client = None
     lease_client = None
 
-    # Others
+    # Other attributes
     robot_state = None
     lease = None
 
     # Constructor
     def __init__(self):
         assert self.robot.has_arm(), "Robot requires arm to use SpotManipulationDriver"
-        print("SpotManipulationDriver constructor called")
 
     # Authenticate robot
     def authenticate_robot(self, argv):
@@ -345,6 +345,40 @@ class SpotManipulationDriver(object):
 
         #     time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
         #     traj_index = traj_index + 1
+
+    def ee_velocity_msg_executor(self, msg):
+        # Create a vector for the linear and angular components of the twist
+        scale = 0.5
+        drift = 0.25
+        # linear_vel = np.clip(msg.linear,-0.2, 0.2)
+        # angular_vel = np.clip(msg.angular,-0.5, 0.5)
+        linear = geometry_pb2.Vec3(
+            x=msg.linear.x * scale, y=msg.linear.y * scale, z=msg.linear.z * scale
+        )
+        angular = geometry_pb2.Vec3(
+            x=msg.angular.x * scale, y=msg.angular.y * scale, z=msg.angular.z * scale
+        )
+
+        end_time = seconds_to_timestamp(time.time() + drift)
+
+        end_effector_velocity = bosdyn.api.arm_command_pb2.ArmVelocityCommand.CartesianVelocity(
+            frame_name="body", velocity_in_frame_name=linear
+        )
+        arm_velocity_command = bosdyn.api.arm_command_pb2.ArmVelocityCommand.Request(
+            cartesian_velocity=end_effector_velocity,
+            angular_velocity_of_hand_rt_odom_in_hand=angular,
+            end_time=end_time,
+        )
+        arm_command = bosdyn.api.arm_command_pb2.ArmCommand.Request(
+            arm_velocity_command=arm_velocity_command
+        )
+        synchronized_command = synchronized_command_pb2.SynchronizedCommand.Request(
+            arm_command=arm_command
+        )
+        robot_cmd = robot_command_pb2.RobotCommand(
+            synchronized_command=synchronized_command
+        )
+        self.command_client.robot_command(robot_cmd)
 
     def stow_arm(self):
         robot_cmd = RobotCommandBuilder.arm_stow_command()

@@ -29,37 +29,23 @@
 #          defects in software and/or documentation, or loss or inaccuracy of
 #          data of any kind.
 ##############################################################################
+import logging
 import sys
 import threading
+from importlib import reload
 
 import actionlib
 import rospy
 from control_msgs.msg import (FollowJointTrajectoryAction,
                               FollowJointTrajectoryFeedback,
                               FollowJointTrajectoryResult)
+from geometry_msgs.msg import Twist
 from sensor_msgs.msg import JointState
 from spot_manipulation_driver.manipulation_driver_util import \
     SpotManipulationDriver
 
 
 class FollowJointTrajectory(SpotManipulationDriver):
-
-    # Arm-related attributes
-    arm_feedback = FollowJointTrajectoryFeedback()
-    arm_result = FollowJointTrajectoryResult()
-    arm_feedback_publish_flag = None
-
-    # Finger-related attributes
-    finger_feedback = FollowJointTrajectoryFeedback()
-    finger_result = FollowJointTrajectoryResult()
-    finger_feedback_publish_flag = None
-
-    # Joint state publisher
-    joint_states_pub = None
-
-    # Other helper attributes
-    rate = None
-
     def __init__(self, argv):
         # Authenticate robot, claim lease, and power on
         SpotManipulationDriver.authenticate_robot(self, argv)
@@ -67,7 +53,7 @@ class FollowJointTrajectory(SpotManipulationDriver):
         SpotManipulationDriver.claim(self)
         SpotManipulationDriver.verify_power_and_estop(self)
 
-        # Initialize action servers and joint state publisher, and start action servers
+        # Initialize action servers, joint state publisher, and spacenav_subscriber
         self.arm_action_server = actionlib.SimpleActionServer(
             "/spot_arm/arm_controller/follow_joint_trajectory",
             FollowJointTrajectoryAction,
@@ -85,8 +71,24 @@ class FollowJointTrajectory(SpotManipulationDriver):
             "/spot_arm/joint_states", JointState, queue_size=10
         )
 
+        self.spacenav_sub = rospy.Subscriber(
+            "/spacenav/twist", Twist, self.spacenav_sub_callback
+        )
+
+        # Start action servers
         self.arm_action_server.start()
         self.finger_action_server.start()
+
+        # Action messages and helper attributes
+        # Arm-related attributes
+        self.arm_feedback = FollowJointTrajectoryFeedback()
+        self.arm_result = FollowJointTrajectoryResult()
+        self.arm_feedback_publish_flag = None
+
+        # Finger-related attributes
+        self.finger_feedback = FollowJointTrajectoryFeedback()
+        self.finger_result = FollowJointTrajectoryResult()
+        self.finger_feedback_publish_flag = None
 
         self.rate = rospy.Rate(10)
 
@@ -204,6 +206,10 @@ class FollowJointTrajectory(SpotManipulationDriver):
             self.joint_states_pub.publish(joint_states)
             self.rate.sleep()
 
+    def spacenav_sub_callback(self, msg):
+        """Callback for spacenav_sub subscriber to send velocity commands to Spot arm end effector"""
+        SpotManipulationDriver.ee_velocity_msg_executor(self, msg)
+
 
 def main(argv):
 
@@ -222,6 +228,7 @@ def main(argv):
 
 if __name__ == "__main__":
     rospy.init_node("follow_joint_trajectory_node")
+    reload(logging)
     argv = rospy.myargv(argv=sys.argv)
     if not main(argv[1:]):
         sys.exit(1)
