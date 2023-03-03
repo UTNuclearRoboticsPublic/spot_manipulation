@@ -1,4 +1,4 @@
-#! /usr/bin/env python3
+#! /usr/bin/env python
 ##############################################################################
 #      Title     : manipulation_driver_util.py
 #      Project   : spot_manipulation_driver
@@ -36,18 +36,18 @@ from typing import Text, Tuple
 
 import bosdyn.client
 import bosdyn.client.util
+import numpy as np
 import yaml
-from bosdyn.api import (arm_command_pb2, estop_pb2, geometry_pb2,
-                        robot_command_pb2, synchronized_command_pb2)
-from bosdyn.client import ResponseError, RpcError, create_standard_sdk, power
+from bosdyn.api import (estop_pb2, geometry_pb2, robot_command_pb2,
+                        synchronized_command_pb2)
+from bosdyn.client import ResponseError, RpcError
 from bosdyn.client.estop import EstopClient, EstopEndpoint, EstopKeepAlive
-from bosdyn.client.lease import (InvalidResourceError, LeaseClient,
-                                 LeaseKeepAlive, NotAuthoritativeServiceError,
+from bosdyn.client.lease import (InvalidResourceError, LeaseKeepAlive,
+                                 NotAuthoritativeServiceError,
                                  ResourceAlreadyClaimedError)
 from bosdyn.client.robot_command import (RobotCommandBuilder,
                                          RobotCommandClient,
-                                         block_until_arm_arrives,
-                                         blocking_stand)
+                                         block_until_arm_arrives)
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.util import seconds_to_timestamp
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -64,14 +64,13 @@ class SpotManipulationDriver(object):
     estop_client = None
     lease_client = None
 
-    # Others
+    # Other attributes
     robot_state = None
     lease = None
 
     # Constructor
     def __init__(self):
         assert self.robot.has_arm(), "Robot requires arm to use SpotManipulationDriver"
-        print("SpotManipulationDriver constructor called")
 
     # Authenticate robot
     def authenticate_robot(self, argv):
@@ -247,21 +246,6 @@ class SpotManipulationDriver(object):
         self.verify_power_and_estop()
         self.robot.logger.info("Arm is about to move.")
 
-        # assert self.robot.has_arm(), "Robot requires arm to execute this trajectory"
-
-        # self.verify_estop()
-
-        # with bosdyn.client.lease.LeaseKeepAlive(
-        #     self.lease_client, must_acquire=True, return_at_exit=True
-        # ):
-
-        # self.robot.logger.info(
-        #     "Powering on robot... This may take a several seconds."
-        # )
-        # self.robot.power_on(timeout_sec=20)
-        # assert self.robot.is_powered_on(), "Robot power on failed."
-        # self.robot.logger.info("Robot powered on.")
-
         # Get to the start configuration of the trajectory before we execute it
         start_time = time.time()
         ref_time = seconds_to_timestamp(start_time)
@@ -334,6 +318,22 @@ class SpotManipulationDriver(object):
 
         self.robot.logger.info("Gripper is about to move.")
 
+        # Retrieve endpoint of the trajectory and execute it
+        end_index = len(traj_point_positions) - 1
+        position = traj_point_positions[end_index]
+        robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(position)
+        self.command_client.robot_command(robot_cmd)
+        time.sleep(time_since_ref[end_index])
+
+    def gripper_trajectory_executor_with_time_control(
+        self, traj_point_positions, time_since_ref
+    ):
+        self.robot.time_sync.wait_for_sync()
+
+        self.verify_power_and_estop()
+
+        self.robot.logger.info("Gripper is about to move.")
+
         # Get to the start configuration of the trajectory before we execute it
         robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(
             traj_point_positions[0]
@@ -345,30 +345,44 @@ class SpotManipulationDriver(object):
         traj_index = 1
         end_index = len(traj_point_positions) - 1
 
+        # Execute gripper trajectory accounting for time differences between points
         while traj_index <= end_index:
 
             # Extract a point at a time and execute
             positions = traj_point_positions[traj_index]
 
-            robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(
-                traj_point_positions[traj_index]
-            )
+            robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(positions)
             self.command_client.robot_command(robot_cmd)
 
             time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
             traj_index = traj_index + 1
 
     def ee_velocity_msg_executor(self, msg):
-        # Create a vector for the linear and angular components of the twist
+        # Constraints and scale
         scale = 0.5
-        linear = geometry_pb2.Vec3(
-            x=msg.linear.x * scale, y=msg.linear.y * scale, z=msg.linear.z * scale
+        drift = 0.1
+        linear_vel_min = -0.2
+        linear_vel_max = 0.2
+        angular_vel_min = -0.5
+        angular_vel_max = 0.5
+        linear_vel = np.clip(
+            np.array([msg.linear.x, msg.linear.y, msg.linear.z]) * scale,
+            linear_vel_min,
+            linear_vel_max,
         )
-        angular = geometry_pb2.Vec3(
-            x=msg.angular.x * scale, y=msg.angular.y * scale, z=msg.angular.z * scale
+        angular_vel = np.clip(
+            np.array([msg.angular.x, msg.angular.y, msg.angular.z]) * scale,
+            angular_vel_min,
+            angular_vel_max,
         )
 
-        end_time = seconds_to_timestamp(time.time() + 0.25)
+        # Construct message and send it to the robot
+        linear = geometry_pb2.Vec3(x=linear_vel[0], y=linear_vel[1], z=linear_vel[2])
+        angular = geometry_pb2.Vec3(
+            x=angular_vel[0], y=angular_vel[1], z=angular_vel[2]
+        )
+
+        end_time = seconds_to_timestamp(time.time() + drift)
 
         end_effector_velocity = bosdyn.api.arm_command_pb2.ArmVelocityCommand.CartesianVelocity(
             frame_name="body", velocity_in_frame_name=linear
@@ -388,10 +402,7 @@ class SpotManipulationDriver(object):
             synchronized_command=synchronized_command
         )
 
-        print("RobotCommand:")
-        print(robot_cmd)
         self.command_client.robot_command(robot_cmd)
-        print("successfully built commands")
 
     def stow_arm(self):
         robot_cmd = RobotCommandBuilder.arm_stow_command()

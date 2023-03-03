@@ -57,7 +57,7 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
         SpotManipulationDriver.forceClaim(self)
         SpotManipulationDriver.verify_power_and_estop(self)
 
-        # Initialize action servers
+        # Initialize action servers and subscriber
         self.arm_action_server = ActionServer(
             self,
             FollowJointTrajectory,
@@ -71,6 +71,10 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
             # "/spot_arm/finger_controller/follow_joint_trajectory",
             "/finger_controller/follow_joint_trajectory",
             self.finger_goal_callback,
+        )
+
+        self.spacenav_sub = self.create_subscription(
+            Twist, "/spacenav/twist", self.spacenav_sub_callback, 10
         )
 
         # Initialize action messages
@@ -195,6 +199,10 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
             goal_handle.publish_feedback(self.finger_feedback)
             time.sleep(0.5)  # TODO: Replace this sleep with ros2 compatible sleep
 
+    def spacenav_sub_callback(self, msg):
+        """Callback for spacenav subscriber"""
+        SpotManipulationDriver.ee_velocity_msg_executor(self, msg)
+
 
 class JointStatePublisher(Node):
     """Node to publish joint states"""
@@ -235,37 +243,6 @@ class JointStatePublisher(Node):
         self.joint_states_pub.publish(joint_states)
 
 
-class SpacenavEEControl(Node):
-    """Node to control EE with Spacenav"""
-
-    def __init__(self, follow_joint_trajectory_action_server):
-        super().__init__("spacenav_ee_control_node")
-
-        # Initialize the action server node object and joint states publisher
-        self.follow_joint_trajectory_action_server = (
-            follow_joint_trajectory_action_server
-        )
-        self.spacenav_subscriber = self.create_subscription(
-            Twist, "/spacenav/twist", self.spacenav_callback, 10
-        )
-
-    def spacenav_callback(self, msg):
-        """Callback for spacenav subscriber"""
-        self.follow_joint_trajectory_action_server.ee_velocity_msg_executor(msg)
-        # self.get_logger().info("I heard msg.linear.x: %f", msg.linear.x)
-        # self.get_logger().info("I heard msg.linear.y: %f", msg.linear.x)
-        # self.get_logger().info("I heard msg.linear.z: %f", msg.linear.x)
-        # self.get_logger().info("I heard msg.angular.x: %f", msg.angular.x)
-        # self.get_logger().info("I heard msg.angular.y: %f", msg.angular.y)
-        # self.get_logger().info("I heard msg.angular.z: %f", msg.angular.z)
-        # print("I heard msg.linear.x: %f", msg.linear.x)
-        # print("I heard msg.linear.y: %f", msg.linear.x)
-        # print("I heard msg.linear.z: %f", msg.linear.x)
-        # print("I heard msg.angular.x: %f", msg.angular.x)
-        # print("I heard msg.angular.y: %f", msg.angular.y)
-        # print("I heard msg.angular.z: %f", msg.angular.z)
-
-
 def main():
 
     argv = rclpy.utilities.remove_ros_args(args=sys.argv)[1:]
@@ -276,11 +253,9 @@ def main():
         joint_states_publisher = JointStatePublisher(
             follow_joint_trajectory_action_server
         )
-        spacenav_listener = SpacenavEEControl(follow_joint_trajectory_action_server)
         executor = MultiThreadedExecutor(num_threads=4)
         executor.add_node(follow_joint_trajectory_action_server)
         executor.add_node(joint_states_publisher)
-        executor.add_node(spacenav_listener)
 
         try:
             # Spin the two nodes in separate threads
@@ -290,7 +265,6 @@ def main():
             follow_joint_trajectory_action_server.disconnect()
             follow_joint_trajectory_action_server.destroy_node()
             joint_states_publisher.destroy_node()
-            spacenav_listener.destroy_node()
     finally:
         rclpy.shutdown()
 
