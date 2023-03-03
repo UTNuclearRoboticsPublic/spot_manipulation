@@ -315,6 +315,22 @@ class SpotManipulationDriver(object):
 
         self.robot.logger.info("Gripper is about to move.")
 
+        # Retrieve endpoint of the trajectory and execute it
+        end_index = len(traj_point_positions) - 1
+        position = traj_point_positions[end_index]
+        robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(position)
+        self.command_client.robot_command(robot_cmd)
+        time.sleep(time_since_ref[end_index])
+
+    def gripper_trajectory_executor_with_time_control(
+        self, traj_point_positions, time_since_ref
+    ):
+        self.robot.time_sync.wait_for_sync()
+
+        self.verify_power_and_estop()
+
+        self.robot.logger.info("Gripper is about to move.")
+
         # Get to the start configuration of the trajectory before we execute it
         robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(
             traj_point_positions[0]
@@ -326,37 +342,41 @@ class SpotManipulationDriver(object):
         traj_index = 1
         end_index = len(traj_point_positions) - 1
 
-        # Execute gripper position requested by MoveIt but ignore trajectory times
-        position = traj_point_positions[end_index]
-        robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(position)
-        self.command_client.robot_command(robot_cmd)
-        time.sleep(time_since_ref[end_index])
+        # Execute gripper trajectory accounting for time differences between points
+        while traj_index <= end_index:
 
-        # Execute gripper position requested by MoveIt but account for trajectory times
-        # while traj_index <= end_index:
+            # Extract a point at a time and execute
+            positions = traj_point_positions[traj_index]
 
-        #     # Extract a point at a time and execute
-        #     positions = traj_point_positions[traj_index]
+            robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(positions)
+            self.command_client.robot_command(robot_cmd)
 
-        #     robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(
-        #         positions
-        #     )
-        #     self.command_client.robot_command(robot_cmd)
-
-        #     time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
-        #     traj_index = traj_index + 1
+            time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
+            traj_index = traj_index + 1
 
     def ee_velocity_msg_executor(self, msg):
-        # Create a vector for the linear and angular components of the twist
+        # Constraints and scale
         scale = 0.5
-        drift = 0.25
-        # linear_vel = np.clip(msg.linear,-0.2, 0.2)
-        # angular_vel = np.clip(msg.angular,-0.5, 0.5)
-        linear = geometry_pb2.Vec3(
-            x=msg.linear.x * scale, y=msg.linear.y * scale, z=msg.linear.z * scale
+        drift = 0.1
+        linear_vel_min = -0.2
+        linear_vel_max = 0.2
+        angular_vel_min = -0.5
+        angular_vel_max = 0.5
+        linear_vel = np.clip(
+            np.array([msg.linear.x, msg.linear.y, msg.linear.z]) * scale,
+            linear_vel_min,
+            linear_vel_max,
         )
+        angular_vel = np.clip(
+            np.array([msg.angular.x, msg.angular.y, msg.angular.z]) * scale,
+            angular_vel_min,
+            angular_vel_max,
+        )
+
+        # Construct message and send it to the robot
+        linear = geometry_pb2.Vec3(x=linear_vel[0], y=linear_vel[1], z=linear_vel[2])
         angular = geometry_pb2.Vec3(
-            x=msg.angular.x * scale, y=msg.angular.y * scale, z=msg.angular.z * scale
+            x=angular_vel[0], y=angular_vel[1], z=angular_vel[2]
         )
 
         end_time = seconds_to_timestamp(time.time() + drift)
@@ -378,6 +398,7 @@ class SpotManipulationDriver(object):
         robot_cmd = robot_command_pb2.RobotCommand(
             synchronized_command=synchronized_command
         )
+
         self.command_client.robot_command(robot_cmd)
 
     def stow_arm(self):

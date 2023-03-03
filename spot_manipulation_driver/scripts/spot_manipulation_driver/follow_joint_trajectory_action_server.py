@@ -140,7 +140,7 @@ class FollowJointTrajectory(SpotManipulationDriver):
         )
         finger_feedback_thread.start()
 
-        SpotManipulationDriver.gripper_trajectory_executor(
+        SpotManipulationDriver.gripper_trajectory_executor_with_time_control(
             self, traj_point_positions, time_since_ref
         )
 
