@@ -39,7 +39,7 @@ import rospy
 from control_msgs.msg import (FollowJointTrajectoryAction,
                               FollowJointTrajectoryFeedback,
                               FollowJointTrajectoryResult)
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped
 from sensor_msgs.msg import JointState
 from spot_manipulation_driver.manipulation_driver_util import \
     SpotManipulationDriver
@@ -55,24 +55,28 @@ class FollowJointTrajectory(SpotManipulationDriver):
 
         # Initialize action servers, joint state publisher, and spacenav_subscriber
         self.arm_action_server = actionlib.SimpleActionServer(
-            "/spot_arm/arm_controller/follow_joint_trajectory",
+            "spot_arm/arm_controller/follow_joint_trajectory",
             FollowJointTrajectoryAction,
             self.arm_goal_callback,
             False,
         )
         self.finger_action_server = actionlib.SimpleActionServer(
-            "/spot_arm/finger_controller/follow_joint_trajectory",
+            "spot_arm/finger_controller/follow_joint_trajectory",
             FollowJointTrajectoryAction,
             self.finger_goal_callback,
             False,
         )
 
         self.joint_states_pub = rospy.Publisher(
-            "/spot_arm/joint_states", JointState, queue_size=10
+            "spot_arm/joint_states", JointState, queue_size=10
         )
 
         self.spacenav_sub = rospy.Subscriber(
             "/spacenav/twist", Twist, self.spacenav_sub_callback
+        )
+
+        self.ap_ee_twist_cmds_sub = rospy.Subscriber(
+            "/ee_twist_cmds", TwistStamped, self.ap_ee_twist_cmds_sub_callback
         )
 
         # Start action servers
@@ -209,6 +213,11 @@ class FollowJointTrajectory(SpotManipulationDriver):
     def spacenav_sub_callback(self, msg):
         """Callback for spacenav_sub subscriber to send velocity commands to Spot arm end effector"""
         SpotManipulationDriver.ee_velocity_msg_executor(self, msg)
+
+    def ap_ee_twist_cmds_sub_callback(self, msg):
+        """Callback for spacenav_sub subscriber to send velocity commands to Spot arm end effector"""
+        twist_msg = msg.twist
+        SpotManipulationDriver.ee_velocity_msg_executor(self, twist_msg)
 
 
 def main(argv):
