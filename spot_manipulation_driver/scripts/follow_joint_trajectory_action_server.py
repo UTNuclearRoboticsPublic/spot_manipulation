@@ -36,7 +36,7 @@ import time
 import rclpy
 from builtin_interfaces.msg import Time as ROSTime
 from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped
 from rclpy.action import ActionServer
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -57,7 +57,7 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
         SpotManipulationDriver.forceClaim(self)
         SpotManipulationDriver.verify_power_and_estop(self)
 
-        # Initialize action servers and subscriber
+        # Initialize action servers and ee velocity subscribers
         self.arm_action_server = ActionServer(
             self,
             FollowJointTrajectory,
@@ -72,9 +72,11 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
             "/finger_controller/follow_joint_trajectory",
             self.finger_goal_callback,
         )
-
-        self.spacenav_sub = self.create_subscription(
-            Twist, "/spacenav/twist", self.spacenav_sub_callback, 10
+        self.ee_vel_sub = self.create_subscription(
+            Twist, "/spacenav/twist", self.ee_vel_sub_callback, 10
+        )
+        self.ap_ee_vel_sub = self.create_subscription(
+            TwistStamped, "/ee_twist_cmds", self.ap_ee_vel_sub_callback, 10
         )
 
         # Initialize action messages
@@ -98,7 +100,6 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
         success = True
 
         # Translate message and execute trajectory while publishing feedback
-        # TODO: Implement goal preemption
         traj_point_positions, traj_point_velocities, time_since_ref = SpotManipulationDriver.convert_ros_trajectory_msg(
             self, goal_handle.request
         )
@@ -131,7 +132,6 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
         success = True
 
         # Translate message and execute trajectory while publishing feedback
-        # TODO: Implement goal preemption
         traj_point_positions = []
         time_since_ref = []
 
@@ -165,7 +165,7 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
 
     def arm_follow_joint_trajectory_feedback(self, goal_handle):
         """Feedback for arm action server"""
-        # Currently feedback only publishes actual states of the joints. TODO: Publish desired states and errors
+        # Publishes actual states of the joints
 
         while self.arm_feedback_publish_flag:
             # Get joint states
@@ -183,7 +183,7 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
 
     def finger_follow_joint_trajectory_feedback(self, goal_handle):
         """Feedback for finger action server"""
-        # Currently feedback only publishes actual states of the joints. TODO: Publish desired states and errors
+        # Publishes actual states of the joints
 
         while self.finger_feedback_publish_flag:
             # Get joint states
@@ -199,9 +199,14 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
             goal_handle.publish_feedback(self.finger_feedback)
             time.sleep(0.5)  # TODO: Replace this sleep with ros2 compatible sleep
 
-    def spacenav_sub_callback(self, msg):
-        """Callback for spacenav subscriber"""
+    def ee_vel_sub_callback(self, msg):
+        """Callback for end effector velocity command subscriber"""
         SpotManipulationDriver.ee_velocity_msg_executor(self, msg)
+
+    def ap_ee_vel_sub_callback(self, msg):
+        """Callback for Affordance Primitive end effector velocity command subscriber"""
+        twist_msg = msg.twist
+        SpotManipulationDriver.ee_velocity_msg_executor(self, twist_msg)
 
 
 class JointStatePublisher(Node):
