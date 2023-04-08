@@ -56,6 +56,7 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
         SpotManipulationDriver.init_clients(self)
         SpotManipulationDriver.forceClaim(self)
         SpotManipulationDriver.verify_power_and_estop(self)
+        SpotManipulationDriver.stand_robot(self)
 
         # Initialize action servers and ee velocity subscribers
         self.arm_action_server = ActionServer(

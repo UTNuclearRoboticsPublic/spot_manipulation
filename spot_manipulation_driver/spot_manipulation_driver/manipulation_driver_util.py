@@ -47,7 +47,8 @@ from bosdyn.client.lease import (InvalidResourceError, LeaseKeepAlive,
                                  ResourceAlreadyClaimedError)
 from bosdyn.client.robot_command import (RobotCommandBuilder,
                                          RobotCommandClient,
-                                         block_until_arm_arrives)
+                                         block_until_arm_arrives,
+                                         blocking_stand)
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.util import seconds_to_timestamp
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -403,6 +404,11 @@ class SpotManipulationDriver(object):
         )
 
         self.command_client.robot_command(robot_cmd)
+
+    def stand_robot(self):
+        self.robot.logger.info("Commanding robot to stand...")
+        blocking_stand(self.command_client, timeout_sec=10)
+        self.robot.logger.info("Robot standing.")
 
     def stow_arm(self):
         robot_cmd = RobotCommandBuilder.arm_stow_command()
