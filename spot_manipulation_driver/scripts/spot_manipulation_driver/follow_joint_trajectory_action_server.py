@@ -69,7 +69,7 @@ class FollowJointTrajectory(SpotManipulationDriver):
         )
 
         self.joint_states_pub = rospy.Publisher(
-            "/joint_states", JointState, queue_size=10
+            "joint_states", JointState, queue_size=10
         )
 
         self.ee_vel_sub = rospy.Subscriber(
