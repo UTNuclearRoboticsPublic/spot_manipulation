@@ -38,7 +38,8 @@ import bosdyn.client
 import bosdyn.client.util
 import numpy as np
 import yaml
-from bosdyn.api import (estop_pb2, geometry_pb2, robot_command_pb2,
+from bosdyn.api import (basic_command_pb2, estop_pb2, geometry_pb2,
+                        mobility_command_pb2, robot_command_pb2,
                         synchronized_command_pb2)
 from bosdyn.client import ResponseError, RpcError
 from bosdyn.client.estop import EstopClient, EstopEndpoint, EstopKeepAlive
@@ -52,7 +53,21 @@ from bosdyn.client.robot_command import (RobotCommandBuilder,
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.util import seconds_to_timestamp
 from google.protobuf.timestamp_pb2 import Timestamp
+from bosdyn.client import frame_helpers
+from bosdyn.client import math_helpers
+from bosdyn.api import image_pb2
+from bosdyn.client.image import (
+    ImageClient,
+    build_image_request,
+    UnsupportedPixelFormatRequestedError
+)
 
+hand_image_sources = [
+    "hand_image",
+    # "hand_depth",
+    "hand_color_image",
+    # "hand_depth_in_hand_color_frame",
+]
 
 class SpotManipulationDriver(object):
 
@@ -64,6 +79,7 @@ class SpotManipulationDriver(object):
     robot_state_client = None
     estop_client = None
     lease_client = None
+    image_client = None
 
     # Other attributes
     robot_state = None
@@ -72,6 +88,8 @@ class SpotManipulationDriver(object):
     # Constructor
     def __init__(self):
         assert self.robot.has_arm(), "Robot requires arm to use SpotManipulationDriver"
+
+        
 
     # Authenticate robot
     def authenticate_robot(self, argv):
@@ -85,7 +103,10 @@ class SpotManipulationDriver(object):
         # create robot and authenticate
         sdk = bosdyn.client.create_standard_sdk("SpotManipulationDriverClient")
         self.robot = sdk.create_robot(config.hostname)
-        bosdyn.client.util.authenticate(self.robot)
+
+        self.robot.authenticate("user", "b7bih964c5qg")
+
+        # bosdyn.client.util.authenticate(self.robot)
 
     # Initialize clients
     def init_clients(self):
@@ -99,6 +120,14 @@ class SpotManipulationDriver(object):
         self.robot_state_client = self.robot.ensure_client(
             RobotStateClient.default_service_name
         )
+        self.image_client = self.robot.ensure_client(
+            ImageClient.default_service_name
+        )
+        self.hand_image_requests = []
+        for source in hand_image_sources:
+            self.hand_image_requests.append(
+                build_image_request(source, image_format=image_pb2.Image.FORMAT_RAW)
+            )
 
     # Useful getters
     def get_robot(self):
@@ -141,7 +170,7 @@ class SpotManipulationDriver(object):
     def joint_names_remapping_dict(self):
         with open(
             # "./../../config/joint_names.yaml", "r"
-            "/home/spot/manipulation_ws/src/nrg_spot_manipulation/spot_manipulation_driver/config/joint_names.yaml",
+            "/home/spot/catkin_ws/src/nrg_spot_manipulation/spot_manipulation_driver/config/joint_names.yaml",
             "r",
         ) as old_joint_names:  # TODO: Use relative path
             try:
@@ -235,6 +264,14 @@ class SpotManipulationDriver(object):
             self.robot.logger.error(error_message)
             raise Exception(error_message)
 
+    def check_is_powered_on(self):
+        # """Determine if the robot is powered on or off."""
+        # power_state = self.robot_state_client.get_robot_state().power_state
+        # self.powered_on = power_state.motor_power_state == power_state.STATE_ON
+        # return self.powered_on
+
+        return self.robot.is_powered_on()
+
     # Execute long trajectories
     def arm_long_trajectory_executor(
         self, traj_point_positions, traj_point_velocities, time_since_ref
@@ -249,6 +286,12 @@ class SpotManipulationDriver(object):
         ref_time = seconds_to_timestamp(start_time)
         TRAJ_APPROACH_TIME = 1.0
 
+        print(" ================= ")
+        print("len traj_point_positions: " , len(traj_point_positions))
+        print("time_since_ref: " , time_since_ref)
+        print("ref time: " , ref_time)
+        print(" ================= ")
+        
         robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=[traj_point_positions[0]],
             joint_velocities=[traj_point_velocities[0]],
@@ -295,6 +338,7 @@ class SpotManipulationDriver(object):
             # Compute sleep time and sleep before executing next trajectory
             if traj_index[0] > 9:
                 time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
+                print("time_to_goal_in_seconds" , time_to_goal_in_seconds)
 
             cmd_id = self.command_client.robot_command(robot_cmd)
 
@@ -388,7 +432,7 @@ class SpotManipulationDriver(object):
         arm_velocity_command = bosdyn.api.arm_command_pb2.ArmVelocityCommand.Request(
             cartesian_velocity=end_effector_velocity,
             angular_velocity_of_hand_rt_odom_in_hand=angular,
-            end_time=end_time,
+            end_time=end_time
         )
         arm_command = bosdyn.api.arm_command_pb2.ArmCommand.Request(
             arm_velocity_command=arm_velocity_command
@@ -402,20 +446,259 @@ class SpotManipulationDriver(object):
 
         self.command_client.robot_command(robot_cmd)
 
+
+    def ee_velocity_msg_executor_demo(self, msg):
+        # Constraints and scale
+        scale = 0.5
+        drift = 0.1
+        VELOCITY_CMD_DURATION = 0.1
+        linear_vel_min = -0.2
+        linear_vel_max = 0.2
+        angular_vel_min = -0.5
+        angular_vel_max = 0.5
+        linear_vel = np.clip(
+            np.array([msg.linear.x, msg.linear.y, msg.linear.z]) * scale,
+            linear_vel_min,
+            linear_vel_max,
+        )
+        angular_vel = np.clip(
+            np.array([msg.angular.x, msg.angular.y, msg.angular.z]) * scale,
+            angular_vel_min,
+            angular_vel_max,
+        )
+
+        print("linear velocities: ", linear_vel)
+        print("angular velocities: ", angular_vel)
+
+        # Construct message and send it to the robot
+        linear = geometry_pb2.Vec3(x=linear_vel[0], y=linear_vel[1], z=linear_vel[2])
+        angular = geometry_pb2.Vec3(
+            x=0.0, y=0.0, z=0.0
+            # x=angular_vel[0], y=angular_vel[1], z=angular_vel[2]
+        )
+
+        
+        # cylindrical_velocity = bosdyn.api.arm_command_pb2.ArmVelocityCommand.CylindricalVelocity()
+        # cylindrical_velocity.linear_velocity.r = linear_vel[0]
+        # cylindrical_velocity.linear_velocity.theta = linear_vel[1]
+        # cylindrical_velocity.linear_velocity.z = linear_vel[2]
+
+
+        end_effector_velocity = bosdyn.api.arm_command_pb2.ArmVelocityCommand.CartesianVelocity(
+            frame_name="body", velocity_in_frame_name=linear
+        )
+
+        arm_velocity_command = bosdyn.api.arm_command_pb2.ArmVelocityCommand.Request(
+            # cylindrical_velocity=cylindrical_velocity,
+            cartesian_velocity=end_effector_velocity,
+            angular_velocity_of_hand_rt_odom_in_hand=angular,
+            end_time = self.robot.time_sync.robot_timestamp_from_local_secs(time.time() + VELOCITY_CMD_DURATION)
+        )
+
+        robot_command = robot_command_pb2.RobotCommand()
+        robot_command.synchronized_command.arm_command.arm_velocity_command.CopyFrom(arm_velocity_command)
+
+        try:
+            self.command_client.robot_command(robot_command, end_time_secs = time.time() + VELOCITY_CMD_DURATION)
+        except (ResponseError, RpcError) as err:
+            print (err.error_message)
+
+
+        
+        print("end ee_velocity_msg_executor_prev")
+
+    def walk_robot(self, msg):
+        linear = geometry_pb2.Vec2(x=msg.linear.x, y=msg.linear.y)
+        angular = msg.angular.z
+        end_time = seconds_to_timestamp(time.time() + 0.1)
+        velocity = geometry_pb2.SE2Velocity(linear=linear, angular=angular)
+        se2_vel_cmd = basic_command_pb2.SE2VelocityCommand.Request(
+            end_time=end_time, se2_frame_name="body", velocity=velocity
+        )
+        mobility_command = mobility_command_pb2.MobilityCommand.Request(
+            se2_velocity_request=se2_vel_cmd
+        )
+        synchronized_command = synchronized_command_pb2.SynchronizedCommand.Request(
+            mobility_command=mobility_command
+        )
+        robot_cmd = robot_command_pb2.RobotCommand(
+            synchronized_command=synchronized_command
+        )
+
+        self.command_client.robot_command(robot_cmd)
+
+    def trajectory_cmd(self,
+        goal_x,
+        goal_y,
+        goal_heading,
+        cmd_duration,
+        frame_name="odom",        
+        mobility_params=None
+    ):
+        """Send a trajectory motion command to the robot.
+
+        Args:
+            goal_x: Position X coordinate in meters
+            goal_y: Position Y coordinate in meters
+            goal_heading: Pose heading in radians
+            cmd_duration: Time-to-live for the command in seconds.
+            frame_name: frame_name to be used to calc the target position. 'odom' or 'vision'
+            precise_position: if set to false, the status STATUS_NEAR_GOAL and STATUS_AT_GOAL will be equivalent. If
+            true, the robot must complete its final positioning before it will be considered to have successfully
+            reached the goal.
+
+        Returns: (bool, str) tuple indicating whether the command was successfully sent, and a message
+        """
+        if mobility_params is None:
+            mobility_params = RobotCommandBuilder.mobility_params()
+        # self._trajectory_status_unknown = False
+        # self._at_goal = False
+        # self._near_goal = False
+        # self._last_trajectory_command_precise = precise_position
+        self.robot.logger.info("got command duration of {}".format(cmd_duration))
+        end_time = time.time() + cmd_duration
+        if frame_name == "vision":
+            vision_tform_body = frame_helpers.get_vision_tform_body(
+                self.robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
+            )
+            body_tform_goal = math_helpers.SE3Pose(
+                x=goal_x, y=goal_y, z=0, rot=math_helpers.Quat.from_yaw(goal_heading)
+            )
+            vision_tform_goal = vision_tform_body * body_tform_goal
+            response = self.command_client.robot_command(
+                RobotCommandBuilder.synchro_se2_trajectory_point_command(
+                    goal_x=vision_tform_goal.x,
+                    goal_y=vision_tform_goal.y,
+                    goal_heading=vision_tform_goal.rot.to_yaw(),
+                    frame_name=frame_helpers.VISION_FRAME_NAME,
+                    params=mobility_params,
+                ),
+                end_time_secs=end_time,
+            )
+        elif frame_name == "odom":
+            odom_tform_body = frame_helpers.get_odom_tform_body(
+                self.robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
+            )
+            body_tform_goal = math_helpers.SE3Pose(
+                x=goal_x, y=goal_y, z=0, rot=math_helpers.Quat.from_yaw(goal_heading)
+            )
+            odom_tform_goal = odom_tform_body * body_tform_goal
+            response = self.command_client.robot_command(
+                RobotCommandBuilder.synchro_se2_trajectory_point_command(
+                    goal_x=odom_tform_goal.x,
+                    goal_y=odom_tform_goal.y,
+                    goal_heading=odom_tform_goal.rot.to_yaw(),
+                    frame_name=frame_helpers.ODOM_FRAME_NAME,
+                    params=mobility_params,
+                ),
+                end_time_secs=end_time,
+            )
+        else:
+            raise ValueError("frame_name must be 'vision' or 'odom'")
+        # if response[0]:
+        #     self._last_trajectory_command = response[2]
+        return True, "Success"
+
+
     def stand_robot(self):
         self.robot.logger.info("Commanding robot to stand...")
-        blocking_stand(self.command_client, timeout_sec=10)
-        self.robot.logger.info("Robot standing.")
+        # blocking_stand(self.command_client, timeout_sec=10)
+        # self.robot.logger.info("Robot standing.")
+
+        try:
+            robot_cmd = RobotCommandBuilder.synchro_stand_command()
+            cmd_id = self.command_client.robot_command(robot_cmd)
+            self.robot.logger.info("Robot standing.")
+        except Exception as e:
+            self.robot.logger.error(f"Unable to execute robot command: {e}")
+            return False, str(e)
+        return True, "Success"
+        
+        
+    def sit_robot(self):
+        try:
+            robot_cmd = RobotCommandBuilder.synchro_sit_command()
+            cmd_id = self.command_client.robot_command(robot_cmd)
+        except Exception as e:
+            self.robot.logger.error(f"Unable to execute robot command: {e}")
+            return False, str(e)
+        return True, "Success"
 
     def stow_arm(self):
-        robot_cmd = RobotCommandBuilder.arm_stow_command()
-        cmd_id = self.command_client.robot_command(robot_cmd)
-        block_until_arm_arrives(self.command_client, cmd_id)
+        try:
+            robot_cmd = RobotCommandBuilder.arm_stow_command()
+            cmd_id = self.command_client.robot_command(robot_cmd)
+            block_until_arm_arrives(self.command_client, cmd_id)
+        except Exception as e:
+            self.robot.logger.error(f"Unable to execute robot command: {e}")
+            return False, str(e)
+        return True, "Success"
+
+    def unstow_arm(self):
+        try:
+            robot_cmd = RobotCommandBuilder.arm_ready_command()
+            cmd_id = self.command_client.robot_command(robot_cmd)
+            time.sleep(2.0)
+        except Exception as e:
+            self.robot.logger.error(f"Unable to execute robot command: {e}")
+            return False, str(e)
+        return True, "Success"
+
+    def open_gripper(self):
+        try:
+            robot_cmd = RobotCommandBuilder.claw_gripper_open_command()
+            cmd_id = self.command_client.robot_command(robot_cmd)
+            self.robot.logger.info("Command gripper open sent")
+            time.sleep(2.0)
+        except Exception as e:
+            self.robot.logger.error(f"Unable to execute robot command: {e}")
+            return False, str(e)
+        return True, "Success"
+
+    def close_gripper(self):
+        try:
+            robot_cmd = RobotCommandBuilder.claw_gripper_close_command()
+            cmd_id = self.command_client.robot_command(robot_cmd)
+            self.robot.logger.info("Command gripper close sent")
+            time.sleep(2.0)
+        except Exception as e:
+            self.robot.logger.error(f"Unable to execute robot command: {e}")
+            return False, str(e)
+        return True, "Success"
+
+
+    def get_hand_images(self):
+        try:
+            # return self.image_client.get_image(self.hand_image_requests)
+            return self.image_client.get_image_async(self.hand_image_requests)            
+        except UnsupportedPixelFormatRequestedError as e:
+            return None
 
     def safe_power_off(self):
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
         assert not self.robot.is_powered_on(), "Robot power off failed."
         self.robot.logger.info("Robot safely powered off.")
+    
+    def estop_hard(self):
+        try:
+            self.estop_keepalive.stop()
+            return True, "Success"
+        except Exception as e:
+            return False, f"Exception while attempting to estop: {e}"
+
+    def estop_soft(self):
+        try:
+            self.estop_keepalive.settle_then_cut()
+            return True, "Success"
+        except Exception as e:
+            return False, f"Exception while attempting to estop: {e}"
+
+    def disengage_estop(self):
+        try:
+            self.estop_keepalive.allow()
+            return True, "Success"
+        except Exception as e:
+            return False, f"Exception while attempting to disengage estop {e}"
 
     def forceGetLease(self):
         try:
@@ -494,8 +777,11 @@ class SpotManipulationDriver(object):
 
         if self.robot.time_sync:
             self.robot.time_sync.stop()
-        self.stow_arm()
-        self.safe_power_off()
+        if self.check_is_powered_on():
+            self.robot.logger.info("Robot is powered on. Attempting to stow the arm and power off")
+            self.stow_arm()
+            self.safe_power_off()
+                
         self.release()
 
     def releaseEStop(self) -> None:

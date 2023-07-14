@@ -9,6 +9,9 @@ project(spot_manipulation_driver)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   rospy
+  roscpp
+  std_msgs
+  geometry_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -103,7 +106,7 @@ catkin_python_setup()
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES spot_manipulation_driver
-#  CATKIN_DEPENDS rospy
+CATKIN_DEPENDS roscpp rospy std_msgs geometry_msgs
 #  DEPENDS system_lib
 )
 
@@ -190,6 +193,10 @@ include_directories(
 #   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 # )
 
+add_executable(twist_filter src/twist_filter.cpp)
+add_dependencies(twist_filter ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(twist_filter ${catkin_LIBRARIES})
+
 #############
 ## Testing ##
 #############
@@ -202,6 +209,8 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
-catkin_install_python(PROGRAMS scripts/${PROJECT_NAME}/follow_joint_trajectory_action_server.py
+catkin_install_python(PROGRAMS scripts/${PROJECT_NAME}/follow_joint_trajectory_action_server.py 
+  scripts/${PROJECT_NAME}/manipulation_driver_temoto.py
+  scripts/${PROJECT_NAME}/nrg_spot_driver.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
