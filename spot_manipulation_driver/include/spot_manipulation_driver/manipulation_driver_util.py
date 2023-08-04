@@ -51,6 +51,7 @@ from bosdyn.client.robot_command import (RobotCommandBuilder,
                                          block_until_arm_arrives,
                                          blocking_stand)
 from bosdyn.client.robot_state import RobotStateClient
+from bosdyn.client.docking import DockingClient, blocking_dock_robot, blocking_undock
 from bosdyn.util import seconds_to_timestamp
 from google.protobuf.timestamp_pb2 import Timestamp
 from bosdyn.client import frame_helpers
@@ -128,6 +129,10 @@ class SpotManipulationDriver(object):
             self.hand_image_requests.append(
                 build_image_request(source, image_format=image_pb2.Image.FORMAT_RAW)
             )
+        
+        self.docking_client = self.robot.ensure_client(
+            DockingClient.default_service_name
+        )
 
     # Useful getters
     def get_robot(self):
@@ -599,6 +604,32 @@ class SpotManipulationDriver(object):
         #     self._last_trajectory_command = response[2]
         return True, "Success"
 
+    def dock(self, dock_id):
+        """Dock the robot to the docking station with fiducial ID [dock_id]."""
+        try:
+            # Make sure we're powered on and standing
+            self.robot.power_on()
+            self.stand_robot()
+            # Dock the robot
+            # self._last_docking_command = dock_id
+            blocking_dock_robot(self.robot, dock_id)
+            # self._last_docking_command = None
+            # Necessary to reset this as docking often causes the last stand command to go into an unknown state
+            # self._last_stand_command = None
+            return True, "Success"
+        except Exception as e:
+            return False, f"Exception while trying to dock: {e}"
+
+    def undock(self, timeout=20):
+        """Power motors on and undock the robot from the station."""
+        try:
+            # Maker sure we're powered on
+            self.robot.power_on()
+            # Undock the robot
+            blocking_undock(self.robot, timeout)
+            return True, "Success"
+        except Exception as e:
+            return False, f"Exception while trying to undock: {e}"
 
     def stand_robot(self):
         self.robot.logger.info("Commanding robot to stand...")
@@ -669,8 +700,8 @@ class SpotManipulationDriver(object):
 
     def get_hand_images(self):
         try:
-            # return self.image_client.get_image(self.hand_image_requests)
-            return self.image_client.get_image_async(self.hand_image_requests)            
+            return self.image_client.get_image(self.hand_image_requests)
+            # return self.image_client.get_image_async(self.hand_image_requests)            
         except UnsupportedPixelFormatRequestedError as e:
             return None
 

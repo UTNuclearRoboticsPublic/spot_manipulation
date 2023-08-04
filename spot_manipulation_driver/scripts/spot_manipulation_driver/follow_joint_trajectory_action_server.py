@@ -52,7 +52,7 @@ class FollowJointTrajectory(SpotManipulationDriver):
         SpotManipulationDriver.init_clients(self)
         SpotManipulationDriver.claim(self)
         SpotManipulationDriver.verify_power_and_estop(self)
-        SpotManipulationDriver.stand_robot(self)
+        # SpotManipulationDriver.stand_robot(self)
 
         # Initialize action servers, joint state publisher, and ee velocity subscribers
         self.arm_action_server = actionlib.SimpleActionServer(
@@ -73,7 +73,7 @@ class FollowJointTrajectory(SpotManipulationDriver):
         )
 
         self.ee_vel_sub = rospy.Subscriber(
-            "/spacenav/twist", Twist, self.ee_vel_sub_callback
+            "/spacenav/twist", Twist, self.ee_vel_sub_callback, queue_size=1
         )
 
         self.ap_ee_vel_sub = rospy.Subscriber(

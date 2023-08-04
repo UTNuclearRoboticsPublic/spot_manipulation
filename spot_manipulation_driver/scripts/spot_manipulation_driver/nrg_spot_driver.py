@@ -30,13 +30,19 @@
 #          data of any kind.
 ##############################################################################
 
-## (Copy of follow_joint_trajectory_action_server.py)
+## 
+
+##############################################################################
+##                                                                          ##
+## (Extended version of the follow_joint_trajectory_action_server.py)       ##
+##                                                                          ##
+##                                                                          ##
+##############################################################################
 
 import logging
 import sys
 import threading
 from importlib import reload
-
 import actionlib
 import rospy
 from control_msgs.msg import (FollowJointTrajectoryAction,
@@ -46,11 +52,12 @@ from geometry_msgs.msg import Twist, TwistStamped, Pose, PoseStamped
 from sensor_msgs.msg import Image, CameraInfo
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger, TriggerResponse
+from spot_msgs.srv import Dock, DockResponse, GetDockState, GetDockStateResponse
+
 from spot_manipulation_driver.manipulation_driver_util import \
     SpotManipulationDriver
 from bosdyn.client import math_helpers
 import tf2_ros
-
 
 class NRGSpotDriver(SpotManipulationDriver):
     def __init__(self, argv):
@@ -58,8 +65,9 @@ class NRGSpotDriver(SpotManipulationDriver):
         SpotManipulationDriver.authenticate_robot(self, argv)
         SpotManipulationDriver.init_clients(self)
         SpotManipulationDriver.claim(self)
+
         SpotManipulationDriver.verify_power_and_estop(self)
-        SpotManipulationDriver.stand_robot(self)
+        # SpotManipulationDriver.stand_robot(self)
 
         # Initialize action servers, joint state publisher, and ee velocity subscribers
         self.arm_action_server = actionlib.SimpleActionServer(
@@ -84,11 +92,11 @@ class NRGSpotDriver(SpotManipulationDriver):
         )
 
         self.ap_ee_vel_sub = rospy.Subscriber(
-            "/ee_twist_cmds", TwistStamped, self.ap_ee_vel_sub_callback, queue_size=1
+            "ee_twist_cmds", TwistStamped, self.ap_ee_vel_sub_callback, queue_size=1
         )
 
         self.cmd_vel_sub = rospy.Subscriber(
-            "/cmd_vel", Twist, self.cmd_vel_callback, queue_size=1
+            "cmd_vel", Twist, self.cmd_vel_callback, queue_size=1
         )
 
         self.go_to_pose_sub = rospy.Subscriber(
@@ -102,6 +110,11 @@ class NRGSpotDriver(SpotManipulationDriver):
         rospy.Service("estop/hard", Trigger, self.estop_hard_callback)
         rospy.Service("estop/soft", Trigger, self.estop_soft_callback)
         rospy.Service("estop/release", Trigger, self.estop_release_callback)
+
+        # Docking
+        rospy.Service("dock", Dock, self.handle_dock)
+        rospy.Service("undock", Trigger, self.handle_undock)
+        # rospy.Service("docking_state", GetDockState, self.handle_get_docking_state)
 
         # Arm Services 
         rospy.Service("arm_stow", Trigger, self.arm_stow_callback)
@@ -259,14 +272,22 @@ class NRGSpotDriver(SpotManipulationDriver):
 
     def ap_ee_vel_sub_callback(self, msg):
         """Callback for Affordance Primitive end effector velocity command subscriber"""
-        twist_msg = msg.twist
+        twist_msg = msg.twist        
         SpotManipulationDriver.ee_velocity_msg_executor(self, twist_msg)
 
     def cmd_vel_callback(self, msg):
         """Callback to send velocity commands to the spot base"""
         SpotManipulationDriver.walk_robot(self, msg)
 
-    
+    def handle_dock(self, req):
+        """Dock the robot"""
+        resp = SpotManipulationDriver.dock(self, req.dock_id)
+        return DockResponse(resp[0], resp[1])
+
+    def handle_undock(self, req):
+        """Undock the robot"""
+        resp = SpotManipulationDriver.undock(self)
+        return TriggerResponse(resp[0], resp[1])
 
     def arm_stow_callback(self, req):
         response = SpotManipulationDriver.stow_arm(self)
@@ -409,7 +430,7 @@ def main(argv):
     
     # hand_image_thread = threading.Thread(
     #     target=nrg_spot_driver.publish_hand_image
-    # )    
+    # )
 
     # joint_states_pub_thread.setDaemon(True)
     # hand_image_thread.setDaemon(True)

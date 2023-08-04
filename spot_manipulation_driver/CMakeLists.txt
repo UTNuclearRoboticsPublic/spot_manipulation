@@ -212,5 +212,7 @@ target_link_libraries(twist_filter ${catkin_LIBRARIES})
 catkin_install_python(PROGRAMS scripts/${PROJECT_NAME}/follow_joint_trajectory_action_server.py 
   scripts/${PROJECT_NAME}/manipulation_driver_temoto.py
   scripts/${PROJECT_NAME}/nrg_spot_driver.py
+  scripts/${PROJECT_NAME}/image_viewer_nrg.py
+  scripts/${PROJECT_NAME}/nrg_spot_cameras.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
