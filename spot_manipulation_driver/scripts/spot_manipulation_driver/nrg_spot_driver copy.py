@@ -47,15 +47,14 @@ import rospy
 from control_msgs.msg import (FollowJointTrajectoryAction,
                               FollowJointTrajectoryFeedback,
                               FollowJointTrajectoryResult)
-from geometry_msgs.msg import PoseWithCovariance
-from geometry_msgs.msg import Twist, TwistStamped, Pose, PoseStamped, Wrench
-from geometry_msgs.msg import TwistWithCovariance, TwistWithCovarianceStamped
-from geometry_msgs.msg import Transform, TransformStamped
-from sensor_msgs.msg import JointState
+from geometry_msgs.msg import Twist, TwistStamped, Pose, PoseStamped
 from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger, TriggerResponse
+from geometry_msgs.msg import PoseWithCovariance
+from geometry_msgs.msg import TwistWithCovariance
+from geometry_msgs.msg import TwistWithCovarianceStamped
 from nav_msgs.msg import Odometry
-from tf2_msgs.msg import TFMessage
 
 
 # TODO: Remove dependency. Create own srv / msg
@@ -66,9 +65,7 @@ from spot_manipulation_driver.manipulation_driver_util import \
     SpotManipulationDriver
 from bosdyn.client import frame_helpers
 from bosdyn.client import math_helpers
-from bosdyn.client.math_helpers import SE3Pose
 import tf2_ros
-import tf2_geometry_msgs
 import transforms3d
 import numpy as np
 import copy
@@ -80,11 +77,8 @@ class NRGSpotDriver(SpotManipulationDriver):
         SpotManipulationDriver.init_clients(self)
         SpotManipulationDriver.claim(self)
 
-        SpotManipulationDriver.verify_power_and_estop(self)
-        SpotManipulationDriver.stand_robot(self)
-
-        self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+        # SpotManipulationDriver.verify_power_and_estop(self)
+        # SpotManipulationDriver.stand_robot(self)
 
         # Initialize action servers, joint state publisher, and ee velocity subscribers
         self.arm_action_server = actionlib.SimpleActionServer(
@@ -104,11 +98,7 @@ class NRGSpotDriver(SpotManipulationDriver):
             "joint_states", JointState, queue_size=10
         )
 
-        self.force_torque_state_pub = rospy.Publisher(
-            "estimated_wrench", Wrench, queue_size=10
-        )
-
-        self.tf_pub = rospy.Publisher("/tf", TFMessage, queue_size=10)
+        # self.tf_pub = rospy.Publisher("tf", TFMessage, queue_size=10)
         
         # self.odom_twist_pub = rospy.Publisher(
         #     "odometry/twist", TwistWithCovarianceStamped, queue_size=10
@@ -172,20 +162,20 @@ class NRGSpotDriver(SpotManipulationDriver):
 
         self.rate = rospy.Rate(10)
 
-        # # Hand image
-        # self.hand_image_mono_pub = rospy.Publisher(
-        #     "camera/hand_mono/image", Image, queue_size=10
-        # )
-        # self.hand_image_color_pub = rospy.Publisher(
-        #     "camera/hand_color/image", Image, queue_size=10
-        # )
-        # # Camera Info
-        # self.hand_image_mono_info_pub = rospy.Publisher(
-        #     "camera/hand_mono/camera_info", CameraInfo, queue_size=10
-        # )
-        # self.hand_image_color_info_pub = rospy.Publisher(
-        #     "camera/hand_color/camera_info", CameraInfo, queue_size=10
-        # )
+        # Hand image
+        self.hand_image_mono_pub = rospy.Publisher(
+            "camera/hand_mono/image", Image, queue_size=10
+        )
+        self.hand_image_color_pub = rospy.Publisher(
+            "camera/hand_color/image", Image, queue_size=10
+        )
+        # Camera Info
+        self.hand_image_mono_info_pub = rospy.Publisher(
+            "camera/hand_mono/camera_info", CameraInfo, queue_size=10
+        )
+        self.hand_image_color_info_pub = rospy.Publisher(
+            "camera/hand_color/camera_info", CameraInfo, queue_size=10
+        )
 
     def arm_goal_callback(self, goal):
         """Callback for arm_action_server"""
@@ -283,13 +273,9 @@ class NRGSpotDriver(SpotManipulationDriver):
     def publish_joint_states(self):
         """Method to constantly publish joint states"""
         joint_states = JointState()
-        force_torque_state = Wrench()
-
         while not rospy.is_shutdown():
             # Get joint states
             joint_states_source = SpotManipulationDriver.get_joint_states(self)
-
-            estimated_eef_force = SpotManipulationDriver.get_estimated_eef_force_state(self)
             joint_states.header.stamp = rospy.Time(
                 joint_states_source[0].seconds, joint_states_source[0].nanos
             )
@@ -298,13 +284,8 @@ class NRGSpotDriver(SpotManipulationDriver):
             joint_states.velocity = joint_states_source[3]
             joint_states.effort = joint_states_source[4]
 
-            force_torque_state.force.x = estimated_eef_force.x
-            force_torque_state.force.y = estimated_eef_force.y
-            force_torque_state.force.z = estimated_eef_force.z
-
             # Publish and sleep
             self.joint_states_pub.publish(joint_states)
-            self.force_torque_state_pub.publish(force_torque_state)
             self.rate.sleep()
 
     def publish_odometry(self):
@@ -319,11 +300,6 @@ class NRGSpotDriver(SpotManipulationDriver):
 
             odom_corrected_msg = self.get_corrected_odom(odom_msg)
             self.odom_corrected_pub.publish(odom_corrected_msg)
-
-            tf_msg = self.get_odom_transform(state)
-            self.tf_pub.publish(tf_msg)
-
-
             self.rate.sleep()
         
 
@@ -398,39 +374,39 @@ class NRGSpotDriver(SpotManipulationDriver):
         return TriggerResponse(response[0], response[1])
 
 
-    # def publish_hand_image(self):        
-    #     image_msg1 = Image()
-    #     while not rospy.is_shutdown():
-    #         data = SpotManipulationDriver.get_hand_images(self)
-    #         if data:                
-    #         #     mage_msg0, camera_info_msg0 = getImageMsg(data[0], self.spot_wrapper)
-    #         #     self.hand_image_mono_pub.publish(mage_msg0)
-    #         #     self.hand_image_mono_info_pub.publish(camera_info_msg0)
+    def publish_hand_image(self):        
+        image_msg1 = Image()
+        while not rospy.is_shutdown():
+            data = SpotManipulationDriver.get_hand_images(self)
+            if data:                
+            #     mage_msg0, camera_info_msg0 = getImageMsg(data[0], self.spot_wrapper)
+            #     self.hand_image_mono_pub.publish(mage_msg0)
+            #     self.hand_image_mono_info_pub.publish(camera_info_msg0)
 
-    #         #     image_msg2, camera_info_msg2 = getImageMsg(data[1], self.spot_wrapper)
-    #             image_msg1.header.frame_id = "Test"
-    #             image_msg1.height = data[1].shot.image.rows
-    #             image_msg1.width = data[1].shot.image.cols
-    #             image_msg1.encoding = "rgb8"
-    #             image_msg1.is_bigendian = True
-    #             image_msg1.step = 3 * data[1].shot.image.cols
-    #             image_msg1.data = data[1].shot.image.data
-    #             self.hand_image_color_pub.publish(image_msg1)
-    #         #     self.hand_image_color_info_pub.publish(camera_info_msg1)
-    #         self.rate.sleep()
+            #     image_msg2, camera_info_msg2 = getImageMsg(data[1], self.spot_wrapper)
+                image_msg1.header.frame_id = "Test"
+                image_msg1.height = data[1].shot.image.rows
+                image_msg1.width = data[1].shot.image.cols
+                image_msg1.encoding = "rgb8"
+                image_msg1.is_bigendian = True
+                image_msg1.step = 3 * data[1].shot.image.cols
+                image_msg1.data = data[1].shot.image.data
+                self.hand_image_color_pub.publish(image_msg1)
+            #     self.hand_image_color_info_pub.publish(camera_info_msg1)
+            self.rate.sleep()
 
     # From spot_ros.py
     def trajectory_callback(self, msg):
         """
         Handle a callback from the trajectory topic requesting to go to a location
-        The trajectory will time out after 10 seconds
+        The trajectory will time out after 5 seconds
         Args:
             msg: PoseStamped containing desired pose
         Returns:
         """
         try:
             self.send_trajectory_command(
-                self.transform_pose_to_body_frame(msg), rospy.Duration(10)
+                self.transform_pose_to_body_frame(msg), rospy.Duration(5)
             )
         except tf2_ros.LookupException as e:
             rospy.logerr(str(e))
@@ -624,43 +600,6 @@ class NRGSpotDriver(SpotManipulationDriver):
         corrected_odometry.twist.twist.angular.z = corrected_angular[2][0]
 
         return corrected_odometry
-
-    def get_odom_transform(self, state):
-        """Maps robot link state data from robot state proto to ROS TFMessage message
-
-        Args:
-            data: Robot State proto        
-        Returns:
-            TFMessage message
-        """
-        tf_msg = TFMessage()
-        frame_name = "odom"
-        
-        transform = state.kinematic_state.transforms_snapshot.child_to_parent_edge_map.get(
-            frame_name
-        )
-        odom_to_body_tf = SE3Pose.from_proto(transform.parent_tform_child).inverse()
-        
-        local_time = SpotManipulationDriver.get_robot_time_as_local_time(
-            self, state.kinematic_state.acquisition_timestamp
-        )
-        tf_time = rospy.Time(local_time.seconds, local_time.nanos)
-
-        odom_tf = TransformStamped()
-        odom_tf.header.stamp = tf_time
-        odom_tf.header.frame_id = frame_name                     #   odom
-        odom_tf.child_frame_id = transform.parent_frame_name     #   body
-        odom_tf.transform.translation.x = odom_to_body_tf.position.x
-        odom_tf.transform.translation.y = odom_to_body_tf.position.y
-        odom_tf.transform.translation.z = odom_to_body_tf.position.z
-        odom_tf.transform.rotation.x = odom_to_body_tf.rotation.x
-        odom_tf.transform.rotation.y = odom_to_body_tf.rotation.y
-        odom_tf.transform.rotation.z = odom_to_body_tf.rotation.z
-        odom_tf.transform.rotation.w = odom_to_body_tf.rotation.w
-                    
-        tf_msg.transforms.append(odom_tf)
-
-        return tf_msg
 
 def main(argv):
     rospy.loginfo("node")

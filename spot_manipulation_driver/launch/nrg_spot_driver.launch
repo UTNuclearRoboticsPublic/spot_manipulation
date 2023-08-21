@@ -2,4 +2,6 @@
   <node pkg="spot_manipulation_driver" name="nrg_spot_driver"  type="nrg_spot_driver.py" args="192.168.50.3" />
 
   <node pkg="spot_manipulation_driver" name="twist_filter" type="twist_filter"/>  
+
+  <include file="$(find spot_driver)/launch/cameras.launch" />
 </launch>

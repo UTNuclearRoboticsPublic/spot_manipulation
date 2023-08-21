@@ -171,6 +171,16 @@ class SpotManipulationDriver(object):
             joint_states_effort,
         )
 
+    def get_estimated_eef_force_state(self):
+        state = self.get_robot_state()
+        ee_force = state.manipulator_state.estimated_end_effector_force_in_hand
+        return ee_force
+        # TODO: Check values  
+        # Forces with the arm in stow pose: 
+        # x: 14.5269775390625
+        # y: -1.1439926624298096
+        # z: 13.629752159118652
+
     # Remap sdk joint names to easy-to-read names
     def joint_names_remapping_dict(self):
         with open(
@@ -291,12 +301,6 @@ class SpotManipulationDriver(object):
         ref_time = seconds_to_timestamp(start_time)
         TRAJ_APPROACH_TIME = 1.0
 
-        print(" ================= ")
-        print("len traj_point_positions: " , len(traj_point_positions))
-        print("time_since_ref: " , time_since_ref)
-        print("ref time: " , ref_time)
-        print(" ================= ")
-        
         robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=[traj_point_positions[0]],
             joint_velocities=[traj_point_velocities[0]],
@@ -405,7 +409,7 @@ class SpotManipulationDriver(object):
             traj_index = traj_index + 1
 
     def ee_velocity_msg_executor(self, msg):
-        # Constraints and scale
+        # Consget_robot_statetraints and scale
         scale = 0.5
         drift = 0.1
         linear_vel_min = -0.2
@@ -451,66 +455,6 @@ class SpotManipulationDriver(object):
 
         self.command_client.robot_command(robot_cmd)
 
-
-    def ee_velocity_msg_executor_demo(self, msg):
-        # Constraints and scale
-        scale = 0.5
-        drift = 0.1
-        VELOCITY_CMD_DURATION = 0.1
-        linear_vel_min = -0.2
-        linear_vel_max = 0.2
-        angular_vel_min = -0.5
-        angular_vel_max = 0.5
-        linear_vel = np.clip(
-            np.array([msg.linear.x, msg.linear.y, msg.linear.z]) * scale,
-            linear_vel_min,
-            linear_vel_max,
-        )
-        angular_vel = np.clip(
-            np.array([msg.angular.x, msg.angular.y, msg.angular.z]) * scale,
-            angular_vel_min,
-            angular_vel_max,
-        )
-
-        print("linear velocities: ", linear_vel)
-        print("angular velocities: ", angular_vel)
-
-        # Construct message and send it to the robot
-        linear = geometry_pb2.Vec3(x=linear_vel[0], y=linear_vel[1], z=linear_vel[2])
-        angular = geometry_pb2.Vec3(
-            x=0.0, y=0.0, z=0.0
-            # x=angular_vel[0], y=angular_vel[1], z=angular_vel[2]
-        )
-
-        
-        # cylindrical_velocity = bosdyn.api.arm_command_pb2.ArmVelocityCommand.CylindricalVelocity()
-        # cylindrical_velocity.linear_velocity.r = linear_vel[0]
-        # cylindrical_velocity.linear_velocity.theta = linear_vel[1]
-        # cylindrical_velocity.linear_velocity.z = linear_vel[2]
-
-
-        end_effector_velocity = bosdyn.api.arm_command_pb2.ArmVelocityCommand.CartesianVelocity(
-            frame_name="body", velocity_in_frame_name=linear
-        )
-
-        arm_velocity_command = bosdyn.api.arm_command_pb2.ArmVelocityCommand.Request(
-            # cylindrical_velocity=cylindrical_velocity,
-            cartesian_velocity=end_effector_velocity,
-            angular_velocity_of_hand_rt_odom_in_hand=angular,
-            end_time = self.robot.time_sync.robot_timestamp_from_local_secs(time.time() + VELOCITY_CMD_DURATION)
-        )
-
-        robot_command = robot_command_pb2.RobotCommand()
-        robot_command.synchronized_command.arm_command.arm_velocity_command.CopyFrom(arm_velocity_command)
-
-        try:
-            self.command_client.robot_command(robot_command, end_time_secs = time.time() + VELOCITY_CMD_DURATION)
-        except (ResponseError, RpcError) as err:
-            print (err.error_message)
-
-
-        
-        print("end ee_velocity_msg_executor_prev")
 
     def walk_robot(self, msg):
         linear = geometry_pb2.Vec2(x=msg.linear.x, y=msg.linear.y)
@@ -645,7 +589,6 @@ class SpotManipulationDriver(object):
             return False, str(e)
         return True, "Success"
         
-        
     def sit_robot(self):
         try:
             robot_cmd = RobotCommandBuilder.synchro_sit_command()
@@ -697,6 +640,27 @@ class SpotManipulationDriver(object):
             return False, str(e)
         return True, "Success"
 
+    def gripper_angle_open(self, gripper_ang):
+        # takes an angle between 0 (closed) and 90 (fully opened) and opens the
+        # gripper at this angle
+        if gripper_ang > 90 or gripper_ang < 0:
+            return False, "Gripper angle must be between 0 and 90"
+        try:        
+            # The open angle command does not take degrees but the limits
+            # defined in the urdf, that is why we have to interpolate
+            closed = 0.349066
+            opened = -1.396263
+            angle = gripper_ang / 90.0 * (opened - closed) + closed
+            robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(angle)
+
+            # Command issue with RobotCommandClient
+            cmd_id = self.command_client.robot_command(robot_cmd)
+            self.robot.logger.info("Command gripper open angle sent")
+            time.sleep(2.0)
+        except Exception as e:
+            return False, f"Exception occured while gripper was moving: {e}"
+
+        return True, "Opened gripper successfully"
 
     def get_hand_images(self):
         try:
