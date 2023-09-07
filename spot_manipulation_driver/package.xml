@@ -5,6 +5,7 @@
   <version>0.0.0</version>
   <description>TODO: Package description</description>
   <maintainer email="jpanthi@utexas.edu">spot</maintainer>
+  <author email="jpanthi@utexas.edu">Crasun Jans</author>
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
