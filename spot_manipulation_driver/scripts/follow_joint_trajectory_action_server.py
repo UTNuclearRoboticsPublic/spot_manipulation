@@ -226,6 +226,11 @@ class JointStatePublisher(Node):
             "/joint_states",
             10,
         )
+        self.ee_force_pub = self.create_publisher(
+            Wrench,
+            "/ee_force",
+            10,
+        )
         timer_period = 0.25
         self.timer = self.create_timer(timer_period, self.publish_joint_states)
 
@@ -233,10 +238,12 @@ class JointStatePublisher(Node):
         """Method to constantly publish joint states"""
         joint_states = JointState()
 
-        # Get joint states
+        # Get joint states and force-torque data
         joint_states_source = (
             self.follow_joint_trajectory_action_server.get_joint_states()
         )
+
+        force_torque_state_source = self.follow_joint_trajectory_action_server.get_force_torque_state()
         joint_states.header.stamp = ROSTime(
             sec=joint_states_source[0].seconds, nanosec=joint_states_source[0].nanos
         )
@@ -245,8 +252,14 @@ class JointStatePublisher(Node):
         joint_states.velocity = joint_states_source[3]
         joint_states.effort = joint_states_source[4]
 
-        # Publish
+        force_torque_state.force.x = force_torque_state_source[0]
+        force_torque_state.force.y = force_torque_state_source[1]
+        force_torque_state.force.z = force_torque_state_source[2]
+
+        # Publish joint states and force-torque data
         self.joint_states_pub.publish(joint_states)
+        self.force_torque_state_pub.publish(force_torque_state)
+
 
 
 def main():

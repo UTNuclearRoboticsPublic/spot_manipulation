@@ -137,6 +137,11 @@ class SpotManipulationDriver(object):
             joint_states_effort,
         )
 
+    def get_force_torque_state(self):
+        state = self.get_robot_state()
+        ee_force = state.manipulator_state.estimated_end_effector_force_in_hand
+        return ee_force.x, ee_force.y, ee_force.z
+
     # Remap sdk joint names to easy-to-read names
     def joint_names_remapping_dict(self):
         with open(
