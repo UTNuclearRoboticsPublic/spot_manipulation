@@ -36,7 +36,7 @@ import time
 import rclpy
 from builtin_interfaces.msg import Time as ROSTime
 from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist, TwistStamped
+from geometry_msgs.msg import Twist, TwistStamped, Wrench
 from rclpy.action import ActionServer
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -226,7 +226,7 @@ class JointStatePublisher(Node):
             "/joint_states",
             10,
         )
-        self.ee_force_pub = self.create_publisher(
+        self.force_torque_state_pub = self.create_publisher(
             Wrench,
             "/ee_force",
             10,
@@ -237,6 +237,7 @@ class JointStatePublisher(Node):
     def publish_joint_states(self):
         """Method to constantly publish joint states"""
         joint_states = JointState()
+        force_torque_state = Wrench()
 
         # Get joint states and force-torque data
         joint_states_source = (
