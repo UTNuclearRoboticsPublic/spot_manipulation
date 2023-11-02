@@ -35,6 +35,7 @@ import time
 
 import rclpy
 import rclpy.callback_groups
+from rclpy.action.server import ServerGoalHandle
 from builtin_interfaces.msg import Time as ROSTime
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist, TwistStamped, WrenchStamped
@@ -42,12 +43,17 @@ from rclpy.action import ActionServer
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType, FloatingPointRange
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState, Image, CameraInfo
 from std_srvs.srv import Trigger
 
 from spot_driver.spot_lease_manager import SpotLeaseManager
+from spot_driver.spot_ros import CameraPubs
 from spot_manipulation_driver.manipulation_driver_util import \
     SpotManipulationDriver
+import spot_manipulation_driver.ros_helpers as ros_helpers
+from spot_driver.ros_helpers import getImageMsg, JointStatesToMsg
+from spot_msgs.msg import ManipulatorState
+from spot_msgs.srv import GripperAngleMove
 
 
 class FollowJointTrajectoryActionServer(Node):
@@ -64,20 +70,26 @@ class FollowJointTrajectoryActionServer(Node):
                                 read_only=True))
         
         self.declare_parameter('rates.status.arm_state', 1.0,
-            ParameterDescriptor(description='Publish rate for arm status topic'),
+            ParameterDescriptor(description='Publish rate for arm status topic',
                                 type=ParameterType.PARAMETER_DOUBLE,
                                 floating_point_range=[FloatingPointRange(
                                     from_value=0.0, to_value=1000.0, step=0.0)],
-                                read_only=True)
+                                read_only=True))
+        
+        self.declare_parameter('publish_joint_states', False,
+            ParameterDescriptor(description='Whether or not to publish the joint states',
+                                type=ParameterType.PARAMETER_BOOL,
+                                read_only=True))
+        
+        self.declare_parameter('rates.status.joint_state', 1.0,
+            ParameterDescriptor(description='Publish rate for joint state topic',
+                                type=ParameterType.PARAMETER_DOUBLE,
+                                floating_point_range=[FloatingPointRange(
+                                    from_value=0.0, to_value=1000.0, step=0.0)],
+                                read_only=True))
 
-        # Authenticate robot, claim lease, and power on
-        # SpotManipulationDriver.authenticate_robot(self, argv)
-        # SpotManipulationDriver.init_clients(self)
-        # SpotManipulationDriver.forceClaim(self)
-        # SpotManipulationDriver.verify_power_and_estop(self)
-        # SpotManipulationDriver.stand_robot(self)
+        # --- Initialize action messages --- #
 
-        # Initialize action messages
         # Arm-related attributes
         self.arm_feedback = FollowJointTrajectory.Feedback()
         self.arm_result = FollowJointTrajectory.Result()
@@ -92,30 +104,56 @@ class FollowJointTrajectoryActionServer(Node):
         self.get_logger().info("Connecting manipulation driver")
         self.manipulation_driver = SpotManipulationDriver(self.get_logger(), self.get_parameter('hostname'))
         
+        publish_joint_states = self.get_parameter_or('publish_joint_states', False)
+
         self.get_logger().info("Setting arm state callbacks")
-        callbacks = {'arm_state': self.ArmStateCB}
-        rates = {'arm_state': self.get_parameter('rates.status.arm_state')}
+        callbacks = {
+            'arm_state'  : self.ArmStateCB,
+            'hand_image' : self.publishHandImages
+        }
+        rates = {
+            'arm_state'  : self.get_parameter('rates.status.arm_state'),
+            'hand_image' : self.get_parameter('rates.sensors.hand_image')   
+        }
+        if publish_joint_states:
+            callbacks['publish_joint_state'] = self.publishJointStates
+            rates['publish_joint_state'] = self.get_parameter_or('rates.status.joint_state', 1.0)
+
         if self.manipulation_driver.connect(lease_manager, rates, callbacks):
             self.get_logger().info(f"Connected to Spot {lease_manager.ID}")
         else:
             self.get_logger().fatal("Failed to launch Spot manipulation driver")
+            return False
 
         # Create a control group to prevent multiple callbacks from commanding motion simultaneously
-        motion_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
+        motion_callback_group  = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
+        gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup() 
 
         # Create data publishers and subscribers
-        self.force_torque_state_pub = self.create_publisher(WrenchStamped, "~/ee_force", 10)
-        self.ee_vel_sub = self.create_subscription(Twist, "/spacenav/twist", self.ee_vel_sub_callback, 10, callback_group=motion_callback_group)
+        self._hand_image_4k_pub              = self.create_publisher(Image           , "~/images/4k_gray"             , 10)
+        self._hand_image_4k_rgb_pub          = self.create_publisher(Image           , "~/images/4k_rgb"              , 10)
+        self._hand_image_depth_pub           = self.create_publisher(Image           , "~/images/depth"               , 10)
+        self._hand_image_depth_gray_pub      = self.create_publisher(Image           , "~/images/depth_grayscale"     , 10)
+        self._hand_image_4k_info_pub         = self.create_publisher(CameraInfo      , "~/camera_info/4k_rgb"         , 10)
+        self._hand_image_4k_rgb_info_pub     = self.create_publisher(CameraInfo      , "~/camera_info/4k_gray"        , 10)
+        self._hand_image_depth_info_pub      = self.create_publisher(CameraInfo      , "~/camera_info/depth"          , 10)
+        self._hand_image_depth_gray_info_pub = self.create_publisher(CameraInfo      , "~/camera_info/depth_grayscale", 10)
+        self._force_torque_state_pub         = self.create_publisher(ManipulatorState, "~/manipulator_state"          , 10)
+
+        if publish_joint_states:
+            self._joint_state_pub = self.create_publisher(JointState, "~/joint_state", 10)
+
+        self.ee_vel_sub    = self.create_subscription(Twist, "~/cmd_vel", self.ee_vel_sub_callback, 10, callback_group=motion_callback_group)
         self.ap_ee_vel_sub = self.create_subscription(TwistStamped, "/ee_twist_cmds", self.ap_ee_vel_sub_callback, 10,callback_group=motion_callback_group)
 
         # Create services for arm motions
-        srv_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
-        self.create_service(Trigger, "~/claim", self.claimCB)
-        self.create_service(Trigger, "~/power_on", self.powerOnCB)
-        self.create_service(Trigger, "~/unstow_arm", self.unstowServiceCB, callback_group=srv_group)
-        self.create_service(Trigger, "~/stow_arm", self.stowServiceCB, callback_group=srv_group)
-        self.create_service(Trigger, "~/close_gripper", self.gripperCloseServiceCB, callback_group=srv_group)
-        self.create_service(Trigger, "~/open_gripper", self.gripperOpenServiceCB, callback_group=srv_group)
+        self.create_service(Trigger, "~/claim"        , self.claimCB)
+        self.create_service(Trigger, "~/power_on"     , self.powerOnCB)
+        self.create_service(Trigger, "~/unstow_arm"   , self.unstowServiceCB, callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/stow_arm"     , self.stowServiceCB, callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/close_gripper", self.gripperCloseServiceCB, callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/open_gripper" , self.gripperOpenServiceCB, callback_group=gripper_callback_group)
+        self.create_service(GripperAngleMove, "~/set_gripper_angle", self.gripperAngleServiceCB, callback_group=gripper_callback_group)
 
         # Initialize action servers
         self.arm_action_server = ActionServer(
@@ -131,31 +169,29 @@ class FollowJointTrajectoryActionServer(Node):
             FollowJointTrajectory,
             "/finger_controller/follow_joint_trajectory",
             self.finger_goal_callback,
-            callback_group=motion_callback_group
+            callback_group=gripper_callback_group
         )
 
-    def arm_goal_callback(self, goal_handle):
+        return True
+
+    def arm_goal_callback(self, goal_handle: ServerGoalHandle):
         """Callback for the /spot_arm/arm_controller/follow_joint_trajectory action server """
 
-        self.get_logger().info(
-            "Executing goal for the /spot_arm/arm_controller/follow_joint_trajectory action server"
-        )
+        self.get_logger().info("Executing goal for the /spot_arm/arm_controller/follow_joint_trajectory action server")
 
         success = True
 
         # Translate message and execute trajectory while publishing feedback
-        traj_point_positions, traj_point_velocities, time_since_ref = SpotManipulationDriver.convert_ros_trajectory_msg(
-            self, goal_handle.request
-        )
+        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.JointTrajectoryToLists(goal_handle.request)
 
         self.arm_feedback_publish_flag = True
         arm_feedback_thread = threading.Thread(
-            target=self.arm_follow_joint_trajectory_feedback, args=(goal_handle,)
+            target=self.provideJointTrajectoryFeedback, args=(goal_handle,)
         )
         arm_feedback_thread.start()
 
-        SpotManipulationDriver.arm_long_trajectory_executor(
-            self, traj_point_positions, traj_point_velocities, time_since_ref
+        self.manipulation_driver.executeLongHorizonTrajectory(
+            traj_point_positions, traj_point_velocities, timepoints
         )
 
         self.arm_feedback_publish_flag = False
@@ -207,60 +243,43 @@ class FollowJointTrajectoryActionServer(Node):
             self.get_logger().info("Successfully executed finger trajectory")
         return self.finger_result
 
-    def arm_follow_joint_trajectory_feedback(self, goal_handle):
+    def provideJointTrajectoryFeedback(self, goal_handle: ServerGoalHandle):
         """Feedback for arm action server"""
+        rate = self.create_rate(frequency=2.0, clock=self.get_clock())
+
         # Publishes actual states of the joints
-
         while self.arm_feedback_publish_flag:
-            # Get joint states
-            joint_states_source = SpotManipulationDriver.get_joint_states(self)
-            self.finger_feedback.header.stamp = ROSTime(
-                sec=joint_states_source[0].seconds, nanosec=joint_states_source[0].nanos
-            )
-            self.arm_feedback.joint_names = joint_states_source[1]
-            self.arm_feedback.actual.positions = joint_states_source[2]
-            self.arm_feedback.actual.velocities = joint_states_source[3]
-
-            # Publish and sleep
+            self.arm_feedback = ros_helpers.getJointStateFeedback(self.manipulation_driver)
             goal_handle.publish_feedback(self.arm_feedback)
-            time.sleep(0.5)  # TODO: Replace this sleep with ros2 compatible sleep
+            # TODO: Remove logging statements once we know this works
+            self.get_logger().info("Joint feedback thread sleeping")
+            rate.sleep()
+            self.get_logger().info("Joint feedback thread done sleeping")
 
-    def finger_follow_joint_trajectory_feedback(self, goal_handle):
+    def finger_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for finger action server"""
         # Publishes actual states of the joints
 
         while self.finger_feedback_publish_flag:
             # Get joint states
-            joint_states_source = SpotManipulationDriver.get_joint_states(self)
-            self.finger_feedback.header.stamp = ROSTime(
-                sec=joint_states_source[0].seconds, nanosec=joint_states_source[0].nanos
-            )
-            self.finger_feedback.joint_names = joint_states_source[1]
-            self.finger_feedback.actual.positions = joint_states_source[2]
-            self.finger_feedback.actual.velocities = joint_states_source[3]
+            self.finger_feedback = ros_helpers.getJointStateFeedback(self.manipulation_driver)
 
             # Publish and sleep
             goal_handle.publish_feedback(self.finger_feedback)
             time.sleep(0.5)  # TODO: Replace this sleep with ros2 compatible sleep
 
-    def ee_vel_sub_callback(self, msg):
+    def ee_vel_sub_callback(self, msg: Twist):
         """Callback for end effector velocity command subscriber"""
-        SpotManipulationDriver.ee_velocity_msg_executor(self, msg)
+        self.manipulation_driver.ee_velocity_msg_executor(self, msg)
 
-    def ap_ee_vel_sub_callback(self, msg):
+    def ap_ee_vel_sub_callback(self, msg: TwistStamped):
         """Callback for Affordance Primitive end effector velocity command subscriber"""
-        twist_msg = msg.twist
-        SpotManipulationDriver.ee_velocity_msg_executor(self, twist_msg)
+        self.ee_vel_sub_callback(msg.twist)
 
     def ArmStateCB(self):
-        ee_force = self.manipulation_driver.arm_state
-        arm_wrench = WrenchStamped()
-        arm_wrench.header.stamp = self.get_clock().now()
-        arm_wrench.header.frame_id = "arm0_hand"
-        arm_wrench.wrench.force.x = ee_force.estimated_end_effector_force_in_hand.x
-        arm_wrench.wrench.force.y = ee_force.estimated_end_effector_force_in_hand.y
-        arm_wrench.wrench.force.z = ee_force.estimated_end_effector_force_in_hand.z
-        self.force_torque_state_pub.publish(arm_wrench)
+        state = self.manipulation_driver.arm_state
+        state_msg = ros_helpers.ManipulatorStatesToMsg(state, self.manipulation_driver)
+        self._force_torque_state_pub.publish(state_msg)
 
     def claimCB(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.claim()
@@ -297,6 +316,38 @@ class FollowJointTrajectoryActionServer(Node):
         resp.success = success
         resp.message = msg
         return resp
+    
+    def gripperAngleServiceCB(self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response):
+        (success, msg) = self.manipulation_driver.open_gripper_to_angle(req.gripper_angle)
+        resp.success = success
+        resp.message = msg
+        return resp
+    
+    def publishHandImages(self):
+        for image in self.manipulation_driver.latest_hand_images:
+            if image.source_name == "hand_image":
+                pub_img  = self._hand_image_4k_pub
+                pub_info = self._hand_image_4k_info_pub
+            elif image.source.name == "hand_depth":
+                pub_img  = self._hand_image_depth_pub
+                pub_info = self._hand_image_depth_info_pub
+            elif image.source.name == "hand_color_image":
+                pub_img  = self._hand_image_4k_rgb_pub
+                pub_info = self._hand_image_4k_rgb_info_pub
+            elif image.source.name == "hand_depth_in_hand_color_frame":
+                pub_img  = self._hand_image_depth_gray_pub
+                pub_info = self._hand_image_depth_gray_info_pub
+
+            if pub_img.get_subscription_count() > 0:
+                img_msg, info_msg, _ = getImageMsg(image, self.manipulation_driver.lease_manager)
+                pub_img.publish(img_msg)
+                pub_info.publish(info_msg)
+
+    def publishJointStates(self):
+        state = self.manipulation_driver.robot_state
+        joint_states = JointStatesToMsg(state.KinematicState, self.manipulation_driver.lease_manager)
+        self._joint_state_pub.publish(joint_states)
+
 
 
 # class JointStatePublisher(Node):
