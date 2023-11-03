@@ -164,7 +164,7 @@ class SpotArmNode(Node):
             self,
             FollowJointTrajectory,
             "/arm_controller/follow_joint_trajectory",
-            self.armGoalCB,
+            self.arm_goal_callback,
             callback_group=motion_callback_group
         )
 
@@ -172,13 +172,13 @@ class SpotArmNode(Node):
             self,
             FollowJointTrajectory,
             "/finger_controller/follow_joint_trajectory",
-            self.fingerGoalCB,
+            self.finger_goal_callback,
             callback_group=gripper_callback_group
         )
 
         return True
 
-    def armGoalCB(self, goal_handle: ServerGoalHandle):
+    def arm_goal_callback(self, goal_handle: ServerGoalHandle):
         """Callback for the /spot_arm/arm_controller/follow_joint_trajectory action server """
 
         self.get_logger().info("Executing goal for the /spot_arm/arm_controller/follow_joint_trajectory action server")
@@ -190,11 +190,11 @@ class SpotArmNode(Node):
 
         self.arm_feedback_publish_flag = True
         arm_feedback_thread = threading.Thread(
-            target=self.provideJointTrajectoryFeedback, args=(goal_handle,)
+            target=self.arm_follow_joint_trajectory_feedback, args=(goal_handle,)
         )
         arm_feedback_thread.start()
 
-        self.manipulation_driver.executeLongHorizonTrajectory(
+        self.manipulation_driver.arm_long_trajectory_executor(
             traj_point_positions, traj_point_velocities, timepoints
         )
 
@@ -206,7 +206,7 @@ class SpotArmNode(Node):
             self.get_logger().info("Successfully executed arm trajectory")
         return self.arm_result
 
-    def fingerGoalCB(self, goal_handle):
+    def finger_goal_callback(self, goal_handle):
         """Callback for the /spot_arm/finger_controller/follow_joint_trajectory action server """
 
         self.get_logger().info(
@@ -247,7 +247,7 @@ class SpotArmNode(Node):
             self.get_logger().info("Successfully executed finger trajectory")
         return self.finger_result
 
-    def provideJointTrajectoryFeedback(self, goal_handle: ServerGoalHandle):
+    def arm_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for arm action server"""
         rate = self.create_rate(frequency=2.0, clock=self.get_clock())
 

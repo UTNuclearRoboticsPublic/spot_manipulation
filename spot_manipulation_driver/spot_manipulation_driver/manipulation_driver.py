@@ -151,7 +151,7 @@ class SpotManipulationDriver(object):
         self.verify_estop()
 
     # Execute long trajectories
-    def executeLongHorizonTrajectory(
+    def arm_long_trajectory_executor(
         self, traj_point_positions, traj_point_velocities, timepoints
     ):
 
@@ -211,10 +211,10 @@ class SpotManipulationDriver(object):
             if traj_index[0] > 9:
                 time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
 
-            cmd_id = self.command_client.robot_command(robot_cmd)
+            cmd_id = self._lease_manager.robot_command(robot_cmd)
 
             time_index = time.time()
-            feedback_resp = self.command_client.robot_command_feedback(cmd_id)
+            feedback_resp = self._lease_manager.robot_command_feedback(cmd_id)
             joint_move_feedback = (
                 feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_joint_move_feedback
             )
@@ -235,7 +235,7 @@ class SpotManipulationDriver(object):
         end_index = len(traj_point_positions) - 1
         position = traj_point_positions[end_index]
         robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(position)
-        self.command_client.robot_command(robot_cmd)
+        self._lease_manager.robot_command(robot_cmd)
         time.sleep(time_since_ref[end_index])
 
     def gripper_trajectory_executor_with_time_control(
@@ -252,7 +252,7 @@ class SpotManipulationDriver(object):
             traj_point_positions[0]
         )
 
-        self.command_client.robot_command(robot_cmd)
+        self._lease_manager.robot_command(robot_cmd)
         time.sleep(1.0)
 
         traj_index = 1
@@ -265,7 +265,7 @@ class SpotManipulationDriver(object):
             positions = traj_point_positions[traj_index]
 
             robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(positions)
-            self.command_client.robot_command(robot_cmd)
+            self._lease_manager.robot_command(robot_cmd)
 
             time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
             traj_index = traj_index + 1
@@ -287,7 +287,7 @@ class SpotManipulationDriver(object):
 
     # def stand_robot(self):
     #     self._lease_manager.robot.logger.info("Commanding robot to stand...")
-    #     blocking_stand(self.command_client, timeout_sec=10)
+    #     blocking_stand(self._lease_manager, timeout_sec=10)
     #     self._lease_manager.robot.logger.info("Robot standing.")
 
     def stow_arm(self) -> Tuple[bool, Text]:
