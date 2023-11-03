@@ -145,10 +145,10 @@ class SpotManipulationDriver(object):
     # Verify that an e-stop exists: function borrowed from arm_joint_long_trajectory example
     def verify_power_and_estop(self):
         if not self._lease_manager.robot.is_powered_on():
-            self._lease_manager.robot.logger.info("Robot is not powered on. Attempting to power on.")
+            self._lease_manager.logger.info("Robot is not powered on. Attempting to power on.")
             self._lease_manager.robot.power_on(timeout_sec=20)
             assert self._lease_manager.robot.is_powered_on(), "Robot power on failed."
-            self._lease_manager.robot.logger.info("Robot powered on.")
+            self._lease_manager.logger.info("Robot powered on.")
         else:
             self._lease_manager.robot.logger.info("Verified that robot is powered on.")
 
@@ -311,12 +311,12 @@ class SpotManipulationDriver(object):
         return success, msg
     
     def open_gripper(self) -> Tuple[bool, Text]:
-        robot_cmd = RobotCommandBuilder.claw_gripper_close_command()
+        robot_cmd = RobotCommandBuilder.claw_gripper_open_command()
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
     
     def close_gripper(self) -> Tuple[bool, Text]:
-        robot_cmd = RobotCommandBuilder.claw_gripper_open_command()
+        robot_cmd = RobotCommandBuilder.claw_gripper_close_command()
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
     
@@ -348,8 +348,6 @@ class SpotManipulationDriver(object):
         try:
             self.stow_arm()
             self._lease_manager.disconnect(id(self))
-            # self.releaseLease()
-            # self.releaseEStop()
         except Exception as err:
             return False, Text(err)
 
