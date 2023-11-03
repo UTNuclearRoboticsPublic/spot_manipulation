@@ -69,7 +69,7 @@ class SpotManipulationDriver(object):
         self._lease_manager = lease_manager
         if not self._lease_manager.is_connected:
             self._lease_manager.setLogger(self._logger)
-            if not self._lease_manager.connect(self._hostname):
+            if not self._lease_manager.connect(self._hostname, rates, callbacks):
                 return False
         
         # Verify that the robot has an arm
@@ -132,8 +132,8 @@ class SpotManipulationDriver(object):
         status = self._lease_manager.eStopStatus()
         if status.stop_level != estop_pb2.ESTOP_LEVEL_NONE:
             error_message = (
-               f"Robot is estopped with message {status.stop_level_details}. Please use an 
-                 external E-Stop client, such as the estop SDK example, to configure E-Stop."
+               f"Robot is estopped with message {status.stop_level_details}. Please use an "
+                "external E-Stop client, such as the estop SDK example, to configure E-Stop."
             )
             self._lease_manager.robot.logger.error(error_message)
             raise Exception(error_message)

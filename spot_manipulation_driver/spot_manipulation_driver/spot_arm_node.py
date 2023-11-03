@@ -53,7 +53,7 @@ from spot_msgs.msg import ManipulatorState
 from spot_msgs.srv import GripperAngleMove
 
 
-class FollowJointTrajectoryActionServer(Node):
+class SpotArmNode(Node):
     def __init__(self):
 
         Node.__init__(self, "follow_joint_trajectory_node")
@@ -84,6 +84,13 @@ class FollowJointTrajectoryActionServer(Node):
                                 floating_point_range=[FloatingPointRange(
                                     from_value=0.0, to_value=1000.0, step=0.0)],
                                 read_only=True))
+        
+        self.declare_parameter('rates.sensors.hand_image', 1.0,
+            ParameterDescriptor(description='Publish rate for hand images',
+                                type=ParameterType.PARAMETER_DOUBLE,
+                                floating_point_range=[FloatingPointRange(
+                                    from_value=0.0, to_value=1000.0, step=0.0)],
+                                read_only=True))
 
         # --- Initialize action messages --- #
 
@@ -99,9 +106,9 @@ class FollowJointTrajectoryActionServer(Node):
 
     def connect(self, lease_manager: SpotLeaseManager) -> bool:
         self.get_logger().info("Connecting manipulation driver")
-        self.manipulation_driver = SpotManipulationDriver(self.get_logger(), self.get_parameter('hostname'))
+        self.manipulation_driver = SpotManipulationDriver(self.get_logger(), self.get_parameter('hostname').value)
         
-        publish_joint_states = self.get_parameter_or('publish_joint_states', False)
+        publish_joint_states = self.get_parameter('publish_joint_states').value
 
         self.get_logger().info("Setting arm state callbacks")
         callbacks = {
@@ -109,12 +116,12 @@ class FollowJointTrajectoryActionServer(Node):
             'hand_image' : self.publishHandImages
         }
         rates = {
-            'arm_state'  : self.get_parameter_or('rates.status.arm_state', 1.0),
-            'hand_image' : self.get_parameter_or('rates.sensors.hand_image', 1.0)   
+            'arm_state'  : self.get_parameter('rates.status.arm_state').value,
+            'hand_image' : self.get_parameter('rates.sensors.hand_image').value
         }
         if publish_joint_states:
             callbacks['publish_joint_state'] = self.publishJointStates
-            rates['publish_joint_state'] = self.get_parameter_or('rates.status.joint_state', 1.0)
+            rates['publish_joint_state'] = self.get_parameter('rates.status.joint_state').value
 
         if self.manipulation_driver.connect(lease_manager, rates, callbacks):
             self.get_logger().info(f"Connected to Spot {lease_manager.ID}")

@@ -47,8 +47,8 @@ def JointTrajectoryToLists(msg: JointTrajectory):
 def TwistToVelRequest(
         driver: SpotManipulationDriver, 
         msg: Twist, 
-        linear_lims: list(float),
-        angular_lims: list(float),
+        linear_lims: "list[float]",
+        angular_lims: "list[float]",
         robot_frame = "body") -> arm_command_pb2.ArmVelocityCommand.Request:
 
     # Enforce velocity limits
