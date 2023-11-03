@@ -1,4 +1,5 @@
 import numpy as np
+import rclpy.time
 from bosdyn.api import geometry_pb2, arm_command_pb2, robot_state_pb2
 from geometry_msgs.msg import Twist
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -117,7 +118,7 @@ def ManipulatorStatesToMsg(manipulator_state: robot_state_pb2.ManipulatorState,
     manipulator_state_msg.gripper_open_percentage = manipulator_state.gripper_open_percentage
     manipulator_state_msg.is_gripper_holding_item = manipulator_state.is_gripper_holding_item
     manipulator_state_msg.estimated_end_effector_force_in_hand.header.frame_id = "arm0_hand"
-    manipulator_state_msg.estimated_end_effector_force_in_hand.header.stamp = driver._lease_manager.robotToLocalTime(driver.robot_time)
+    manipulator_state_msg.estimated_end_effector_force_in_hand.header.stamp = rclpy.time.Time(nanoseconds=driver.robot_time*1e9).to_msg()
     manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force.x = manipulator_state.estimated_end_effector_force_in_hand.x
     manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force.y = manipulator_state.estimated_end_effector_force_in_hand.y
     manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force.z = manipulator_state.estimated_end_effector_force_in_hand.z

@@ -124,7 +124,7 @@ class SpotArmNode(Node):
             rates['publish_joint_state'] = self.get_parameter('rates.status.joint_state').value
 
         if self.manipulation_driver.connect(lease_manager, rates, callbacks):
-            self.get_logger().info(f"Connected to Spot {lease_manager.ID}")
+            self.get_logger().info(f"Connected to Spot {lease_manager.ID.nickname}")
         else:
             self.get_logger().fatal("Failed to launch Spot manipulation driver")
             return False
@@ -134,15 +134,15 @@ class SpotArmNode(Node):
         gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup() 
 
         # Create data publishers and subscribers
-        self._hand_image_4k_pub              = self.create_publisher(Image           , "~/images/4k_gray"             , 10)
-        self._hand_image_4k_rgb_pub          = self.create_publisher(Image           , "~/images/4k_rgb"              , 10)
-        self._hand_image_depth_pub           = self.create_publisher(Image           , "~/images/depth"               , 10)
-        self._hand_image_depth_gray_pub      = self.create_publisher(Image           , "~/images/depth_grayscale"     , 10)
-        self._hand_image_4k_info_pub         = self.create_publisher(CameraInfo      , "~/camera_info/4k_rgb"         , 10)
-        self._hand_image_4k_rgb_info_pub     = self.create_publisher(CameraInfo      , "~/camera_info/4k_gray"        , 10)
-        self._hand_image_depth_info_pub      = self.create_publisher(CameraInfo      , "~/camera_info/depth"          , 10)
-        self._hand_image_depth_gray_info_pub = self.create_publisher(CameraInfo      , "~/camera_info/depth_grayscale", 10)
-        self._manipulator_state_pub          = self.create_publisher(ManipulatorState, "~/manipulator_state"          , 10)
+        self._hand_image_pub             = self.create_publisher(Image           , "~/images/depth_gray"     , 10)
+        self._hand_depth_map_pub         = self.create_publisher(Image           , "~/images/depth_map"      , 10)
+        self._hand_4k_image_pub          = self.create_publisher(Image           , "~/images/rgb_4k"         , 10)
+        self._hand_4k_depth_map_pub      = self.create_publisher(Image           , "~/images/depth_4k"       , 10)
+        self._hand_image_info_pub        = self.create_publisher(CameraInfo      , "~/camera_info/depth_gray", 10)
+        self._hand_depth_map_info_pub    = self.create_publisher(CameraInfo      , "~/camera_info/depth_map" , 10)
+        self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/camera_info/rgb_4k"    , 10)
+        self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/camera_info/depth_4k"  , 10)
+        self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"     , 10)
 
         if publish_joint_states:
             self._joint_state_pub = self.create_publisher(JointState, "~/joint_state", 10)
@@ -157,6 +157,7 @@ class SpotArmNode(Node):
         self.create_service(Trigger, "~/stow_arm"     , self.stowServiceCB, callback_group=motion_callback_group)
         self.create_service(Trigger, "~/close_gripper", self.gripperCloseServiceCB, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/open_gripper" , self.gripperOpenServiceCB, callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/stand"        , self.standServiceCB, callback_group=gripper_callback_group)
         self.create_service(GripperAngleMove, "~/set_gripper_angle", self.gripperAngleServiceCB, callback_group=gripper_callback_group)
 
         # Initialize action servers
@@ -175,6 +176,10 @@ class SpotArmNode(Node):
             self.finger_goal_callback,
             callback_group=gripper_callback_group
         )
+
+        # Create timers to update the async tasks for publishing
+        self.create_timer(1.0/rates['hand_image'], lambda: self.manipulation_driver._hand_image_task.update())
+        self.create_timer(1.0/rates['arm_state'],  lambda: self.manipulation_driver._robot_state_task.update())
 
         return True
 
@@ -281,8 +286,9 @@ class SpotArmNode(Node):
         """Callback for Affordance Primitive end effector velocity command subscriber"""
         self.ee_vel_sub_callback(msg.twist)
 
-    def ArmStateCB(self):
+    def ArmStateCB(self, _):
         state = self.manipulation_driver.arm_state
+        if state is None: return
         state_msg = ros_helpers.ManipulatorStatesToMsg(state, self.manipulation_driver)
         self._manipulator_state_pub.publish(state_msg)
 
@@ -322,26 +328,35 @@ class SpotArmNode(Node):
         resp.message = msg
         return resp
     
+    def standServiceCB(self, _, resp: Trigger.Response) -> Trigger.Response:
+        (success, msg) = self.manipulation_driver.stand_robot()
+        resp.success = success
+        resp.message = msg
+        return resp
+    
     def gripperAngleServiceCB(self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response):
         (success, msg) = self.manipulation_driver.open_gripper_to_angle(req.gripper_angle)
         resp.success = success
         resp.message = msg
         return resp
     
-    def publishHandImages(self):
-        for image in self.manipulation_driver.latest_hand_images:
-            if image.source_name == "hand_image":
-                pub_img  = self._hand_image_4k_pub
-                pub_info = self._hand_image_4k_info_pub
+    def publishHandImages(self, _):
+        images = self.manipulation_driver.latest_hand_images
+        if images is None: return
+
+        for image in images:
+            if image.source.name == "hand_image":
+                pub_img  = self._hand_image_pub
+                pub_info = self._hand_image_info_pub
             elif image.source.name == "hand_depth":
-                pub_img  = self._hand_image_depth_pub
-                pub_info = self._hand_image_depth_info_pub
+                pub_img  = self._hand_depth_map_pub
+                pub_info = self._hand_depth_map_info_pub
             elif image.source.name == "hand_color_image":
-                pub_img  = self._hand_image_4k_rgb_pub
-                pub_info = self._hand_image_4k_rgb_info_pub
+                pub_img  = self._hand_4k_image_pub
+                pub_info = self._hand_4k_image_info_pub
             elif image.source.name == "hand_depth_in_hand_color_frame":
-                pub_img  = self._hand_image_depth_gray_pub
-                pub_info = self._hand_image_depth_gray_info_pub
+                pub_img  = self._hand_4k_depth_map_pub
+                pub_info = self._hand_4k_depth_map_info_pub
 
             if pub_img.get_subscription_count() > 0:
                 img_msg, info_msg, _ = getImageMsg(image, self.manipulation_driver.lease_manager)

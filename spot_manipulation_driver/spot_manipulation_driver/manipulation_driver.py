@@ -37,7 +37,7 @@ from google.protobuf import duration_pb2
 from bosdyn.api import (estop_pb2, image_pb2, robot_command_pb2,
                         synchronized_command_pb2, arm_command_pb2, robot_state_pb2)
 from bosdyn.client.image import ImageClient, build_image_request
-from bosdyn.client.robot_command import (RobotCommandBuilder)
+from bosdyn.client.robot_command import RobotCommandBuilder, blocking_stand, TimedOutError, CommandFailedErrorWithFeedback
 from bosdyn.util import seconds_to_timestamp
 
 from spot_driver.spot_lease_manager import SpotLeaseManager
@@ -91,6 +91,7 @@ class SpotManipulationDriver(object):
             return False
         
         # Create asynchronous tasks whose state can be queried
+        self._logger.info(f"Image callback: Rate is {rates.get('hand_image', 1.0)} and callback is {callbacks.get('hand_image', 'Nope')}")
         self._hand_image_task = AsyncImageService(self._image_client, self._logger, rates.get("hand_image", 1.0), callbacks.get("hand_image", lambda:None), hand_image_requests)
         self._robot_state_task = AsyncRobotState(self._lease_manager._robot_state_client, self._logger, rates.get("arm_state", 1.0), callbacks.get("arm_state", lambda:None))
         self._is_connected = True
@@ -102,15 +103,18 @@ class SpotManipulationDriver(object):
 
     @property
     def kinematic_state(self) -> robot_state_pb2.KinematicState:
+        if self._robot_state_task.proto is None: return None
         return self._robot_state_task.proto.kinematic_state
 
     @property
     def arm_state(self) -> robot_state_pb2.ManipulatorState:
+        if self._robot_state_task.proto is None: return None
         return self._robot_state_task.proto.manipulator_state
 
     @property
     def hand_force(self):
         state = self.arm_state
+        if state is None: return None
         ee_force = state.manipulator_state.estimated_end_effector_force_in_hand
         return ee_force.x, ee_force.y, ee_force.z
     
@@ -285,10 +289,15 @@ class SpotManipulationDriver(object):
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
 
-    # def stand_robot(self):
-    #     self._lease_manager.robot.logger.info("Commanding robot to stand...")
-    #     blocking_stand(self._lease_manager, timeout_sec=10)
-    #     self._lease_manager.robot.logger.info("Robot standing.")
+    def stand_robot(self) -> Tuple[bool, Text]:
+        self._lease_manager.robot.logger.info("Commanding robot to stand...")
+        try:
+            blocking_stand(self._lease_manager.command_client, timeout_sec=10)
+        except CommandFailedErrorWithFeedback as error:
+            return False, error.message
+        except TimedOutError as error:
+            return False, error.error_message
+        return True, 'Robot standing'
 
     def stow_arm(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.arm_stow_command()
