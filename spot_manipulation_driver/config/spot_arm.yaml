@@ -1,0 +1,10 @@
+/spot_manipulation_driver:
+  ros__parameters:
+    rates:
+      sensors:
+        hand_image: 10.0
+      status:
+        arm_state: 5.0
+        joint_state: 20.0
+
+    publish_joint_states: false
