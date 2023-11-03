@@ -30,30 +30,15 @@
 #          data of any kind.
 ##############################################################################
 
-import argparse
 import time
 from typing import Text, Tuple
 
-import bosdyn.client
-import bosdyn.client.util
-import numpy as np
-import yaml
 from google.protobuf import duration_pb2
-from bosdyn.api import (estop_pb2, image_pb2, geometry_pb2, robot_command_pb2,
+from bosdyn.api import (estop_pb2, image_pb2, robot_command_pb2,
                         synchronized_command_pb2, arm_command_pb2, robot_state_pb2)
-from bosdyn.client import ResponseError, RpcError
-from bosdyn.client.estop import EstopClient, EstopEndpoint, EstopKeepAlive
 from bosdyn.client.image import ImageClient, build_image_request
-from bosdyn.client.lease import (InvalidResourceError, LeaseKeepAlive,
-                                 NotAuthoritativeServiceError,
-                                 ResourceAlreadyClaimedError)
-from bosdyn.client.robot_command import (RobotCommandBuilder,
-                                         RobotCommandClient,
-                                         block_until_arm_arrives,
-                                         blocking_stand)
-from bosdyn.client.robot_state import RobotStateClient
+from bosdyn.client.robot_command import (RobotCommandBuilder)
 from bosdyn.util import seconds_to_timestamp
-from google.protobuf.timestamp_pb2 import Timestamp
 
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState

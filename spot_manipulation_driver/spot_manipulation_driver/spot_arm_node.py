@@ -29,25 +29,22 @@
 #          defects in software and/or documentation, or loss or inaccuracy of
 #          data of any kind.
 ##############################################################################
-import sys
+
 import threading
 import time
 
 import rclpy
 import rclpy.callback_groups
 from rclpy.action.server import ServerGoalHandle
-from builtin_interfaces.msg import Time as ROSTime
 from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist, TwistStamped, WrenchStamped
+from geometry_msgs.msg import Twist, TwistStamped
 from rclpy.action import ActionServer
-from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType, FloatingPointRange
 from sensor_msgs.msg import JointState, Image, CameraInfo
 from std_srvs.srv import Trigger
 
 from spot_driver.spot_lease_manager import SpotLeaseManager
-from spot_driver.spot_ros import CameraPubs
 from spot_manipulation_driver.manipulation_driver import \
     SpotManipulationDriver
 import spot_manipulation_driver.ros_helpers as ros_helpers
