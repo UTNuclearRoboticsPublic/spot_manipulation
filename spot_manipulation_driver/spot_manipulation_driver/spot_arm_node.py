@@ -54,7 +54,7 @@ from spot_msgs.srv import GripperAngleMove
 
 
 class FollowJointTrajectoryActionServer(Node):
-    def __init__(self, argv):
+    def __init__(self):
 
         Node.__init__(self, "follow_joint_trajectory_node")
 
@@ -109,8 +109,8 @@ class FollowJointTrajectoryActionServer(Node):
             'hand_image' : self.publishHandImages
         }
         rates = {
-            'arm_state'  : self.get_parameter('rates.status.arm_state'),
-            'hand_image' : self.get_parameter('rates.sensors.hand_image')   
+            'arm_state'  : self.get_parameter_or('rates.status.arm_state', 1.0),
+            'hand_image' : self.get_parameter_or('rates.sensors.hand_image', 1.0)   
         }
         if publish_joint_states:
             callbacks['publish_joint_state'] = self.publishJointStates
@@ -135,7 +135,7 @@ class FollowJointTrajectoryActionServer(Node):
         self._hand_image_4k_rgb_info_pub     = self.create_publisher(CameraInfo      , "~/camera_info/4k_gray"        , 10)
         self._hand_image_depth_info_pub      = self.create_publisher(CameraInfo      , "~/camera_info/depth"          , 10)
         self._hand_image_depth_gray_info_pub = self.create_publisher(CameraInfo      , "~/camera_info/depth_grayscale", 10)
-        self._force_torque_state_pub         = self.create_publisher(ManipulatorState, "~/manipulator_state"          , 10)
+        self._manipulator_state_pub          = self.create_publisher(ManipulatorState, "~/manipulator_state"          , 10)
 
         if publish_joint_states:
             self._joint_state_pub = self.create_publisher(JointState, "~/joint_state", 10)
@@ -157,7 +157,7 @@ class FollowJointTrajectoryActionServer(Node):
             self,
             FollowJointTrajectory,
             "/arm_controller/follow_joint_trajectory",
-            self.arm_goal_callback,
+            self.armGoalCB,
             callback_group=motion_callback_group
         )
 
@@ -165,13 +165,13 @@ class FollowJointTrajectoryActionServer(Node):
             self,
             FollowJointTrajectory,
             "/finger_controller/follow_joint_trajectory",
-            self.finger_goal_callback,
+            self.fingerGoalCB,
             callback_group=gripper_callback_group
         )
 
         return True
 
-    def arm_goal_callback(self, goal_handle: ServerGoalHandle):
+    def armGoalCB(self, goal_handle: ServerGoalHandle):
         """Callback for the /spot_arm/arm_controller/follow_joint_trajectory action server """
 
         self.get_logger().info("Executing goal for the /spot_arm/arm_controller/follow_joint_trajectory action server")
@@ -199,7 +199,7 @@ class FollowJointTrajectoryActionServer(Node):
             self.get_logger().info("Successfully executed arm trajectory")
         return self.arm_result
 
-    def finger_goal_callback(self, goal_handle):
+    def fingerGoalCB(self, goal_handle):
         """Callback for the /spot_arm/finger_controller/follow_joint_trajectory action server """
 
         self.get_logger().info(
@@ -267,7 +267,8 @@ class FollowJointTrajectoryActionServer(Node):
 
     def ee_vel_sub_callback(self, msg: Twist):
         """Callback for end effector velocity command subscriber"""
-        self.manipulation_driver.ee_velocity_msg_executor(self, msg)
+        arm_vel_request = ros_helpers.TwistToVelRequest(msg)
+        self.manipulation_driver.ee_velocity_msg_executor(self, arm_vel_request)
 
     def ap_ee_vel_sub_callback(self, msg: TwistStamped):
         """Callback for Affordance Primitive end effector velocity command subscriber"""
@@ -276,7 +277,7 @@ class FollowJointTrajectoryActionServer(Node):
     def ArmStateCB(self):
         state = self.manipulation_driver.arm_state
         state_msg = ros_helpers.ManipulatorStatesToMsg(state, self.manipulation_driver)
-        self._force_torque_state_pub.publish(state_msg)
+        self._manipulator_state_pub.publish(state_msg)
 
     def claimCB(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.claim()
@@ -344,88 +345,3 @@ class FollowJointTrajectoryActionServer(Node):
         state = self.manipulation_driver.robot_state
         joint_states = JointStatesToMsg(state.KinematicState, self.manipulation_driver.lease_manager)
         self._joint_state_pub.publish(joint_states)
-
-
-
-# class JointStatePublisher(Node):
-#     """Node to publish joint states"""
-
-#     def __init__(self, follow_joint_trajectory_action_server):
-#         super().__init__("joint_state_publisher_node")
-
-#         # Initialize the action server node object and joint states publisher
-#         self.follow_joint_trajectory_action_server = (
-#             follow_joint_trajectory_action_server
-#         )
-#         self.joint_states_pub = self.create_publisher(
-#             # JointState, "/spot_arm/joint_states", 10
-#             JointState,
-#             "/joint_states",
-#             10,
-#         )
-#         self.force_torque_state_pub = self.create_publisher(
-#             WrenchStamped,
-#             "/ee_force",
-#             10,
-#         )
-#         timer_period = 0.25
-#         self.timer = self.create_timer(timer_period, self.publish_joint_states)
-
-#     def publish_joint_states(self):
-#         """Method to constantly publish joint states"""
-#         joint_states = JointState()
-#         force_torque_state = WrenchStamped()
-
-#         # Get joint states and force-torque data
-#         joint_states_source = (
-#             self.follow_joint_trajectory_action_server.get_joint_states()
-#         )
-
-#         force_torque_state_source = self.follow_joint_trajectory_action_server.get_force_torque_state()
-#         joint_states.header.stamp = ROSTime(
-#             sec=joint_states_source[0].seconds, nanosec=joint_states_source[0].nanos
-#         )
-#         joint_states.name = joint_states_source[1]
-#         joint_states.position = joint_states_source[2]
-#         joint_states.velocity = joint_states_source[3]
-#         joint_states.effort = joint_states_source[4]
-
-#         force_torque_state.force.x = force_torque_state_source[0]
-#         force_torque_state.force.y = force_torque_state_source[1]
-#         force_torque_state.force.z = force_torque_state_source[2]
-
-#         # Publish joint states and force-torque data
-#         self.joint_states_pub.publish(joint_states)
-#         self.force_torque_state_pub.publish(force_torque_state)
-
-
-
-# def main():
-
-#     argv = rclpy.utilities.remove_ros_args(args=sys.argv)[1:]
-
-#     rclpy.init(args=argv)
-#     try:
-#         follow_joint_trajectory_action_server = FollowJointTrajectoryActionServer(argv)
-#         # joint_states_publisher = JointStatePublisher(
-#         #     follow_joint_trajectory_action_server
-#         # )
-#         executor = MultiThreadedExecutor(num_threads=4)
-#         executor.add_node(follow_joint_trajectory_action_server)
-#         # executor.add_node(joint_states_publisher)
-
-#         try:
-#             # Spin the two nodes in separate threads
-#             executor.spin()
-#         finally:
-#             executor.shutdown()
-#             follow_joint_trajectory_action_server.disconnect()
-#             follow_joint_trajectory_action_server.destroy_node()
-#             # joint_states_publisher.destroy_node()
-#     finally:
-#         rclpy.shutdown()
-
-
-# if __name__ == "__main__":
-#     if not main():
-#         sys.exit(1)
