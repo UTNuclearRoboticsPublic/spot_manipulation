@@ -152,6 +152,7 @@ class SpotArmNode(Node):
 
         # Create services for arm motions
         self.create_service(Trigger, "~/claim"        , self.claimCB)
+        self.create_service(Trigger, "~/release"      , self.releaseCB)
         self.create_service(Trigger, "~/power_on"     , self.powerOnCB)
         self.create_service(Trigger, "~/unstow_arm"   , self.unstowServiceCB, callback_group=motion_callback_group)
         self.create_service(Trigger, "~/stow_arm"     , self.stowServiceCB, callback_group=motion_callback_group)
@@ -178,8 +179,8 @@ class SpotArmNode(Node):
         )
 
         # Create timers to update the async tasks for publishing
-        self.create_timer(1.0/rates['hand_image'], lambda: self.manipulation_driver._hand_image_task.update())
-        self.create_timer(1.0/rates['arm_state'],  lambda: self.manipulation_driver._robot_state_task.update())
+        self.create_timer(0.5/rates['hand_image'], lambda: self.manipulation_driver._hand_image_task.update())
+        self.create_timer(0.5/rates['arm_state'],  lambda: self.manipulation_driver._robot_state_task.update())
 
         return True
 
@@ -298,8 +299,15 @@ class SpotArmNode(Node):
         resp.message = msg
         return resp
     
+    def releaseCB(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+        (success, msg) = self.manipulation_driver.release()
+        resp.success = success
+        resp.message = msg
+        return resp
+    
     def powerOnCB(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
-        (success, msg) = self.manipulation_driver.verify_power_and_estop()
+        self.get_logger().info("Powering on...")
+        (success, msg) = self.manipulation_driver.lease_manager.power_on()
         resp.success = success
         resp.message = msg
         return resp
