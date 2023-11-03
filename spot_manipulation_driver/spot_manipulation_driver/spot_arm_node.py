@@ -48,7 +48,7 @@ from std_srvs.srv import Trigger
 
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_driver.spot_ros import CameraPubs
-from spot_manipulation_driver.manipulation_driver_util import \
+from spot_manipulation_driver.manipulation_driver import \
     SpotManipulationDriver
 import spot_manipulation_driver.ros_helpers as ros_helpers
 from spot_driver.ros_helpers import getImageMsg, JointStatesToMsg
