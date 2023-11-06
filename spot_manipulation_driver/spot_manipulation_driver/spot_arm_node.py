@@ -66,20 +66,13 @@ class SpotArmNode(Node):
                                 type=ParameterType.PARAMETER_STRING,
                                 read_only=True))
         
-        self.declare_parameter('rates.status.arm_state', 1.0,
-            ParameterDescriptor(description='Publish rate for arm status topic',
-                                type=ParameterType.PARAMETER_DOUBLE,
-                                floating_point_range=[FloatingPointRange(
-                                    from_value=0.0, to_value=1000.0, step=0.0)],
-                                read_only=True))
-        
         self.declare_parameter('publish_joint_states', False,
             ParameterDescriptor(description='Whether or not to publish the joint states',
                                 type=ParameterType.PARAMETER_BOOL,
                                 read_only=True))
         
-        self.declare_parameter('rates.status.joint_state', 1.0,
-            ParameterDescriptor(description='Publish rate for joint state topic',
+        self.declare_parameter('rates.robot_state', 1.0,
+            ParameterDescriptor(description='Publish rate for robot state topics',
                                 type=ParameterType.PARAMETER_DOUBLE,
                                 floating_point_range=[FloatingPointRange(
                                     from_value=0.0, to_value=1000.0, step=0.0)],
@@ -108,20 +101,20 @@ class SpotArmNode(Node):
         self.get_logger().info("Connecting manipulation driver")
         self.manipulation_driver = SpotManipulationDriver(self.get_logger(), self.get_parameter('hostname').value)
         
-        publish_joint_states = self.get_parameter('publish_joint_states').value
 
         self.get_logger().info("Setting arm state callbacks")
         callbacks = {
-            'arm_state'  : self.ArmStateCB,
+            'robot_state': self.ArmStateCB,
             'hand_image' : self.publishHandImages
         }
         rates = {
-            'arm_state'  : self.get_parameter('rates.status.arm_state').value,
+            'robot_state': self.get_parameter('rates.robot_state').value,
             'hand_image' : self.get_parameter('rates.sensors.hand_image').value
         }
+
+        publish_joint_states = self.get_parameter('publish_joint_states').value
         if publish_joint_states:
-            callbacks['publish_joint_state'] = self.publishJointStates
-            rates['publish_joint_state'] = self.get_parameter('rates.status.joint_state').value
+            callbacks['robot_state'] = lambda t: (self.publishJointStates(t), self.ArmStateCB(t))
 
         if self.manipulation_driver.connect(lease_manager, rates, callbacks):
             self.get_logger().info(f"Connected to Spot {lease_manager.ID.nickname}")
@@ -180,7 +173,7 @@ class SpotArmNode(Node):
 
         # Create timers to update the async tasks for publishing
         self.create_timer(0.5/rates['hand_image'], lambda: self.manipulation_driver._hand_image_task.update())
-        self.create_timer(0.5/rates['arm_state'],  lambda: self.manipulation_driver._robot_state_task.update())
+        self.create_timer(0.5/rates['robot_state'],  lambda: self.manipulation_driver._robot_state_task.update())
 
         return True
 
@@ -371,7 +364,7 @@ class SpotArmNode(Node):
                 pub_img.publish(img_msg)
                 pub_info.publish(info_msg)
 
-    def publishJointStates(self):
-        state = self.manipulation_driver.robot_state
-        joint_states = JointStatesToMsg(state.KinematicState, self.manipulation_driver.lease_manager)
+    def publishJointStates(self, _):
+        state = self.manipulation_driver.kinematic_state
+        joint_states = JointStatesToMsg(state, self.manipulation_driver.lease_manager)
         self._joint_state_pub.publish(joint_states)

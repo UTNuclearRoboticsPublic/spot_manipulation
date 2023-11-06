@@ -91,9 +91,8 @@ class SpotManipulationDriver(object):
             return False
         
         # Create asynchronous tasks whose state can be queried
-        self._logger.info(f"Image callback: Rate is {rates.get('hand_image', 1.0)} and callback is {callbacks.get('hand_image', 'Nope')}")
         self._hand_image_task = AsyncImageService(self._image_client, self._logger, rates.get("hand_image", 1.0), callbacks.get("hand_image", lambda:None), hand_image_requests)
-        self._robot_state_task = AsyncRobotState(self._lease_manager._robot_state_client, self._logger, rates.get("arm_state", 1.0), callbacks.get("arm_state", lambda:None))
+        self._robot_state_task = AsyncRobotState(self._lease_manager._robot_state_client, self._logger, rates.get("robot_state", 1.0), callbacks.get("robot_state", lambda:None))        
         self._is_connected = True
         return True
 
