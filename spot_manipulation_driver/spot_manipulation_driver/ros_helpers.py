@@ -7,7 +7,7 @@ from .manipulation_driver import SpotManipulationDriver
 from spot_msgs.msg import ManipulatorState
 from control_msgs.action import FollowJointTrajectory
 
-def JointTrajectoryToLists(msg: JointTrajectory):
+def joint_trajectory_to_lists(msg: JointTrajectory):
     traj_point_positions = []
     traj_point_velocities = []
     timepoints = []
@@ -45,7 +45,7 @@ def JointTrajectoryToLists(msg: JointTrajectory):
 
     return traj_point_positions, traj_point_velocities, timepoints
 
-def TwistToVelRequest(
+def twist_to_vel_request(
         driver: SpotManipulationDriver, 
         msg: Twist, 
         linear_lims: "list[float]",
@@ -83,7 +83,7 @@ def TwistToVelRequest(
 
     return arm_velocity_command
 
-def getJointStateFeedback(driver: SpotManipulationDriver) -> FollowJointTrajectory.Feedback:
+def get_joint_state_feedback(driver: SpotManipulationDriver) -> FollowJointTrajectory.Feedback:
     kinematic_state = driver.kinematic_state
     feedback = FollowJointTrajectory.Feedback()
 
@@ -102,7 +102,7 @@ def getJointStateFeedback(driver: SpotManipulationDriver) -> FollowJointTrajecto
         feedback.actual.effort.append(joint.load.value)
     return feedback
 
-def ManipulatorStatesToMsg(manipulator_state: robot_state_pb2.ManipulatorState,
+def manipulator_state_to_msg(manipulator_state: robot_state_pb2.ManipulatorState,
                            driver: SpotManipulationDriver) -> ManipulatorState:
     """Maps manipulator state data from robot state proto to ROS ManipulatorState message
 

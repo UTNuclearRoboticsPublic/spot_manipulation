@@ -104,8 +104,8 @@ class SpotArmNode(Node):
 
         self.get_logger().info("Setting arm state callbacks")
         callbacks = {
-            'robot_state': self.ArmStateCB,
-            'hand_image' : self.publishHandImages
+            'robot_state': self.arm_state_callback,
+            'hand_image' : self.publish_hand_images
         }
         rates = {
             'robot_state': self.get_parameter('rates.robot_state').value,
@@ -114,7 +114,7 @@ class SpotArmNode(Node):
 
         publish_joint_states = self.get_parameter('publish_joint_states').value
         if publish_joint_states:
-            callbacks['robot_state'] = lambda t: (self.publishJointStates(t), self.ArmStateCB(t))
+            callbacks['robot_state'] = lambda t: (self.publish_joint_states(t), self.arm_state_callback(t))
 
         if self.manipulation_driver.connect(lease_manager, rates, callbacks):
             self.get_logger().info(f"Connected to Spot {lease_manager.ID.nickname}")
@@ -144,15 +144,15 @@ class SpotArmNode(Node):
         self.ap_ee_vel_sub = self.create_subscription(TwistStamped, "/ee_twist_cmds", self.ap_ee_vel_sub_callback, 10,callback_group=motion_callback_group)
 
         # Create services for arm motions
-        self.create_service(Trigger, "~/claim"        , self.claimCB)
-        self.create_service(Trigger, "~/release"      , self.releaseCB)
-        self.create_service(Trigger, "~/power_on"     , self.powerOnCB)
-        self.create_service(Trigger, "~/unstow_arm"   , self.unstowServiceCB, callback_group=motion_callback_group)
-        self.create_service(Trigger, "~/stow_arm"     , self.stowServiceCB, callback_group=motion_callback_group)
-        self.create_service(Trigger, "~/close_gripper", self.gripperCloseServiceCB, callback_group=gripper_callback_group)
-        self.create_service(Trigger, "~/open_gripper" , self.gripperOpenServiceCB, callback_group=gripper_callback_group)
-        self.create_service(Trigger, "~/stand"        , self.standServiceCB, callback_group=gripper_callback_group)
-        self.create_service(GripperAngleMove, "~/set_gripper_angle", self.gripperAngleServiceCB, callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/claim"        , self.claim_callback)
+        self.create_service(Trigger, "~/release"      , self.release_callback)
+        self.create_service(Trigger, "~/power_on"     , self.power_on_callback)
+        self.create_service(Trigger, "~/unstow_arm"   , self.unstow_service_callback, callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/stow_arm"     , self.stow_service_callback, callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/close_gripper", self.gripper_close_service_callback, callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/open_gripper" , self.gripper_open_service_callback, callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/stand"        , self.stand_service_callback, callback_group=gripper_callback_group)
+        self.create_service(GripperAngleMove, "~/set_gripper_angle", self.gripper_angle_service_callback, callback_group=gripper_callback_group)
 
         # Initialize action servers
         self.arm_action_server = ActionServer(
@@ -185,7 +185,7 @@ class SpotArmNode(Node):
         success = True
 
         # Translate message and execute trajectory while publishing feedback
-        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.JointTrajectoryToLists(goal_handle.request.trajectory)
+        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(goal_handle.request.trajectory)
 
         self.arm_feedback_publish_flag = True
         arm_feedback_thread = threading.Thread(
@@ -252,7 +252,7 @@ class SpotArmNode(Node):
 
         # Publishes actual states of the joints
         while self.arm_feedback_publish_flag:
-            self.arm_feedback = ros_helpers.getJointStateFeedback(self.manipulation_driver)
+            self.arm_feedback = ros_helpers.get_joint_state_feedback(self.manipulation_driver)
             goal_handle.publish_feedback(self.arm_feedback)
             # TODO: Remove logging statements once we know this works
             self.get_logger().info("Joint feedback thread sleeping")
@@ -265,7 +265,7 @@ class SpotArmNode(Node):
 
         while self.finger_feedback_publish_flag:
             # Get joint states
-            self.finger_feedback = ros_helpers.getJointStateFeedback(self.manipulation_driver)
+            self.finger_feedback = ros_helpers.get_joint_state_feedback(self.manipulation_driver)
 
             # Publish and sleep
             goal_handle.publish_feedback(self.finger_feedback)
@@ -273,75 +273,75 @@ class SpotArmNode(Node):
 
     def ee_vel_sub_callback(self, msg: Twist):
         """Callback for end effector velocity command subscriber"""
-        arm_vel_request = ros_helpers.TwistToVelRequest(msg)
+        arm_vel_request = ros_helpers.twist_to_vel_request(msg)
         self.manipulation_driver.ee_velocity_msg_executor(self, arm_vel_request)
 
     def ap_ee_vel_sub_callback(self, msg: TwistStamped):
         """Callback for Affordance Primitive end effector velocity command subscriber"""
         self.ee_vel_sub_callback(msg.twist)
 
-    def ArmStateCB(self, _):
+    def arm_state_callback(self, _):
         state = self.manipulation_driver.arm_state
         if state is None: return
-        state_msg = ros_helpers.ManipulatorStatesToMsg(state, self.manipulation_driver)
+        state_msg = ros_helpers.manipulator_state_to_msg(state, self.manipulation_driver)
         self._manipulator_state_pub.publish(state_msg)
 
-    def claimCB(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+    def claim_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.claim()
         resp.success = success
         resp.message = msg
         return resp
     
-    def releaseCB(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+    def release_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.release()
         resp.success = success
         resp.message = msg
         return resp
     
-    def powerOnCB(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+    def power_on_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         self.get_logger().info("Powering on...")
         (success, msg) = self.manipulation_driver.lease_manager.power_on()
         resp.success = success
         resp.message = msg
         return resp
 
-    def stowServiceCB(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+    def stow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.stow_arm()
         resp.success = success
         resp.message = msg
         return resp
     
-    def unstowServiceCB(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+    def unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.unstow_arm()
         resp.success = success
         resp.message = msg
         return resp
     
-    def gripperCloseServiceCB(self, _, resp: Trigger.Response) -> Trigger.Response:
+    def gripper_close_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.close_gripper()
         resp.success = success
         resp.message = msg
         return resp
 
-    def gripperOpenServiceCB(self, _, resp: Trigger.Response) -> Trigger.Response:
+    def gripper_open_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.open_gripper()
         resp.success = success
         resp.message = msg
         return resp
     
-    def standServiceCB(self, _, resp: Trigger.Response) -> Trigger.Response:
+    def stand_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.stand_robot()
         resp.success = success
         resp.message = msg
         return resp
     
-    def gripperAngleServiceCB(self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response):
+    def gripper_angle_service_callback(self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response):
         (success, msg) = self.manipulation_driver.open_gripper_to_angle(req.gripper_angle)
         resp.success = success
         resp.message = msg
         return resp
     
-    def publishHandImages(self, _):
+    def publish_hand_images(self, _):
         images = self.manipulation_driver.latest_hand_images
         if images is None: return
 
@@ -364,7 +364,7 @@ class SpotArmNode(Node):
                 pub_img.publish(img_msg)
                 pub_info.publish(info_msg)
 
-    def publishJointStates(self, _):
+    def publish_joint_states(self, _):
         state = self.manipulation_driver.kinematic_state
         joint_states = JointStatesToMsg(state, self.manipulation_driver.lease_manager)
         self._joint_state_pub.publish(joint_states)
