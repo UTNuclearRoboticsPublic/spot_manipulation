@@ -214,7 +214,7 @@ class SpotManipulationDriver(object):
             if traj_index[0] > 9:
                 time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
 
-            cmd_id = self._lease_manager.robot_command(robot_cmd)
+            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd)
 
             time_index = time.time()
             feedback_resp = self._lease_manager.robot_command_feedback(cmd_id)

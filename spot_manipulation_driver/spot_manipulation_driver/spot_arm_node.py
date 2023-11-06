@@ -185,7 +185,7 @@ class SpotArmNode(Node):
         success = True
 
         # Translate message and execute trajectory while publishing feedback
-        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.JointTrajectoryToLists(goal_handle.request)
+        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.JointTrajectoryToLists(goal_handle.request.trajectory)
 
         self.arm_feedback_publish_flag = True
         arm_feedback_thread = threading.Thread(
