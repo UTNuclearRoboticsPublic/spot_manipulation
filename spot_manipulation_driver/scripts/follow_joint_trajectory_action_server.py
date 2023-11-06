@@ -36,7 +36,7 @@ import time
 import rclpy
 from builtin_interfaces.msg import Time as ROSTime
 from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist, TwistStamped, Wrench
+from geometry_msgs.msg import Twist, TwistStamped, Wrench, WrenchStamped
 from rclpy.action import ActionServer
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -227,7 +227,7 @@ class JointStatePublisher(Node):
             10,
         )
         self.force_torque_state_pub = self.create_publisher(
-            Wrench,
+            WrenchStamped,
             "/ee_force",
             10,
         )
@@ -237,14 +237,14 @@ class JointStatePublisher(Node):
     def publish_joint_states(self):
         """Method to constantly publish joint states"""
         joint_states = JointState()
-        force_torque_state = Wrench()
+        force_torque_state = WrenchStamped()
 
         # Get joint states and force-torque data
         joint_states_source = (
             self.follow_joint_trajectory_action_server.get_joint_states()
         )
-
         force_torque_state_source = self.follow_joint_trajectory_action_server.get_force_torque_state()
+        
         joint_states.header.stamp = ROSTime(
             sec=joint_states_source[0].seconds, nanosec=joint_states_source[0].nanos
         )
@@ -253,9 +253,12 @@ class JointStatePublisher(Node):
         joint_states.velocity = joint_states_source[3]
         joint_states.effort = joint_states_source[4]
 
-        force_torque_state.force.x = force_torque_state_source[0]
-        force_torque_state.force.y = force_torque_state_source[1]
-        force_torque_state.force.z = force_torque_state_source[2]
+        force_torque_state.header.stamp = ROSTime(
+            sec=joint_states_source[0].seconds, nanosec=joint_states_source[0].nanos
+        )
+        force_torque_state.wrench.force.x = force_torque_state_source[0]
+        force_torque_state.wrench.force.y = force_torque_state_source[1]
+        force_torque_state.wrench.force.z = force_torque_state_source[2]
 
         # Publish joint states and force-torque data
         self.joint_states_pub.publish(joint_states)
