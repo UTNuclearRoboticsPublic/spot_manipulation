@@ -1,4 +1,4 @@
-/spot_manipulator_teleop_joy:
+/spot_manipulator_teleop_cartesian:
   ros__parameters:
     enable_button: 5
     axis_linear:
@@ -9,7 +9,15 @@
       x: 0.1
       y: 0.1
       z: 0.1
+
+/spot_manipulator_teleop_angular:
+  ros__parameters:
+    enable_button: 7
     axis_angular:
-      z: 2
+      roll: 2
+      pitch: 1
+      yaw: 0
     scale_angular:
-      z: 0.05
+      roll: 0.5
+      pitch: 0.2
+      yaw: 0.2
