@@ -1,0 +1,15 @@
+/spot_manipulator_teleop_joy:
+  ros__parameters:
+    enable_button: 5
+    axis_linear:
+      x: 1
+      y: 0
+      z: 3
+    scale_linear:
+      x: 0.1
+      y: 0.1
+      z: 0.1
+    axis_angular:
+      z: 2
+    scale_angular:
+      z: 0.05

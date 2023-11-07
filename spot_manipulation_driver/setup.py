@@ -11,6 +11,7 @@ setup(
     packages=[package_name],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
+        (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
         (os.path.join("share", package_name), glob("launch/*.launch.py")),
         ("share/" + package_name, ["package.xml"]),
     ],
