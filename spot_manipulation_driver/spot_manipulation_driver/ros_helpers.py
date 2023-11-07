@@ -1,5 +1,6 @@
 import numpy as np
 import rclpy.time
+from google.protobuf import timestamp_pb2
 from bosdyn.api import geometry_pb2, arm_command_pb2, robot_state_pb2
 from geometry_msgs.msg import Twist
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -46,10 +47,10 @@ def joint_trajectory_to_lists(msg: JointTrajectory):
     return traj_point_positions, traj_point_velocities, timepoints
 
 def twist_to_vel_request(
-        driver: SpotManipulationDriver, 
+        robot_time: timestamp_pb2.Timestamp, 
         msg: Twist, 
-        linear_lims: "list[float]",
-        angular_lims: "list[float]",
+        linear_lims: "list[float]" = [-1e9, 1e9],
+        angular_lims: "list[float]" = [-1e9, 1e9],
         robot_frame = "body") -> arm_command_pb2.ArmVelocityCommand.Request:
 
     # Enforce velocity limits
@@ -64,16 +65,20 @@ def twist_to_vel_request(
         angular_lims[1],
     )
 
-    # Construct message and send it to the robot
+    # Assemble linear and angular components
     linear  = geometry_pb2.Vec3(x=linear_vel[0], y=linear_vel[1], z=linear_vel[2])
     angular = geometry_pb2.Vec3(x=angular_vel[0], y=angular_vel[1], z=angular_vel[2])
 
-    # Velocity commnad will live for 0.1 seconds
-    end_time = driver.robot_time + 0.1
-
+    # SDK requires cartesian velocity to be created separately
     end_effector_velocity = arm_command_pb2.ArmVelocityCommand.CartesianVelocity(
         frame_name=robot_frame, velocity_in_frame_name=linear
     )
+
+    # TODO: Verify that this works
+    # Velocity command will live for 0.1 seconds
+    end_time = timestamp_pb2.Timestamp()
+    end_time.CopyFrom(robot_time)
+    end_time.FromMilliseconds(end_time.ToMilliseconds() + 100)
 
     arm_velocity_command = arm_command_pb2.ArmVelocityCommand.Request(
         cartesian_velocity=end_effector_velocity,
@@ -112,13 +117,16 @@ def manipulator_state_to_msg(manipulator_state: robot_state_pb2.ManipulatorState
     Returns:
         spot_msgs/ManipulatorState ROS message
     """
+    stamp = driver.lease_manager.robotToLocalTime(driver.robot_time)
+    ros_stamp = rclpy.time.Time(nanoseconds=stamp.ToNanoseconds())
+
     if manipulator_state is None:
         return ManipulatorState()
     manipulator_state_msg = ManipulatorState()
     manipulator_state_msg.gripper_open_percentage = manipulator_state.gripper_open_percentage
     manipulator_state_msg.is_gripper_holding_item = manipulator_state.is_gripper_holding_item
     manipulator_state_msg.estimated_end_effector_force_in_hand.header.frame_id = "arm0_hand"
-    manipulator_state_msg.estimated_end_effector_force_in_hand.header.stamp = rclpy.time.Time(nanoseconds=driver.robot_time*1e9).to_msg()
+    manipulator_state_msg.estimated_end_effector_force_in_hand.header.stamp = ros_stamp.to_msg()
     manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force.x = manipulator_state.estimated_end_effector_force_in_hand.x
     manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force.y = manipulator_state.estimated_end_effector_force_in_hand.y
     manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force.z = manipulator_state.estimated_end_effector_force_in_hand.z

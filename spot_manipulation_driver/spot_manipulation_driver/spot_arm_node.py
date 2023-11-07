@@ -273,8 +273,8 @@ class SpotArmNode(Node):
 
     def ee_vel_sub_callback(self, msg: Twist):
         """Callback for end effector velocity command subscriber"""
-        arm_vel_request = ros_helpers.twist_to_vel_request(msg)
-        self.manipulation_driver.ee_velocity_msg_executor(self, arm_vel_request)
+        arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, msg)
+        self.manipulation_driver.ee_velocity_msg_executor(arm_vel_request)
 
     def ap_ee_vel_sub_callback(self, msg: TwistStamped):
         """Callback for Affordance Primitive end effector velocity command subscriber"""

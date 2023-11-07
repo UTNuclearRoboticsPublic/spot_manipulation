@@ -33,7 +33,7 @@
 import time
 from typing import Text, Tuple
 
-from google.protobuf import duration_pb2
+from google.protobuf import duration_pb2, timestamp_pb2
 from bosdyn.api import (estop_pb2, image_pb2, robot_command_pb2,
                         synchronized_command_pb2, arm_command_pb2, robot_state_pb2)
 from bosdyn.client.image import ImageClient, build_image_request
@@ -118,8 +118,8 @@ class SpotManipulationDriver(object):
         return ee_force.x, ee_force.y, ee_force.z
     
     @property
-    def robot_time(self):
-        return self._lease_manager.robot.time_sec()
+    def robot_time(self) -> timestamp_pb2.Timestamp:
+        return self._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(time.time())
     
     @property
     def latest_hand_images(self):
