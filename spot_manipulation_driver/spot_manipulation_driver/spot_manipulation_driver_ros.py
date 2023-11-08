@@ -45,18 +45,17 @@ from sensor_msgs.msg import JointState, Image, CameraInfo
 from std_srvs.srv import Trigger
 
 from spot_driver.spot_lease_manager import SpotLeaseManager
-from spot_manipulation_driver.manipulation_driver import \
-    SpotManipulationDriver
+from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 import spot_manipulation_driver.ros_helpers as ros_helpers
 from spot_driver.ros_helpers import getImageMsg, JointStatesToMsg
 from spot_msgs.msg import ManipulatorState
 from spot_msgs.srv import GripperAngleMove
 
 
-class SpotArmNode(Node):
+class SpotManipulationDriverROS(Node):
     def __init__(self):
 
-        Node.__init__(self, "follow_joint_trajectory_node")
+        Node.__init__(self, "spot_manipulation_driver")
 
         self.manipulation_driver: SpotManipulationDriver = None
 
@@ -254,22 +253,18 @@ class SpotArmNode(Node):
         while self.arm_feedback_publish_flag:
             self.arm_feedback = ros_helpers.get_joint_state_feedback(self.manipulation_driver)
             goal_handle.publish_feedback(self.arm_feedback)
-            # TODO: Remove logging statements once we know this works
-            self.get_logger().info("Joint feedback thread sleeping")
             rate.sleep()
-            self.get_logger().info("Joint feedback thread done sleeping")
 
     def finger_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for finger action server"""
         # Publishes actual states of the joints
+        rate = self.create_rate(frequency=2.0, clock=self.get_clock())
 
         while self.finger_feedback_publish_flag:
             # Get joint states
             self.finger_feedback = ros_helpers.get_joint_state_feedback(self.manipulation_driver)
-
-            # Publish and sleep
             goal_handle.publish_feedback(self.finger_feedback)
-            time.sleep(0.5)  # TODO: Replace this sleep with ros2 compatible sleep
+            rate.sleep()
 
     def ee_vel_sub_callback(self, msg: Twist):
         """Callback for end effector velocity command subscriber"""

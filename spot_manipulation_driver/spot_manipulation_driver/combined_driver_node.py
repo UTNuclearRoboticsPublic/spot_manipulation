@@ -4,13 +4,13 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_driver.spot_ros import SpotROS
-from .spot_arm_node import SpotArmNode
+from .spot_manipulation_driver_ros import SpotManipulationDriverROS
 
 def main():
     rclpy.init()
 
     lease_manager = SpotLeaseManager()
-    arm_node = SpotArmNode()
+    arm_node = SpotManipulationDriverROS()
     body_node = SpotROS()
 
     if body_node.connect(lease_manager):

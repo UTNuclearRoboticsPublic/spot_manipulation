@@ -4,7 +4,7 @@ from google.protobuf import timestamp_pb2
 from bosdyn.api import geometry_pb2, arm_command_pb2, robot_state_pb2
 from geometry_msgs.msg import Twist
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from .manipulation_driver import SpotManipulationDriver
+from .spot_manipulation_driver import SpotManipulationDriver
 from spot_msgs.msg import ManipulatorState
 from control_msgs.action import FollowJointTrajectory
 

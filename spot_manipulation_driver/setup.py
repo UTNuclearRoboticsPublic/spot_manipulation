@@ -24,8 +24,8 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "spot_arm_node = spot_manipulation_driver.spot_manipulation_driver:main",
-            "combined_driver_node = spot_manipulation_driver.spot_node_combined:main"
+            "manipulation_driver_node = spot_manipulation_driver.manipulation_driver_node:main",
+            "combined_driver_node = spot_manipulation_driver.combined_driver_node:main"
         ]
     },
 )
