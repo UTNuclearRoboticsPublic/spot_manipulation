@@ -126,15 +126,15 @@ class SpotManipulationDriverROS(Node):
         gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup() 
 
         # Create data publishers and subscribers
-        self._hand_image_pub             = self.create_publisher(Image           , "~/images/depth_gray"     , 10)
-        self._hand_depth_map_pub         = self.create_publisher(Image           , "~/images/depth_map"      , 10)
-        self._hand_4k_image_pub          = self.create_publisher(Image           , "~/images/rgb_4k"         , 10)
-        self._hand_4k_depth_map_pub      = self.create_publisher(Image           , "~/images/depth_4k"       , 10)
-        self._hand_image_info_pub        = self.create_publisher(CameraInfo      , "~/camera_info/depth_gray", 10)
-        self._hand_depth_map_info_pub    = self.create_publisher(CameraInfo      , "~/camera_info/depth_map" , 10)
-        self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/camera_info/rgb_4k"    , 10)
-        self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/camera_info/depth_4k"  , 10)
-        self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"     , 10)
+        self._hand_image_pub             = self.create_publisher(Image           , "~/rgb/tof/image"           , 10)
+        self._hand_depth_map_pub         = self.create_publisher(Image           , "~/depth/tof/image"         , 10)
+        self._hand_4k_image_pub          = self.create_publisher(Image           , "~/rgb/camera/image"        , 10)
+        self._hand_4k_depth_map_pub      = self.create_publisher(Image           , "~/depth/camera/image"      , 10)
+        self._hand_image_info_pub        = self.create_publisher(CameraInfo      , "~/rgb/tof/camera_info"     , 10)
+        self._hand_depth_map_info_pub    = self.create_publisher(CameraInfo      , "~/depth/tof/camera_info"   , 10)
+        self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/rgb/camera/camera_info"  , 10)
+        self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/depth/camera/camera_info", 10)
+        self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"       , 10)
 
         if publish_joint_states:
             self._joint_state_pub = self.create_publisher(JointState, "~/joint_state", 10)

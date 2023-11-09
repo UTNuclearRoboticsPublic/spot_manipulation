@@ -15,7 +15,7 @@ def generate_launch_description():
                 params_file
             ],
             remappings=[
-                ('/cmd_vel', '/follow_joint_trajectory_node/cmd_vel')
+                ('/cmd_vel', '/spot_manipulation_driver/cmd_vel')
             ]
         ),
         Node(
@@ -26,7 +26,7 @@ def generate_launch_description():
                 params_file
             ],
             remappings=[
-                ('/cmd_vel', '/follow_joint_trajectory_node/cmd_vel')
+                ('/cmd_vel', '/spot_manipulation_driver/cmd_vel')
             ]
         )
     ])
