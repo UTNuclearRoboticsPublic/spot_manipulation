@@ -193,16 +193,16 @@ class SpotManipulationDriver(object):
                 pos_dict[msg.trajectory.joint_names[j]] = msg.trajectory.points[
                     i
                 ].positions[j]
-                vel_dict[msg.trajectory.joint_names[j]] = msg.trajectory.points[
-                    i
-                ].velocities[j]
+                # vel_dict[msg.trajectory.joint_names[j]] = msg.trajectory.points[
+                #     i
+                # ].velocities[j]
 
             traj_point_positions.append(
                 list(map(lambda joint_name: pos_dict[joint_name], joint_order))
             )
-            traj_point_velocities.append(
-                list(map(lambda joint_name: vel_dict[joint_name], joint_order))
-            )
+            # traj_point_velocities.append(
+            #     list(map(lambda joint_name: vel_dict[joint_name], joint_order))
+            # )
             time_since_ref.append(msg.trajectory.points[i].time_from_start.to_sec())
 
         return traj_point_positions, traj_point_velocities, time_since_ref
@@ -251,7 +251,7 @@ class SpotManipulationDriver(object):
 
         robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=[traj_point_positions[0]],
-            joint_velocities=[traj_point_velocities[0]],
+            # joint_velocities=[traj_point_velocities[0]],
             times=[TRAJ_APPROACH_TIME],
             ref_time=ref_time,
             max_acc=10000,
@@ -275,7 +275,7 @@ class SpotManipulationDriver(object):
             # Extract a short trajectory from the long list
             times = time_since_ref[traj_index[0] : traj_index[1]]
             positions = traj_point_positions[traj_index[0] : traj_index[1]]
-            velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
+            # velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
 
             # Increment indices for the next short trajectory
             traj_index = list(map(lambda x: x + 9, traj_index))
@@ -285,7 +285,7 @@ class SpotManipulationDriver(object):
 
             robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
                 joint_positions=positions,
-                joint_velocities=velocities,
+                # joint_velocities=velocities,
                 times=times,
                 ref_time=ref_time,
                 max_acc=10000,

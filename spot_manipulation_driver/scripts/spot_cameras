@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+
+from spot_manipulation_driver.spot_cameras import SpotCamerasROS
+
+if __name__ == "__main__":
+    SCR = SpotCamerasROS()
+    SCR.main()

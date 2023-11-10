@@ -1,0 +1,15 @@
+<launch>
+  <arg name="username" default="user" />
+  <arg name="password" default="b7bih964c5qg" />
+  <arg name="hostname" default="192.168.50.3" />
+  <arg name="driver_config" default="$(find spot_manipulation_driver)/config/spot_ros.yaml"/>
+
+  <node pkg="spot_manipulation_driver" type="spot_cameras" name="spot_cameras"  ns="spot" output="screen">
+    <rosparam file="$(arg driver_config)" command="load" />
+    <param name="username" value="$(arg username)" />
+    <param name="password" value="$(arg password)" />
+    <param name="hostname" value="$(arg hostname)" />    
+  </node>
+  
+</launch>
+
