@@ -141,7 +141,13 @@ class SpotManipulationDriver(object):
         state = self.get_robot_state()
         ee_force = state.manipulator_state.estimated_end_effector_force_in_hand
         return ee_force.x, ee_force.y, ee_force.z
+    
+    def get_wrench_at_tool(self):
+        impedance_feedback = arm_command_pb2.ArmImpedanceCommand()
+        tool_wrench = impedance_feedback.total_measured_wrench_at_tool_in_desired_tool
+        return tool_wrench.force.x, tool_wrench.force.y, tool_wrench.force.z, tool_wrench.torque.x, tool_wrench.torque.y, tool_wrench.torque.z
 
+  
     # Remap sdk joint names to easy-to-read names
     def joint_names_remapping_dict(self):
         with open(
