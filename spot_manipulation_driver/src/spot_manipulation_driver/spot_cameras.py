@@ -1,58 +1,43 @@
-# This node is based on the spot_ros and spot_wrapper with ONLY the AsyncTask to get the images 
+# This node is based on the spot_ros and spot_wrapper with ONLY the AsyncTask to get the images
 # with the publishers to stream them out to ROS
 ## Author: Fabian Parra
-import copy
-
-import rospy
 import argparse
+import copy
 import functools
+import logging
+import math
+import threading
 import time
-
 import typing
-
-import numpy
 from collections import namedtuple
 from dataclasses import dataclass, field
 
-
-from std_srvs.srv import Trigger, TriggerResponse, SetBool, SetBoolResponse
-from std_msgs.msg import Bool
-from tf2_msgs.msg import TFMessage
-from sensor_msgs.msg import Image, CameraInfo
-from sensor_msgs.msg import PointCloud2
-
 import bosdyn.client
-import bosdyn.client.util
 import bosdyn.client.auth
-from bosdyn.client.robot_command import RobotCommandClient
-from bosdyn.api import image_pb2
-from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
-from bosdyn.api import geometry_pb2, trajectory_pb2
-
-from google.protobuf.timestamp_pb2 import Timestamp
-
-from bosdyn.client.async_tasks import AsyncPeriodicQuery, AsyncTasks
-
-from bosdyn.client.image import (
-    ImageClient,
-    build_image_request,
-    UnsupportedPixelFormatRequestedError,
-)
-from bosdyn.client import create_standard_sdk, ResponseError, RpcError
-from bosdyn.client.point_cloud import build_pc_request
-
-from bosdyn.client import math_helpers
-from google.protobuf.wrappers_pb2 import DoubleValue
-import actionlib
-import functools
-import math
+import bosdyn.client.util
 import bosdyn.geometry
-import tf2_ros
-import tf2_geometry_msgs
+import numpy
+from bosdyn.api import geometry_pb2, image_pb2, trajectory_pb2
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
+from bosdyn.client import (ResponseError, RpcError, create_standard_sdk,
+                           math_helpers)
+from bosdyn.client.async_tasks import AsyncPeriodicQuery, AsyncTasks
+from bosdyn.client.image import (ImageClient,
+                                 UnsupportedPixelFormatRequestedError,
+                                 build_image_request)
+from bosdyn.client.point_cloud import build_pc_request
+from bosdyn.client.robot_command import RobotCommandClient
+from google.protobuf.timestamp_pb2 import Timestamp
+from google.protobuf.wrappers_pb2 import DoubleValue
 
 import actionlib
-import logging
-import threading
+import rospy
+import tf2_geometry_msgs
+import tf2_ros
+from sensor_msgs.msg import CameraInfo, Image, PointCloud2
+from std_msgs.msg import Bool
+from std_srvs.srv import SetBool, SetBoolResponse, Trigger, TriggerResponse
+from tf2_msgs.msg import TFMessage
 
 front_image_sources = [
     "frontleft_fisheye_image",
@@ -147,6 +132,7 @@ IMAGE_SOURCES_BY_CAMERA = {
 
 IMAGE_TYPES = {"visual", "depth", "depth_registered"}
 
+
 @dataclass(frozen=True, eq=True)
 class CameraSource:
     camera_name: str
@@ -158,6 +144,7 @@ class ImageEntry:
     camera_name: str
     image_type: str
     image_response: image_pb2.ImageResponse
+
 
 def robotToLocalTime(timestamp, robot):
     """Takes a timestamp and an estimated skew and return seconds and nano seconds in local time
@@ -183,6 +170,7 @@ def robotToLocalTime(timestamp, robot):
         rtime.nanos = 0
 
     return rtime
+
 
 class DefaultCameraInfo(CameraInfo):
     """Blank class extending CameraInfo ROS topic that defaults most parameters"""
@@ -222,6 +210,7 @@ class DefaultCameraInfo(CameraInfo):
         self.P[10] = 1
         self.P[11] = 0
 
+
 def getImageMsg(data, spot_cameras_wrapper):
     """Takes the imag and  camera data and populates the necessary ROS messages
 
@@ -233,6 +222,9 @@ def getImageMsg(data, spot_cameras_wrapper):
             * Image: message of the image captured
             * CameraInfo: message to define the state and config of the camera that took the image
     """
+        max_samples=10, break_on_success=False
+    )
+
     image_msg = Image()
     local_time = spot_cameras_wrapper.robotToLocalTime(data.shot.acquisition_time)
     image_msg.header.stamp = rospy.Time(local_time.seconds, local_time.nanos)
@@ -241,7 +233,6 @@ def getImageMsg(data, spot_cameras_wrapper):
     image_msg.width = data.shot.image.cols
 
     # Color/greyscale formats.
-    # JPEG format
     if data.shot.image.format == image_pb2.Image.FORMAT_JPEG:
         image_msg.encoding = "rgb8"
         image_msg.is_bigendian = True
@@ -308,7 +299,9 @@ def GetPointCloudMsg(data, spot_cameras_wrapper):
            PointCloud: message of the point cloud (PointCloud2)
     """
     point_cloud_msg = PointCloud2()
-    local_time = spot_cameras_wrapper.robotToLocalTime(data.point_cloud.source.acquisition_time)
+    local_time = spot_cameras_wrapper.robotToLocalTime(
+        data.point_cloud.source.acquisition_time
+    )
     point_cloud_msg.header.stamp = rospy.Time(local_time.seconds, local_time.nanos)
     point_cloud_msg.header.frame_id = data.point_cloud.source.frame_name_sensor
     if data.point_cloud.encoding == point_cloud_pb2.PointCloud.ENCODING_XYZ_32F:
@@ -331,6 +324,7 @@ def GetPointCloudMsg(data, spot_cameras_wrapper):
     else:
         rospy.logwarn("Not supported point cloud data type.")
     return point_cloud_msg
+
 
 class AsyncImageService(AsyncPeriodicQuery):
     """Class to get images at regular intervals.  get_image_from_sources_async query sent to the robot at every tick.  Callback registered to defined callback function.
@@ -387,6 +381,7 @@ class AsyncPointCloudService(AsyncPeriodicQuery):
             callback_future.add_done_callback(self._callback)
             return callback_future
 
+
 class RateLimitedCall:
     """
     Wrap a function with this class to limit how frequently it can be called within a loop
@@ -411,7 +406,6 @@ class RateLimitedCall:
 
 
 class SpotCamerasROS:
-    
     def __init__(self):
         self.spot_cameras_wrapper = None
         # self.last_tf_msg = TFMessage()
@@ -434,16 +428,24 @@ class SpotCamerasROS:
         """
         data = self.spot_cameras_wrapper.front_images
         if data:
-            image_msg0, camera_info_msg0 = getImageMsg(data[0], self.spot_cameras_wrapper)
+            image_msg0, camera_info_msg0 = getImageMsg(
+                data[0], self.spot_cameras_wrapper
+            )
             self.frontleft_image_pub.publish(image_msg0)
             self.frontleft_image_info_pub.publish(camera_info_msg0)
-            image_msg1, camera_info_msg1 = getImageMsg(data[1], self.spot_cameras_wrapper)
+            image_msg1, camera_info_msg1 = getImageMsg(
+                data[1], self.spot_cameras_wrapper
+            )
             self.frontright_image_pub.publish(image_msg1)
             self.frontright_image_info_pub.publish(camera_info_msg1)
-            image_msg2, camera_info_msg2 = getImageMsg(data[2], self.spot_cameras_wrapper)
+            image_msg2, camera_info_msg2 = getImageMsg(
+                data[2], self.spot_cameras_wrapper
+            )
             self.frontleft_depth_pub.publish(image_msg2)
             self.frontleft_depth_info_pub.publish(camera_info_msg2)
-            image_msg3, camera_info_msg3 = getImageMsg(data[3], self.spot_cameras_wrapper)
+            image_msg3, camera_info_msg3 = getImageMsg(
+                data[3], self.spot_cameras_wrapper
+            )
             self.frontright_depth_pub.publish(image_msg3)
             self.frontright_depth_info_pub.publish(camera_info_msg3)
 
@@ -460,16 +462,24 @@ class SpotCamerasROS:
         """
         data = self.spot_cameras_wrapper.side_images
         if data:
-            image_msg0, camera_info_msg0 = getImageMsg(data[0], self.spot_cameras_wrapper)
+            image_msg0, camera_info_msg0 = getImageMsg(
+                data[0], self.spot_cameras_wrapper
+            )
             self.left_image_pub.publish(image_msg0)
             self.left_image_info_pub.publish(camera_info_msg0)
-            image_msg1, camera_info_msg1 = getImageMsg(data[1], self.spot_cameras_wrapper)
+            image_msg1, camera_info_msg1 = getImageMsg(
+                data[1], self.spot_cameras_wrapper
+            )
             self.right_image_pub.publish(image_msg1)
             self.right_image_info_pub.publish(camera_info_msg1)
-            image_msg2, camera_info_msg2 = getImageMsg(data[2], self.spot_cameras_wrapper)
+            image_msg2, camera_info_msg2 = getImageMsg(
+                data[2], self.spot_cameras_wrapper
+            )
             self.left_depth_pub.publish(image_msg2)
             self.left_depth_info_pub.publish(camera_info_msg2)
-            image_msg3, camera_info_msg3 = getImageMsg(data[3], self.spot_cameras_wrapper)
+            image_msg3, camera_info_msg3 = getImageMsg(
+                data[3], self.spot_cameras_wrapper
+            )
             self.right_depth_pub.publish(image_msg3)
             self.right_depth_info_pub.publish(camera_info_msg3)
 
@@ -486,10 +496,14 @@ class SpotCamerasROS:
         """
         data = self.spot_cameras_wrapper.rear_images
         if data:
-            mage_msg0, camera_info_msg0 = getImageMsg(data[0], self.spot_cameras_wrapper)
+            mage_msg0, camera_info_msg0 = getImageMsg(
+                data[0], self.spot_cameras_wrapper
+            )
             self.back_image_pub.publish(mage_msg0)
             self.back_image_info_pub.publish(camera_info_msg0)
-            mage_msg1, camera_info_msg1 = getImageMsg(data[1], self.spot_cameras_wrapper)
+            mage_msg1, camera_info_msg1 = getImageMsg(
+                data[1], self.spot_cameras_wrapper
+            )
             self.back_depth_pub.publish(mage_msg1)
             self.back_depth_info_pub.publish(camera_info_msg1)
 
@@ -502,18 +516,29 @@ class SpotCamerasROS:
         Args:
             results: FutureWrapper object of AsyncPeriodicQuery callback
         """
+        time_sync_client = self._robot.ensure_client(TimeSyncClient.default_service_name)
+        time_sync_endpoint = TimeSyncEndpoint(time_sync_client)
+        did_establish = time_sync_endpoint.establish_timesync(
         data = self.spot_cameras_wrapper.hand_images
         if data:
-            mage_msg0, camera_info_msg0 = getImageMsg(data[0], self.spot_cameras_wrapper)
+            mage_msg0, camera_info_msg0 = getImageMsg(
+                data[0], self.spot_cameras_wrapper
+            )
             self.hand_image_mono_pub.publish(mage_msg0)
             self.hand_image_mono_info_pub.publish(camera_info_msg0)
-            mage_msg1, camera_info_msg1 = getImageMsg(data[1], self.spot_cameras_wrapper)
+            mage_msg1, camera_info_msg1 = getImageMsg(
+                data[1], self.spot_cameras_wrapper
+            )
             self.hand_depth_pub.publish(mage_msg1)
             self.hand_depth_info_pub.publish(camera_info_msg1)
-            image_msg2, camera_info_msg2 = getImageMsg(data[2], self.spot_cameras_wrapper)
+            image_msg2, camera_info_msg2 = getImageMsg(
+                data[2], self.spot_cameras_wrapper
+            )
             self.hand_image_color_pub.publish(image_msg2)
             self.hand_image_color_info_pub.publish(camera_info_msg2)
-            image_msg3, camera_info_msg3 = getImageMsg(data[3], self.spot_cameras_wrapper)
+            image_msg3, camera_info_msg3 = getImageMsg(
+                data[3], self.spot_cameras_wrapper
+            )
             self.hand_depth_in_hand_color_pub.publish(image_msg3)
             self.hand_depth_in_color_info_pub.publish(camera_info_msg3)
 
@@ -555,11 +580,9 @@ class SpotCamerasROS:
         for frame_name in image_data.shot.transforms_snapshot.child_to_parent_edge_map:
             if frame_name in excluded_frames:
                 continue
-            parent_frame = (
-                image_data.shot.transforms_snapshot.child_to_parent_edge_map.get(
-                    frame_name
-                ).parent_frame_name
-            )
+            parent_frame = image_data.shot.transforms_snapshot.child_to_parent_edge_map.get(
+                frame_name
+            ).parent_frame_name
             existing_transforms = [
                 (transform.header.frame_id, transform.child_frame_id)
                 for transform in self.sensors_static_transforms
@@ -568,10 +591,8 @@ class SpotCamerasROS:
                 # We already extracted this transform
                 continue
 
-            transform = (
-                image_data.shot.transforms_snapshot.child_to_parent_edge_map.get(
-                    frame_name
-                )
+            transform = image_data.shot.transforms_snapshot.child_to_parent_edge_map.get(
+                frame_name
             )
             local_time = self.spot_cameras_wrapper.robotToLocalTime(
                 image_data.shot.acquisition_time
@@ -679,7 +700,6 @@ class SpotCamerasROS:
         self.username = rospy.get_param("~username", "default_value")
         self.password = rospy.get_param("~password", "default_value")
         self.hostname = rospy.get_param("~hostname", "default_value")
-        
 
         self.logger = logging.getLogger("rosout")
 
@@ -691,10 +711,8 @@ class SpotCamerasROS:
             robot_name=self.robot_name,
             logger=self.logger,
             rates=self.rates,
-            callbacks=self.callbacks            
+            callbacks=self.callbacks,
         )
-
-        
 
         # Images #
         self.back_image_pub = rospy.Publisher("camera/back/image", Image, queue_size=10)
@@ -818,16 +836,14 @@ class SpotCamerasROS:
             self.hand_depth_in_hand_color_pub: "hand_image",
         }
 
-        
         # """Defining a TF publisher manually because of conflicts between Python3 and tf"""
         # self.tf_pub = rospy.Publisher("tf", TFMessage, queue_size=10)
         # self.metrics_pub = rospy.Publisher("status/metrics", Metrics, queue_size=10)
-              
 
         rate_check_for_subscriber = RateLimitedCall(
             self.check_for_subscriber, self.rates["check_subscribers"]
         )
-        
+
         rospy.loginfo("Cameras started")
         while not rospy.is_shutdown():
             self.spot_cameras_wrapper.updateTasks()
@@ -835,11 +851,8 @@ class SpotCamerasROS:
             rate.sleep()
 
 
-
-
-
 class SpotCameraWrapper:
-    
+
     SPOT_CLIENT_NAME = "ros_spot"
 
     def __init__(
@@ -850,7 +863,7 @@ class SpotCameraWrapper:
         robot_name: str,
         logger: logging.Logger,
         rates: typing.Optional[typing.Dict] = None,
-        callbacks: typing.Optional[typing.Dict] = None        
+        callbacks: typing.Optional[typing.Dict] = None,
     ):
         """
         Args:
@@ -875,7 +888,7 @@ class SpotCameraWrapper:
         self._password = password
         self._hostname = hostname
         self._robot_name = robot_name
-        
+
         if robot_name is not None:
             self._frame_prefix = robot_name + "/"
         self._logger = logger
@@ -887,7 +900,7 @@ class SpotCameraWrapper:
             self._callbacks = {}
         else:
             self._callbacks = callbacks
-        
+
         self._front_image_requests = []
         for source in front_image_sources:
             self._front_image_requests.append(
@@ -956,14 +969,9 @@ class SpotCameraWrapper:
         # bosdyn.client.util.authenticate("user", "b7bih964c5qg")
         # # bosdyn.client.util.authenticate(self._username, self._password)
 
-        
-
-
-        self._sdk = bosdyn.client.create_standard_sdk('image_capture')
+        self._sdk = bosdyn.client.create_standard_sdk("image_capture")
         self._robot = self._sdk.create_robot(self._hostname)
         self._robot.authenticate(self._username, self._password)
-
-
 
         if self._robot:
             # Clients
@@ -980,7 +988,7 @@ class SpotCameraWrapper:
                     self._robot_command_client = self._robot.ensure_client(
                         RobotCommandClient.default_service_name
                     )
-                    
+
                     self._image_client = self._robot.ensure_client(
                         ImageClient.default_service_name
                     )
@@ -993,7 +1001,6 @@ class SpotCameraWrapper:
                         self._point_cloud_client = None
                         self._logger.info("No point cloud services are available.")
 
-                    
                     initialised = True
                 except Exception as e:
                     sleep_secs = 15
@@ -1007,6 +1014,9 @@ class SpotCameraWrapper:
 
             # Add hand camera requests
             if self._robot.has_arm():
+                # time_sync_client = self._robot.ensure_client(TimeSyncClient.default_service_name)
+                # time_sync_endpoint = TimeSyncEndpoint(time_sync_client)
+                # did_establish = time_sync_endpoint.establish_timesync(
                 self._camera_image_requests.append(
                     build_image_request(
                         "hand_color_image",
@@ -1055,7 +1065,7 @@ class SpotCameraWrapper:
 
             # Async Tasks
             self._async_task_list = []
-                        
+
             self._front_image_task = AsyncImageService(
                 self._image_client,
                 self._logger,
@@ -1088,7 +1098,6 @@ class SpotCameraWrapper:
             robot_tasks = [
                 # self._robot_state_task,
                 self._front_image_task
-                
             ]
 
             if self._point_cloud_client:
@@ -1111,7 +1120,7 @@ class SpotCameraWrapper:
             }
 
             self._robot_id = None
-            
+
     @property
     def robot_name(self):
         return self._robot_name
@@ -1190,7 +1199,6 @@ class SpotCameraWrapper:
         except Exception as e:
             print(f"Update tasks failed with error: {str(e)}")
 
-    
     def update_image_tasks(self, image_name):
         """Adds an async tasks to retrieve images from the specified image source"""
 
@@ -1407,7 +1415,6 @@ class SpotCameraWrapper:
                 )
             )
         return result
-
 
 
 if __name__ == "__main__":
