@@ -31,6 +31,7 @@
 ##############################################################################
 
 import argparse
+import sys
 import time
 from typing import Text, Tuple
 
@@ -38,13 +39,15 @@ import bosdyn.client
 import bosdyn.client.util
 import numpy as np
 import yaml
-from bosdyn.api import (estop_pb2, geometry_pb2, robot_command_pb2,
-                        synchronized_command_pb2)
-from bosdyn.client import ResponseError, RpcError
+from bosdyn.api import (estop_pb2, geometry_pb2, manipulation_api_pb2,
+                        robot_command_pb2, synchronized_command_pb2)
+from bosdyn.client import ResponseError, RpcError, frame_helpers
 from bosdyn.client.estop import EstopClient, EstopEndpoint, EstopKeepAlive
+from bosdyn.client.image import ImageClient
 from bosdyn.client.lease import (InvalidResourceError, LeaseKeepAlive,
                                  NotAuthoritativeServiceError,
                                  ResourceAlreadyClaimedError)
+from bosdyn.client.manipulation_api_client import ManipulationApiClient
 from bosdyn.client.robot_command import (RobotCommandBuilder,
                                          RobotCommandClient,
                                          block_until_arm_arrives,
@@ -99,6 +102,10 @@ class SpotManipulationDriver(object):
         self.robot_state_client = self.robot.ensure_client(
             RobotStateClient.default_service_name
         )
+        self.manipulation_api_client = self.robot.ensure_client(
+            ManipulationApiClient.default_service_name
+        )
+        self.image_client = self.robot.ensure_client(ImageClient.default_service_name)
 
     # Useful getters
     def get_robot(self):
@@ -401,6 +408,117 @@ class SpotManipulationDriver(object):
         )
 
         self.command_client.robot_command(robot_cmd)
+
+    def image_to_grasp(self, center_px_x, center_px_y):
+
+        # capturing an image
+        self.robot.time_sync.wait_for_sync()
+        camera_name = "left_fisheye_image"
+        image_response = self.image_client.get_image_from_sources([camera_name])
+        image = image_response[0]
+
+        # Filling out grasping request
+        pick_vec = geometry_pb2.Vec2(x=center_px_x, y=center_px_y)
+        grasp = manipulation_api_pb2.PickObjectInImage(
+            pixel_xy=pick_vec,
+            transforms_snapshot_for_camera=image.shot.transforms_snapshot,
+            frame_name_image_sensor=image.shot.frame_name_image_sensor,
+            camera_model=image.source.pinhole,
+        )
+        grasp.grasp_params.grasp_palm_to_fingertip = (
+            0.6
+        )  # might need to adjust for object size
+
+        # Specify top-down grasp
+
+        # Add a constraint that requests that the x-axis of the gripper is pointing in the
+        # negative-z direction in the vision frame.
+
+        # The axis on the gripper is the x-axis.
+        axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0)
+
+        # The axis in the vision frame is the negative z-axis
+        axis_to_align_with_ewrt_vision = geometry_pb2.Vec3(x=0, y=0, z=-1)
+
+        # Add the vector constraint to our proto.
+        constraint = grasp.grasp_params.allowable_orientation.add()
+        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
+            axis_on_gripper_ewrt_gripper
+        )
+        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
+            axis_to_align_with_ewrt_vision
+        )
+
+        # We'll take anything within about 15 degrees for top-down or horizontal grasps.
+        constraint.vector_alignment_with_tolerance.threshold_radians = 0.25
+
+        # Specify the frame we're using.
+        grasp.grasp_params.grasp_params_frame_name = frame_helpers.VISION_FRAME_NAME
+
+        # Build the proto
+        grasp_request = manipulation_api_pb2.ManipulationApiRequest(
+            pick_object_in_image=grasp
+        )
+
+        # Send the request
+        print("Sending grasp request...")
+        cmd_response = self.manipulation_api_client.manipulation_api_command(
+            manipulation_api_request=grasp_request
+        )
+        # Wait for the grasp to finish
+        grasp_done = False
+        failed = False
+        time_start = time.time()
+        while not grasp_done:
+            feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
+                manipulation_cmd_id=cmd_response.manipulation_cmd_id
+            )
+
+            # Send a request for feedback
+            response = self.manipulation_api_client.manipulation_api_feedback_command(
+                manipulation_api_feedback_request=feedback_request
+            )
+
+            current_state = response.current_state
+            current_time = time.time() - time_start
+            print(
+                "Current state ({time:.1f} sec): {state}".format(
+                    time=current_time,
+                    state=manipulation_api_pb2.ManipulationFeedbackState.Name(
+                        current_state
+                    ),
+                ),
+                end="                \r",
+            )
+            sys.stdout.flush()
+
+            failed_states = [
+                manipulation_api_pb2.MANIP_STATE_GRASP_FAILED,
+                manipulation_api_pb2.MANIP_STATE_GRASP_PLANNING_NO_SOLUTION,
+                manipulation_api_pb2.MANIP_STATE_GRASP_FAILED_TO_RAYCAST_INTO_MAP,
+                manipulation_api_pb2.MANIP_STATE_GRASP_PLANNING_WAITING_DATA_AT_EDGE,
+            ]
+
+            failed = current_state in failed_states
+            grasp_done = (
+                current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED
+                or failed
+            )
+
+            time.sleep(0.1)
+
+        holding_trash = not failed
+
+        return holding_trash
+
+        # Move the arm to a carry position.
+        print("")
+        print("Grasp finished, search for a person...")
+        carry_cmd = RobotCommandBuilder.arm_carry_command()
+        self.command_client.robot_command(carry_cmd)
+
+        # Wait for the carry command to finish
+        time.sleep(0.75)
 
     def stand_robot(self):
         self.robot.logger.info("Commanding robot to stand...")

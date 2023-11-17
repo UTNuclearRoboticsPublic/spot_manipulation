@@ -40,6 +40,8 @@ from control_msgs.msg import (FollowJointTrajectoryAction,
                               FollowJointTrajectoryFeedback,
                               FollowJointTrajectoryResult)
 from geometry_msgs.msg import Twist, TwistStamped
+from image2grasp_msg.msg import (Image2GraspAction, Image2GraspFeedback,
+                                 Image2GraspResult)
 from sensor_msgs.msg import JointState
 from spot_manipulation_driver.manipulation_driver_util import \
     SpotManipulationDriver
@@ -68,6 +70,12 @@ class FollowJointTrajectory(SpotManipulationDriver):
             False,
         )
 
+        self.image_to_grasp_action_server = actionlib.SimpleActionServer(
+            "spot/image_to_grasp",
+            Image2GraspAction,
+            self.image_to_grasp_goal_callback,
+            False,
+        )
         self.joint_states_pub = rospy.Publisher(
             "joint_states", JointState, queue_size=10
         )
@@ -83,6 +91,7 @@ class FollowJointTrajectory(SpotManipulationDriver):
         # Start action servers
         self.arm_action_server.start()
         self.finger_action_server.start()
+        self.image_to_grasp_action_server.start()
 
         # Action messages and helper attributes
         # Arm-related attributes
@@ -94,6 +103,10 @@ class FollowJointTrajectory(SpotManipulationDriver):
         self.finger_feedback = FollowJointTrajectoryFeedback()
         self.finger_result = FollowJointTrajectoryResult()
         self.finger_feedback_publish_flag = None
+
+        # image_to_grasp-related attributes
+        self.image_to_grasp_feedback = Image2GraspFeedback()
+        self.image_to_grasp_result = Image2GraspResult()
 
         self.rate = rospy.Rate(10)
 
@@ -153,6 +166,12 @@ class FollowJointTrajectory(SpotManipulationDriver):
         if success:
             rospy.loginfo("Successfully executed trajectory")
             self.finger_action_server.set_succeeded(self.finger_result)
+
+    def image_to_grasp_goal_callback(self, goal):
+        """Callback for image_to_grasp_action_server"""
+        self.image_to_grasp_result = SpotManipulationDriver.image_to_grasp(
+            self, goal.pixel_x, goal.pixel_y
+        )
 
     def arm_follow_joint_trajectory_feedback(self):
         """Feedback for arm_action_server"""
