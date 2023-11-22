@@ -170,7 +170,7 @@ class FollowJointTrajectory(SpotManipulationDriver):
     def image_to_grasp_goal_callback(self, goal):
         """Callback for image_to_grasp_action_server"""
         self.image_to_grasp_result = SpotManipulationDriver.image_to_grasp(
-            self, goal.pixel_x, goal.pixel_y
+            self, goal.pixel_x, goal.pixel_y, goal.camera_name
         )
 
     def arm_follow_joint_trajectory_feedback(self):

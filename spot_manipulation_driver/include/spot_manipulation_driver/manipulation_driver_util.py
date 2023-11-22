@@ -37,13 +37,15 @@ from typing import Text, Tuple
 
 import bosdyn.client
 import bosdyn.client.util
+import cv2
 import numpy as np
 import yaml
-from bosdyn.api import (estop_pb2, geometry_pb2, manipulation_api_pb2,
-                        robot_command_pb2, synchronized_command_pb2)
+from bosdyn.api import (estop_pb2, geometry_pb2, image_pb2,
+                        manipulation_api_pb2, robot_command_pb2,
+                        synchronized_command_pb2)
 from bosdyn.client import ResponseError, RpcError, frame_helpers
 from bosdyn.client.estop import EstopClient, EstopEndpoint, EstopKeepAlive
-from bosdyn.client.image import ImageClient
+from bosdyn.client.image import ImageClient, build_image_request
 from bosdyn.client.lease import (InvalidResourceError, LeaseKeepAlive,
                                  NotAuthoritativeServiceError,
                                  ResourceAlreadyClaimedError)
@@ -55,6 +57,7 @@ from bosdyn.client.robot_command import (RobotCommandBuilder,
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.util import seconds_to_timestamp
 from google.protobuf.timestamp_pb2 import Timestamp
+from scipy import ndimage
 
 
 class SpotManipulationDriver(object):
@@ -409,13 +412,68 @@ class SpotManipulationDriver(object):
 
         self.command_client.robot_command(robot_cmd)
 
-    def image_to_grasp(self, center_px_x, center_px_y):
+    def pixel_format_string_to_enum(self, enum_string):
+        return dict(image_pb2.Image.PixelFormat.items()).get(enum_string)
 
-        # capturing an image
-        self.robot.time_sync.wait_for_sync()
-        camera_name = "left_fisheye_image"
-        image_response = self.image_client.get_image_from_sources([camera_name])
-        image = image_response[0]
+    def image_to_grasp(self, center_px_x, center_px_y, camera_name):
+        # Optionally list image sources on robot.
+        # Capturing an image
+        source = camera_name
+
+        # Optionally capture one or more images.
+        # Capture and save images to disk
+        pixel_format = self.pixel_format_string_to_enum("PIXEL_FORMAT_RGB_U8")
+        image_request = [build_image_request(source, pixel_format=pixel_format)]
+        image_responses = self.image_client.get_image(image_request)
+
+        for image in image_responses:
+            num_bytes = 1  # Assume a default of 1 byte encodings.
+            if image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_DEPTH_U16:
+                dtype = np.uint16
+                extension = ".png"
+            else:
+                if image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_RGB_U8:
+                    num_bytes = 3
+                elif (
+                    image.shot.image.pixel_format
+                    == image_pb2.Image.PIXEL_FORMAT_RGBA_U8
+                ):
+                    num_bytes = 4
+                elif (
+                    image.shot.image.pixel_format
+                    == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U8
+                ):
+                    num_bytes = 1
+                elif (
+                    image.shot.image.pixel_format
+                    == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U16
+                ):
+                    num_bytes = 2
+                dtype = np.uint8
+                extension = ".jpg"
+
+            img = np.frombuffer(image.shot.image.data, dtype=dtype)
+            if image.shot.image.format == image_pb2.Image.FORMAT_RAW:
+                try:
+                    # Attempt to reshape array into a RGB rows X cols shape.
+                    img = img.reshape(
+                        (image.shot.image.rows, image.shot.image.cols, num_bytes)
+                    )
+                except ValueError:
+                    # Unable to reshape the image data, trying a regular decode.
+                    img = cv2.imdecode(img, -1)
+            else:
+                img = cv2.imdecode(img, -1)
+
+            # if options.auto_rotate:# to implement rotation to right and front images later
+            #     img = ndimage.rotate(img, ROTATION_ANGLE[image.source.name])
+
+        # # capturing an image
+        # self.robot.time_sync.wait_for_sync()
+        # # camera_name = "left_fisheye_image"
+        # image_response = self.image_client.get_image_from_sources([camera_name])
+        # image = image_response[0]
+        image = image_responses[0]
 
         # Filling out grasping request
         pick_vec = geometry_pb2.Vec2(x=center_px_x, y=center_px_y)
