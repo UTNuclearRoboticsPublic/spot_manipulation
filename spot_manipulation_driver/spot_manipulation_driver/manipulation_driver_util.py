@@ -269,7 +269,7 @@ class SpotManipulationDriver(object):
         self.command_client.robot_command(robot_cmd)
 
         traj_index = [0, 9]
-        end_index = len(traj_point_positions) - 1
+        end_index = len(traj_point_positions)
 
         # Compute reference time for the entire long trajectory
         start_time = time.time() + TRAJ_APPROACH_TIME
@@ -280,6 +280,10 @@ class SpotManipulationDriver(object):
             positions = []
             velocities = []
 
+            # Don't let the extracted index range go beyond the end of the trajectory
+            if traj_index[1] > end_index:
+                traj_index[1] = end_index
+
             # Extract a short trajectory from the long list
             times = time_since_ref[traj_index[0] : traj_index[1]]
             positions = traj_point_positions[traj_index[0] : traj_index[1]]
@@ -288,8 +292,6 @@ class SpotManipulationDriver(object):
             # Increment indices for the next short trajectory
             traj_index = list(map(lambda x: x + 9, traj_index))
 
-            if traj_index[1] > end_index:
-                traj_index[1] = end_index
 
             robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
                 joint_positions=positions,
