@@ -71,12 +71,12 @@ class SpotManipulationDriver(object):
             self._lease_manager.setLogger(self._logger)
             if not self._lease_manager.connect(self._hostname, rates, callbacks):
                 return False
-        
+
         # Verify that the robot has an arm
         if not self._lease_manager.robot.has_arm():
             self._logger.fatal("Robot requires arm to use SpotManipulationDriver")
             return False
-            
+
         # Configure the hand to publish its depth and color images
         hand_image_sources = {'hand_image', 'hand_depth', 'hand_color_image', 'hand_depth_in_hand_color_frame'}
         hand_image_requests = []
@@ -89,10 +89,10 @@ class SpotManipulationDriver(object):
         except Exception as e:
             self._logger.error(f'Unable to create client service: {e}')
             return False
-        
+
         # Create asynchronous tasks whose state can be queried
         self._hand_image_task = AsyncImageService(self._image_client, self._logger, rates.get("hand_image", 1.0), callbacks.get("hand_image", lambda:None), hand_image_requests)
-        self._robot_state_task = AsyncRobotState(self._lease_manager._robot_state_client, self._logger, rates.get("robot_state", 1.0), callbacks.get("robot_state", lambda:None))        
+        self._robot_state_task = AsyncRobotState(self._lease_manager._robot_state_client, self._logger, rates.get("robot_state", 1.0), callbacks.get("robot_state", lambda:None))
         self._is_connected = True
         return True
 
@@ -116,15 +116,15 @@ class SpotManipulationDriver(object):
         if state is None: return None
         ee_force = state.manipulator_state.estimated_end_effector_force_in_hand
         return ee_force.x, ee_force.y, ee_force.z
-    
+
     @property
     def robot_time(self) -> timestamp_pb2.Timestamp:
         return self._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(time.time())
-    
+
     @property
     def latest_hand_images(self):
         return self._hand_image_task.proto
-    
+
     @property
     def lease_manager(self):
         return self._lease_manager
@@ -179,7 +179,7 @@ class SpotManipulationDriver(object):
         self._lease_manager.robot_command(robot_cmd)
 
         traj_index = [0, 9]
-        end_index = len(traj_point_positions) - 1
+        end_index = len(traj_point_positions)
 
         # Compute reference time for the entire long trajectory
         start_time = time.time() + TRAJ_APPROACH_TIME
@@ -190,6 +190,10 @@ class SpotManipulationDriver(object):
             positions = []
             velocities = []
 
+            # Don't let the extracted index range go beyond the end of the trajectory
+            if traj_index[1] > end_index:
+                traj_index[1] = end_index
+
             # Extract a short trajectory from the long list
             times = timepoints[traj_index[0] : traj_index[1]]
             positions = traj_point_positions[traj_index[0] : traj_index[1]]
@@ -198,8 +202,6 @@ class SpotManipulationDriver(object):
             # Increment indices for the next short trajectory
             traj_index = list(map(lambda x: x + 9, traj_index))
 
-            if traj_index[1] > end_index:
-                traj_index[1] = end_index
 
             robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
                 joint_positions=positions,
@@ -308,21 +310,21 @@ class SpotManipulationDriver(object):
         robot_cmd = RobotCommandBuilder.arm_ready_command()
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
-    
+
     def open_gripper(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.claw_gripper_open_command()
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
-    
+
     def close_gripper(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.claw_gripper_close_command()
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
-    
+
     def open_gripper_to_angle(self, angle: float) -> Tuple[bool, Text]:
-        if angle > 90.0 or angle < 0.0: 
+        if angle > 90.0 or angle < 0.0:
             return False, Text('Could not set gripper angle to invalid angle' + angle)
-        
+
         # The open angle command does not take degrees but the limits
         # defined in the urdf, that is why we have to interpolate
         closed = 0.349066
@@ -338,7 +340,7 @@ class SpotManipulationDriver(object):
         if self._lease_manager is None:
             msg = "Cannot claim a lease without first connecting to a LeaseManager"
             return False, msg
-        
+
         result = self._lease_manager.registerLeaseOwner(id(self))
         return result
 
