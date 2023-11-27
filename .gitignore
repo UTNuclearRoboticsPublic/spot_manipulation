@@ -1,0 +1,5 @@
+# Ignore py_cache folders
+__pycache__/
+*.pyc
+# Ignore swap files created by vim
+*.swp
