@@ -56,8 +56,10 @@ from bosdyn.client.robot_command import (RobotCommandBuilder,
                                          blocking_stand)
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.util import seconds_to_timestamp
+from cv_bridge import CvBridge
 from google.protobuf.timestamp_pb2 import Timestamp
 from scipy import ndimage
+from sensor_msgs.msg import Image
 
 
 class SpotManipulationDriver(object):
@@ -412,12 +414,8 @@ class SpotManipulationDriver(object):
 
         self.command_client.robot_command(robot_cmd)
 
-    def pixel_format_string_to_enum(self, enum_string):
-        return dict(image_pb2.Image.PixelFormat.items()).get(enum_string)
+    def capture_image(self, camera_name):
 
-    def image_to_grasp(self, center_px_x, center_px_y, camera_name):
-        # Optionally list image sources on robot.
-        # Capturing an image
         source = camera_name
 
         # Optionally capture one or more images.
@@ -464,16 +462,31 @@ class SpotManipulationDriver(object):
                     img = cv2.imdecode(img, -1)
             else:
                 img = cv2.imdecode(img, -1)
+        # cv2.imwrite('/home/spot/trashcan/', img)
+        # Convert to ROS type
+        # CVBridge Instance
+        bridge = CvBridge()
+        image_msg = Image()
+        image_msg = bridge.cv2_to_imgmsg(img, encoding="passthrough")
+        # image_msg.encoding = "rgb8"
+        # image_msg.is_bigendian = True
+        # image_msg.step = 3 * image_responses[0].shot.image.cols
+        # image_msg.data = image_responses[0].shot.image.data
 
-            # if options.auto_rotate:# to implement rotation to right and front images later
-            #     img = ndimage.rotate(img, ROTATION_ANGLE[image.source.name])
+        return img, image_responses[0], image_msg
+
+    def pixel_format_string_to_enum(self, enum_string):
+        return dict(image_pb2.Image.PixelFormat.items()).get(enum_string)
+
+    def image_to_grasp(self, center_px_x, center_px_y, camera_name):
+        _, image, _ = self.capture_image(camera_name)
 
         # # capturing an image
         # self.robot.time_sync.wait_for_sync()
         # # camera_name = "left_fisheye_image"
         # image_response = self.image_client.get_image_from_sources([camera_name])
         # image = image_response[0]
-        image = image_responses[0]
+        # image = image_responses[0]
 
         # Filling out grasping request
         pick_vec = geometry_pb2.Vec2(x=center_px_x, y=center_px_y)
@@ -508,7 +521,8 @@ class SpotManipulationDriver(object):
         )
 
         # We'll take anything within about 15 degrees for top-down or horizontal grasps.
-        constraint.vector_alignment_with_tolerance.threshold_radians = 0.25
+        # constraint.vector_alignment_with_tolerance.threshold_radians = 0.25
+        constraint.vector_alignment_with_tolerance.threshold_radians = 1.22
 
         # Specify the frame we're using.
         grasp.grasp_params.grasp_params_frame_name = frame_helpers.VISION_FRAME_NAME

@@ -39,10 +39,11 @@ import rospy
 from control_msgs.msg import (FollowJointTrajectoryAction,
                               FollowJointTrajectoryFeedback,
                               FollowJointTrajectoryResult)
+from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist, TwistStamped
 from image2grasp_msg.msg import (Image2GraspAction, Image2GraspFeedback,
                                  Image2GraspResult)
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import Image, JointState
 from spot_manipulation_driver.manipulation_driver_util import \
     SpotManipulationDriver
 
@@ -88,6 +89,9 @@ class FollowJointTrajectory(SpotManipulationDriver):
             "/ee_twist_cmds", TwistStamped, self.ap_ee_vel_sub_callback
         )
 
+        # Image publisher
+        self.capture_image_pub = rospy.Publisher("capture_image", Image, queue_size=10)
+
         # Start action servers
         self.arm_action_server.start()
         self.finger_action_server.start()
@@ -107,6 +111,9 @@ class FollowJointTrajectory(SpotManipulationDriver):
         # image_to_grasp-related attributes
         self.image_to_grasp_feedback = Image2GraspFeedback()
         self.image_to_grasp_result = Image2GraspResult()
+
+        # CVBridge Instance
+        self.bridge = CvBridge()
 
         self.rate = rospy.Rate(10)
 
@@ -212,6 +219,7 @@ class FollowJointTrajectory(SpotManipulationDriver):
     def publish_joint_states(self):
         """Method to constantly publish joint states"""
         joint_states = JointState()
+        image_msg = Image()
 
         while not rospy.is_shutdown():
             # Get joint states
@@ -227,6 +235,17 @@ class FollowJointTrajectory(SpotManipulationDriver):
             # Publish and sleep
             self.joint_states_pub.publish(joint_states)
             self.rate.sleep()
+
+            # Extract image and publish
+            # wrapper_img, _ = SpotManipulationDriver.capture_image(
+            #     self, "left_fisheye_image"
+            # )
+            _, _, image_msg = SpotManipulationDriver.capture_image(
+                self, "left_fisheye_image"
+            )
+            # Convert to ros type
+            # image_msg = self.bridge.cv2_to_imgmsg(wrapper_img, encoding="passthrough")
+            self.capture_image_pub.publish(image_msg)
 
     def ee_vel_sub_callback(self, msg):
         """Callback for end effector velocity command subscriber"""
