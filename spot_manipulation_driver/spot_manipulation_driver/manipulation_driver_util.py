@@ -39,12 +39,18 @@ import bosdyn.client.util
 import numpy as np
 import yaml
 from bosdyn.api import (estop_pb2, geometry_pb2, robot_command_pb2,
-                        synchronized_command_pb2)
+                        synchronized_command_pb2, arm_command_pb2, 
+                        arm_surface_contact_pb2, arm_surface_contact_service_pb2)
 from bosdyn.client import ResponseError, RpcError
+from bosdyn.client.arm_surface_contact import ArmSurfaceContactClient
 from bosdyn.client.estop import EstopClient, EstopEndpoint, EstopKeepAlive
+from bosdyn.client.frame_helpers import (GRAV_ALIGNED_BODY_FRAME_NAME, 
+                                         GROUND_PLANE_FRAME_NAME, 
+                                         ODOM_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.lease import (InvalidResourceError, LeaseKeepAlive,
                                  NotAuthoritativeServiceError,
                                  ResourceAlreadyClaimedError)
+from bosdyn.client.math_helpers import Quat, SE3Pose
 from bosdyn.client.robot_command import (RobotCommandBuilder,
                                          RobotCommandClient,
                                          block_until_arm_arrives,
@@ -321,6 +327,87 @@ class SpotManipulationDriver(object):
             time_to_goal_in_seconds: float = time_to_goal.seconds + (
                 float(time_to_goal.nanos) / float(10 ** 9)
             )
+
+    def arm_force_trajectory_executor(self, traj_point_positions, traj_point_velocities, force):
+        self.robot.time_sync.wait_for_sync()
+        self.verify_power_and_estop()
+        self.robot.logger.info("Arm is about to move.")
+
+        end_index = len(traj_point_positions) - 1
+
+        # Extract a short trajectory from the long list
+        # times = time_since_ref[traj_index[0] : traj_index[1]]
+        # positions = traj_point_positions[traj_index[0] : traj_index[1]]
+        # velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
+
+        # First, let's pick a task frame that is in front of the robot on the ground.
+        robot_state_client = self.robot.ensure_client(RobotStateClient.default_service_name)
+        robot_state = robot_state_client.get_robot_state()
+        odom_T_grav_body = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot,
+                                         ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
+
+        odom_T_gpe = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot, ODOM_FRAME_NAME,
+                                   GROUND_PLANE_FRAME_NAME)
+
+        # Get the frame on the ground right underneath the center of the body.
+        odom_T_ground_body = odom_T_grav_body
+        odom_T_ground_body.z = odom_T_gpe.z
+
+
+        wr1_T_tool = SE3Pose(0.23589, 0, -0.03943, Quat.from_pitch(-np.pi / 2))
+        odom_T_task = odom_T_ground_body * SE3Pose(x=0.6, y=0, z=0, rot=Quat(w=1, x=0, y=0, z=0))
+
+        robot_cmd = robot_command_pb2.RobotCommand()
+        impedance_cmd = robot_cmd.synchronized_command.arm_command.arm_impedance_command
+
+        # Set up our root frame, task frame, and tool frame.
+        impedance_cmd.root_frame_name = ODOM_FRAME_NAME
+        impedance_cmd.root_tform_task.CopyFrom(odom_T_task.to_proto())
+        impedance_cmd.wrist_tform_tool.CopyFrom(wr1_T_tool.to_proto())
+
+        # Set up downward force.
+        impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.force.x = 0
+        impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.force.y = 0
+        impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.force.z = force  # Newtons
+        impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.torque.x = 0
+        impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.torque.y = 0
+        impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.torque.z = 0
+        # Increment indices for the next short trajectory
+        traj_index = list(map(lambda x: x + 9, traj_index))
+
+        if traj_index[1] > end_index:
+            traj_index[1] = end_index
+
+        cmd = arm_surface_contact_pb2.ArmSurfaceContact.Request(
+            pose_trajectory_in_task=traj_point_positions, 
+            # root_frame_name=api_send_frame,
+            # root_tform_task=world_T_admittance, 
+            # press_forcetraj_percentage=press_force,
+            x_axis=arm_surface_contact_pb2.ArmSurfaceContact.Request.AXIS_MODE_POSITION,
+            y_axis=arm_surface_contact_pb2.ArmSurfaceContact.Request.AXIS_MODE_POSITION,
+            z_axis=arm_surface_contact_pb2.ArmSurfaceContact.Request.AXIS_MODE_POSITION,
+            max_linear_velocity=max(traj_point_velocities))
+
+        # TODO: finish force trajectory executor using surface contact and impedance control
+        # surface contact to follow given trajectory and set admittance setting
+        # impecance control to set downward force 
+
+        # Add admittance options
+        cmd.z_axis = arm_surface_contact_pb2.ArmSurfaceContact.Request.AXIS_MODE_FORCE
+        cmd.press_force_percentage.z = 100
+
+        #if admittance_frame is not None:
+
+        # Set the robot to be really stiff in x/y and really sensitive to admittance in z.
+        cmd.xy_admittance = arm_surface_contact_pb2.ArmSurfaceContact.Request.ADMITTANCE_SETTING_VERY_STIFF
+        cmd.z_admittance = arm_surface_contact_pb2.ArmSurfaceContact.Request.ADMITTANCE_SETTING_LOOSE
+
+        # Build the request proto
+        proto = arm_surface_contact_service_pb2.ArmSurfaceContactCommand(request=cmd)
+
+        # Send the request
+        arm_surface_contact_client = self.robot.ensure_client(ArmSurfaceContactClient.default_service_name)
+        arm_surface_contact_client.arm_surface_contact_command(proto)
 
     def gripper_trajectory_executor(self, traj_point_positions, time_since_ref):
 

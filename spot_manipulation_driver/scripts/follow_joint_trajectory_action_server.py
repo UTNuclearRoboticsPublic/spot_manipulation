@@ -111,9 +111,16 @@ class FollowJointTrajectoryActionServer(Node, SpotManipulationDriver):
         )
         arm_feedback_thread.start()
 
-        SpotManipulationDriver.arm_long_trajectory_executor(
-            self, traj_point_positions, traj_point_velocities, time_since_ref
-        )
+        force = -4.448 # Newtons
+
+        if force:
+            SpotManipulationDriver.arm_force_trajectory_executor(
+                self, traj_point_positions, traj_point_velocities, force
+            )
+        else:
+            SpotManipulationDriver.arm_long_trajectory_executor(
+                self, traj_point_positions, traj_point_velocities, time_since_ref
+            )
 
         self.arm_feedback_publish_flag = False
         arm_feedback_thread.join()
@@ -231,6 +238,11 @@ class JointStatePublisher(Node):
             "/ee_force",
             10,
         )
+        self.wrench_state_pub = self.create_publisher(
+            WrenchStamped,
+            "ee_wrench",
+            10,
+        )
         timer_period = 0.25
         self.timer = self.create_timer(timer_period, self.publish_joint_states)
 
@@ -238,13 +250,15 @@ class JointStatePublisher(Node):
         """Method to constantly publish joint states"""
         joint_states = JointState()
         force_torque_state = WrenchStamped()
+        wrench_state = WrenchStamped()
 
         # Get joint states and force-torque data
         joint_states_source = (
             self.follow_joint_trajectory_action_server.get_joint_states()
         )
         force_torque_state_source = self.follow_joint_trajectory_action_server.get_force_torque_state()
-        
+        wrench_state_source = self.follow_joint_trajectory_action_server.get_wrench_at_tool()
+
         joint_states.header.stamp = ROSTime(
             sec=joint_states_source[0].seconds, nanosec=joint_states_source[0].nanos
         )
@@ -260,9 +274,20 @@ class JointStatePublisher(Node):
         force_torque_state.wrench.force.y = force_torque_state_source[1]
         force_torque_state.wrench.force.z = force_torque_state_source[2]
 
-        # Publish joint states and force-torque data
+        wrench_state.header.stamp = ROSTime(
+            sec=joint_states_source[0].seconds, nanosec=joint_states_source[0].nanos
+        )
+        wrench_state.wrench.force.x = wrench_state_source[0]
+        wrench_state.wrench.force.y = wrench_state_source[1]
+        wrench_state.wrench.force.z = wrench_state_source[2]
+        wrench_state.wrench.torque.x = wrench_state_source[3]
+        wrench_state.wrench.torque.y = wrench_state_source[4]
+        wrench_state.wrench.torque.z = wrench_state_source[5]
+        
+        # Publish joint states and force-torque data        
         self.joint_states_pub.publish(joint_states)
         self.force_torque_state_pub.publish(force_torque_state)
+        self.wrench_state_pub.publish(wrench_state)
 
 
 
