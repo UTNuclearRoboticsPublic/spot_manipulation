@@ -77,6 +77,12 @@ class FollowJointTrajectory(SpotManipulationDriver):
             self.image_to_grasp_goal_callback,
             False,
         )
+        self.walk_to_object_action_server = actionlib.SimpleActionServer(
+            "spot/walk_to_object",
+            Image2GraspAction,
+            self.walk_to_object_goal_callback,
+            False,
+        )
         self.joint_states_pub = rospy.Publisher(
             "joint_states", JointState, queue_size=10
         )
@@ -96,6 +102,7 @@ class FollowJointTrajectory(SpotManipulationDriver):
         self.arm_action_server.start()
         self.finger_action_server.start()
         self.image_to_grasp_action_server.start()
+        self.walk_to_object_action_server.start()
 
         # Action messages and helper attributes
         # Arm-related attributes
@@ -111,6 +118,10 @@ class FollowJointTrajectory(SpotManipulationDriver):
         # image_to_grasp-related attributes
         self.image_to_grasp_feedback = Image2GraspFeedback()
         self.image_to_grasp_result = Image2GraspResult()
+
+        # walk_to_object-related attributes
+        self.walk_to_object_feedback = Image2GraspFeedback()
+        self.walk_to_object_result = Image2GraspResult()
 
         # CVBridge Instance
         self.bridge = CvBridge()
@@ -177,6 +188,12 @@ class FollowJointTrajectory(SpotManipulationDriver):
     def image_to_grasp_goal_callback(self, goal):
         """Callback for image_to_grasp_action_server"""
         self.image_to_grasp_result = SpotManipulationDriver.image_to_grasp(
+            self, goal.pixel_x, goal.pixel_y, goal.camera_name
+        )
+
+    def walk_to_object_goal_callback(self, goal):
+        """Callback for image_to_grasp_action_server"""
+        self.walk_to_object_result = SpotManipulationDriver.walk_to_object(
             self, goal.pixel_x, goal.pixel_y, goal.camera_name
         )
 

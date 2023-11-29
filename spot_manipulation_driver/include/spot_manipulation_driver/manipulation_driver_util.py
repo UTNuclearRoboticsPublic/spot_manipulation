@@ -57,6 +57,7 @@ from bosdyn.client.robot_command import (RobotCommandBuilder,
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.util import seconds_to_timestamp
 from cv_bridge import CvBridge
+from google.protobuf import wrappers_pb2
 from google.protobuf.timestamp_pb2 import Timestamp
 from scipy import ndimage
 from sensor_msgs.msg import Image
@@ -329,11 +330,13 @@ class SpotManipulationDriver(object):
         self.robot.logger.info("Gripper is about to move.")
 
         # Retrieve endpoint of the trajectory and execute it
-        end_index = len(traj_point_positions) - 1
-        position = traj_point_positions[end_index]
+        # end_index = len(traj_point_positions) - 1
+        # position = traj_point_positions[end_index]
+        position = traj_point_positions
         robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(position)
         self.command_client.robot_command(robot_cmd)
-        time.sleep(time_since_ref[end_index])
+        time.sleep(1.0)
+        # time.sleep(time_since_ref[end_index])
 
     def gripper_trajectory_executor_with_time_control(
         self, traj_point_positions, time_since_ref
@@ -581,16 +584,84 @@ class SpotManipulationDriver(object):
 
         holding_trash = not failed
 
-        return holding_trash
-
         # Move the arm to a carry position.
         print("")
-        print("Grasp finished, search for a person...")
+        print("Grasp finished ...")
         carry_cmd = RobotCommandBuilder.arm_carry_command()
         self.command_client.robot_command(carry_cmd)
 
         # Wait for the carry command to finish
         time.sleep(0.75)
+        return holding_trash
+
+    def walk_to_object(self, center_px_x, center_px_y, camera_name):
+        _, image, _ = self.capture_image(camera_name)
+
+        walk_vec = geometry_pb2.Vec2(x=center_px_x, y=center_px_y)
+
+        # Optionally populate the offset distance parameter.
+        # object_padding = -0.1
+        object_padding = None
+        if object_padding is None:
+            offset_distance = None
+        else:
+            offset_distance = wrappers_pb2.FloatValue(value=object_padding)
+
+        # Build the proto
+        walk_to = manipulation_api_pb2.WalkToObjectInImage(
+            pixel_xy=walk_vec,
+            transforms_snapshot_for_camera=image.shot.transforms_snapshot,
+            frame_name_image_sensor=image.shot.frame_name_image_sensor,
+            camera_model=image.source.pinhole,
+            offset_distance=offset_distance,
+        )
+
+        # Ask the robot to pick up the object
+        walk_to_request = manipulation_api_pb2.ManipulationApiRequest(
+            walk_to_object_in_image=walk_to
+        )
+
+        # Send the request
+        cmd_response = self.manipulation_api_client.manipulation_api_command(
+            manipulation_api_request=walk_to_request
+        )
+
+        # Get feedback from the robot
+        while True:
+            time.sleep(0.25)
+            feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
+                manipulation_cmd_id=cmd_response.manipulation_cmd_id
+            )
+
+            # Send the request
+            response = self.manipulation_api_client.manipulation_api_feedback_command(
+                manipulation_api_feedback_request=feedback_request
+            )
+
+            print(
+                "Current state: ",
+                manipulation_api_pb2.ManipulationFeedbackState.Name(
+                    response.current_state
+                ),
+            )
+
+            if response.current_state == manipulation_api_pb2.MANIP_STATE_DONE:
+                break
+
+        # Go to ready pose
+        self.robot.logger.info("Finished.")
+        # ready_cmd = RobotCommandBuilder.arm_ready_command()
+        # self.command_client.robot_command(ready_cmd)
+
+        # Wait for the ready command to finish
+        time.sleep(0.75)
+
+        # Open the gripper
+        self.gripper_trajectory_executor(-1.5, 1.0)
+
+        walked_to_object = True
+
+        return walked_to_object
 
     def stand_robot(self):
         self.robot.logger.info("Commanding robot to stand...")
