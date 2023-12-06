@@ -1,4 +1,4 @@
-/follow_joint_trajectory_node:
+/spot_manipulation_driver:
   ros__parameters:
     rates:
       sensors:

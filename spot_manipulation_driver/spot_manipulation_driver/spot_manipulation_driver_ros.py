@@ -137,6 +137,7 @@ class SpotManipulationDriverROS(Node):
         self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"       , 10)
 
         if publish_joint_states:
+            self.get_logger().info(f"Publishing robot state at {rates['robot_state']} Hz")
             self._joint_state_pub = self.create_publisher(JointState, "~/joint_state", 10)
 
         self.ee_vel_sub    = self.create_subscription(Twist, "~/cmd_vel", self.ee_vel_sub_callback, 10, callback_group=motion_callback_group)
@@ -173,6 +174,7 @@ class SpotManipulationDriverROS(Node):
         # Create timers to update the async tasks for publishing
         self.create_timer(0.5/rates['hand_image'], lambda: self.manipulation_driver._hand_image_task.update())
         self.create_timer(0.5/rates['robot_state'],  lambda: self.manipulation_driver._robot_state_task.update())
+        self.get_logger().info(f"Publishing gripper camera images at {rates['hand_image']} Hz")
 
         return True
 
