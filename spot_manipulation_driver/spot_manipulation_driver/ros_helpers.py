@@ -7,6 +7,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from .spot_manipulation_driver import SpotManipulationDriver
 from spot_msgs.msg import ManipulatorState
 from control_msgs.action import FollowJointTrajectory
+from spot_msgs.action import ArmImpedanceCommand
 
 def joint_trajectory_to_lists(msg: JointTrajectory):
     traj_point_positions = []
@@ -106,6 +107,24 @@ def get_joint_state_feedback(driver: SpotManipulationDriver) -> FollowJointTraje
         feedback.actual.velocities.append(joint.velocity.value)
         feedback.actual.effort.append(joint.load.value)
     return feedback
+
+def get_arm_impedance_feedback(arm_impedance_command: arm_command_pb2.ArmImpedanceCommand,
+                               driver: SpotManipulationDriver) -> ArmImpedanceCommand.Feedback:
+    
+    kinematic_state = driver.arm_state
+    feedback = ArmImpedanceCommand.Feedback()
+
+    # Get robot time as local time
+    local_time = driver._lease_manager.robotToLocalTime(kinematic_state.acquisition_timestamp)
+    feedback.header.stamp.sec = local_time.seconds
+    feedback.header.stamp.nanosec = local_time.nanos
+
+    feedback.status = arm_impedance_command.feedback.status
+    feedback.commanded_wrench_from_stiffness_at_tool_in_desired_tool = arm_impedance_command.feedback.commanded_wrench_from_stiffness_at_tool_in_desired_tool
+    feedback.commanded_wrench_from_damping_at_tool_in_desired_tool = arm_impedance_command.feedback.commanded_wrench_from_damping_at_tool_in_desired_tool
+    feedback.commanded_wrench_from_feed_forward_at_tool_in_desired_tool = arm_impedance_command.feedback.commanded_wrench_from_feed_forward_at_tool_in_desired_tool
+    feedback.total_commanded_wrench_at_tool_in_desired_tool = arm_impedance_command.feedback.total_commanded_wrench_at_tool_in_desired_tool
+    feedback.total_measured_wrench_at_tool_in_desired_tool = arm_impedance_command.feedback.total_measured_wrench_at_tool_in_desired_tool
 
 def manipulator_state_to_msg(manipulator_state: robot_state_pb2.ManipulatorState,
                            driver: SpotManipulationDriver) -> ManipulatorState:

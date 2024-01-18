@@ -48,8 +48,9 @@ from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 import spot_manipulation_driver.ros_helpers as ros_helpers
 from spot_driver.ros_helpers import getImageMsg, JointStatesToMsg
+# from spot_msgs.action import ArmImpedanceCommand
 from spot_msgs.msg import ManipulatorState
-from spot_msgs.srv import GripperAngleMove
+from spot_msgs.srv import GripperAngleMove, ForceTrajectory
 
 
 class SpotManipulationDriverROS(Node):
@@ -96,6 +97,11 @@ class SpotManipulationDriverROS(Node):
         self.finger_result = FollowJointTrajectory.Result()
         self.finger_feedback_publish_flag = False
 
+        # # Arm impedance attributes
+        # self.arm_impedance_feedback = ArmImpedanceCommand.Feedback()
+        # self.arm_impedance_result = ArmImpedanceCommand.Result()
+        # self.arm_impedance_feedback_publish_flag = False
+
     def connect(self, lease_manager: SpotLeaseManager) -> bool:
         self.get_logger().info("Connecting manipulation driver")
         self.manipulation_driver = SpotManipulationDriver(self.get_logger(), self.get_parameter('hostname').value)
@@ -124,6 +130,7 @@ class SpotManipulationDriverROS(Node):
         # Create a control group to prevent multiple callbacks from commanding motion simultaneously
         motion_callback_group  = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
         gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup() 
+        # impedance_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup() 
 
         # Create data publishers and subscribers
         self._hand_image_pub             = self.create_publisher(Image           , "~/rgb/tof/image"           , 10)
@@ -135,8 +142,9 @@ class SpotManipulationDriverROS(Node):
         self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/rgb/camera/camera_info"  , 10)
         self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/depth/camera/camera_info", 10)
         self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"       , 10)
+        # self._arm_impedance_feedback_pub = self.create_publisher(ArmImpedanceCommand.Feedback(), '~/arm_impedance_command_feedback', 10)
 
-        if publish_joint_states:
+        if publish_joint_states:        # Publishes actual states of the joints
             self._joint_state_pub = self.create_publisher(JointState, "~/joint_state", 10)
 
         self.ee_vel_sub    = self.create_subscription(Twist, "~/cmd_vel", self.ee_vel_sub_callback, 10, callback_group=motion_callback_group)
@@ -152,6 +160,7 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/open_gripper" , self.gripper_open_service_callback, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/stand"        , self.stand_service_callback, callback_group=gripper_callback_group)
         self.create_service(GripperAngleMove, "~/set_gripper_angle", self.gripper_angle_service_callback, callback_group=gripper_callback_group)
+        self.create_service(ForceTrajectory, '~/force_trajectory', self.force_trajectory_service_callback, callback=motion_callback_group)
 
         # Initialize action servers
         self.arm_action_server = ActionServer(
@@ -169,6 +178,14 @@ class SpotManipulationDriverROS(Node):
             self.finger_goal_callback,
             callback_group=gripper_callback_group
         )
+
+        # self.arm_impedance_action_server = ActionServer(
+        #     self,
+        #     ArmImpedanceCommand,
+        #     "/arm_controller/arm_impedance_command",
+        #     self.arm_impedance_command_callback,
+        #     callback_group=impedance_callback_group
+        # )
 
         # Create timers to update the async tasks for publishing
         self.create_timer(0.5/rates['hand_image'], lambda: self.manipulation_driver._hand_image_task.update())
@@ -192,9 +209,9 @@ class SpotManipulationDriverROS(Node):
         )
         arm_feedback_thread.start()
 
-        self.manipulation_driver.arm_long_trajectory_executor(
-            traj_point_positions, traj_point_velocities, timepoints
-        )
+        # SpotManipulationDriver.arm_long_trajectory_executor(
+        #     self, traj_point_positions, traj_point_velocities, timepoints
+        # )
 
         self.arm_feedback_publish_flag = False
         arm_feedback_thread.join()
@@ -281,6 +298,45 @@ class SpotManipulationDriverROS(Node):
         state_msg = ros_helpers.manipulator_state_to_msg(state, self.manipulation_driver)
         self._manipulator_state_pub.publish(state_msg)
 
+    # def arm_impedance_command_callback(self, goal_handle):
+    #     """Callback for the /spot_arm/arm_controller/arm_impedance_command action server """
+
+    #     self.get_logger().info("Executing goal for the /spot_arm/arm_controller/arm_impedance_command action server")
+
+    #     success = True
+
+    #     # Translate message and execute trajectory while publishing feedback
+    #     traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(goal_handle.request.trajectory)
+
+    #     self.arm_feedback_publish_flag = True
+    #     arm_feedback_thread = threading.Thread(
+    #         target=self.arm_follow_joint_trajectory_feedback, args=(goal_handle,)
+    #     )
+    #     arm_feedback_thread.start()
+
+    #     force = -4.448 # Newtons
+
+    #     SpotManipulationDriver.arm_force_trajectory_executor(
+    #         self, traj_point_positions, traj_point_velocities, force
+    #     )
+
+    #     self.arm_feedback_publish_flag = False
+    #     arm_feedback_thread.join()
+
+    #     if success:
+    #         goal_handle.succeed()
+    #         self.get_logger().info("Successfully executed arm_impedance trajectory")
+    #     return self.arm_result
+    
+    # def arm_impedance_command_feedback(self,goal_handle: ServerGoalHandle):
+    #     """Feedback for arm impedance command aciton server"""
+    #     rate = self.create_rate(frequency=2.0, clock=self.get_clock())
+
+    #     while self.arm_impedance_feedback_publish_flag:
+    #         self.arm_impedance_feedback = ros_helpers.get_arm_impedance_feedback(self.manipulation_driver)
+    #         goal_handle.publish_feedback(self.arm_impedance_feedback)
+    #         rate.sleep()
+
     def claim_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.claim()
         resp.success = success
@@ -332,6 +388,12 @@ class SpotManipulationDriverROS(Node):
     
     def gripper_angle_service_callback(self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response):
         (success, msg) = self.manipulation_driver.open_gripper_to_angle(req.gripper_angle)
+        resp.success = success
+        resp.message = msg
+        return resp
+    
+    def force_trajectory_service_callback(self, req: ForceTrajectory.Request, resp: ForceTrajectory.Response):
+        (success, msg) = self.manipulation_driver.arm_force_trajectory_executor(req.distance, req.force)
         resp.success = success
         resp.message = msg
         return resp
