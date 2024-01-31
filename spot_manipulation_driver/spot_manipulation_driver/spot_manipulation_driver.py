@@ -33,15 +33,18 @@
 import time
 from typing import Text, Tuple
 
-from google.protobuf import duration_pb2, timestamp_pb2
-from bosdyn.api import (estop_pb2, image_pb2, robot_command_pb2,
-                        synchronized_command_pb2, arm_command_pb2, robot_state_pb2)
+from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
+                        robot_command_pb2, robot_state_pb2,
+                        synchronized_command_pb2)
 from bosdyn.client.image import ImageClient, build_image_request
-from bosdyn.client.robot_command import RobotCommandBuilder, blocking_stand, TimedOutError, CommandFailedErrorWithFeedback
+from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
+                                         RobotCommandBuilder, TimedOutError,
+                                         blocking_stand)
 from bosdyn.util import seconds_to_timestamp
-
-from spot_driver.spot_lease_manager import SpotLeaseManager
+from google.protobuf import duration_pb2, timestamp_pb2
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState
+from spot_driver.spot_lease_manager import SpotLeaseManager
+
 
 class SpotManipulationDriver(object):
 
@@ -61,9 +64,11 @@ class SpotManipulationDriver(object):
         self._hand_image_task = None
         self._robot_state_task = None
 
-    def connect(self, lease_manager: SpotLeaseManager, rates = {}, callbacks = {}) -> bool:
+    def connect(self, lease_manager: SpotLeaseManager, rates={}, callbacks={}) -> bool:
         if lease_manager is None:
-            self._logger.fatal("Cannot connect to robot without a valid lease manager object")
+            self._logger.fatal(
+                "Cannot connect to robot without a valid lease manager object"
+            )
 
         # Have the base wrapper connect to the robot
         self._lease_manager = lease_manager
@@ -78,21 +83,41 @@ class SpotManipulationDriver(object):
             return False
 
         # Configure the hand to publish its depth and color images
-        hand_image_sources = {'hand_image', 'hand_depth', 'hand_color_image', 'hand_depth_in_hand_color_frame'}
+        hand_image_sources = {
+            "hand_image",
+            "hand_depth",
+            "hand_color_image",
+            "hand_depth_in_hand_color_frame",
+        }
         hand_image_requests = []
         for source in hand_image_sources:
-            hand_image_requests.append(build_image_request(source, image_format=image_pb2.Image.FORMAT_RAW))
+            hand_image_requests.append(
+                build_image_request(source, image_format=image_pb2.Image.FORMAT_RAW)
+            )
 
         # Start the service clients
         try:
-            self._image_client = self._lease_manager.robot.ensure_client(ImageClient.default_service_name)
+            self._image_client = self._lease_manager.robot.ensure_client(
+                ImageClient.default_service_name
+            )
         except Exception as e:
-            self._logger.error(f'Unable to create client service: {e}')
+            self._logger.error(f"Unable to create client service: {e}")
             return False
 
         # Create asynchronous tasks whose state can be queried
-        self._hand_image_task = AsyncImageService(self._image_client, self._logger, rates.get("hand_image", 1.0), callbacks.get("hand_image", lambda:None), hand_image_requests)
-        self._robot_state_task = AsyncRobotState(self._lease_manager._robot_state_client, self._logger, rates.get("robot_state", 1.0), callbacks.get("robot_state", lambda:None))
+        self._hand_image_task = AsyncImageService(
+            self._image_client,
+            self._logger,
+            rates.get("hand_image", 1.0),
+            callbacks.get("hand_image", lambda: None),
+            hand_image_requests,
+        )
+        self._robot_state_task = AsyncRobotState(
+            self._lease_manager._robot_state_client,
+            self._logger,
+            rates.get("robot_state", 1.0),
+            callbacks.get("robot_state", lambda: None),
+        )
         self._is_connected = True
         return True
 
@@ -102,24 +127,29 @@ class SpotManipulationDriver(object):
 
     @property
     def kinematic_state(self) -> robot_state_pb2.KinematicState:
-        if self._robot_state_task.proto is None: return None
+        if self._robot_state_task.proto is None:
+            return None
         return self._robot_state_task.proto.kinematic_state
 
     @property
     def arm_state(self) -> robot_state_pb2.ManipulatorState:
-        if self._robot_state_task.proto is None: return None
+        if self._robot_state_task.proto is None:
+            return None
         return self._robot_state_task.proto.manipulator_state
 
     @property
     def hand_force(self):
         state = self.arm_state
-        if state is None: return None
+        if state is None:
+            return None
         ee_force = state.manipulator_state.estimated_end_effector_force_in_hand
         return ee_force.x, ee_force.y, ee_force.z
 
     @property
     def robot_time(self) -> timestamp_pb2.Timestamp:
-        return self._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(time.time())
+        return self._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(
+            time.time()
+        )
 
     @property
     def latest_hand_images(self):
@@ -135,7 +165,7 @@ class SpotManipulationDriver(object):
         status = self._lease_manager.eStopStatus()
         if status.stop_level != estop_pb2.ESTOP_LEVEL_NONE:
             error_message = (
-               f"Robot is estopped with message {status.stop_level_details}. Please use an "
+                f"Robot is estopped with message {status.stop_level_details}. Please use an "
                 "external E-Stop client, such as the estop SDK example, to configure E-Stop."
             )
             self._lease_manager.robot.logger.error(error_message)
@@ -144,7 +174,9 @@ class SpotManipulationDriver(object):
     # Verify that an e-stop exists: function borrowed from arm_joint_long_trajectory example
     def verify_power_and_estop(self):
         if not self._lease_manager.robot.is_powered_on():
-            self._lease_manager.logger.info("Robot is not powered on. Attempting to power on.")
+            self._lease_manager.logger.info(
+                "Robot is not powered on. Attempting to power on."
+            )
             self._lease_manager.robot.power_on(timeout_sec=20)
             assert self._lease_manager.robot.is_powered_on(), "Robot power on failed."
             self._lease_manager.logger.info("Robot powered on.")
@@ -169,7 +201,7 @@ class SpotManipulationDriver(object):
 
         robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=[traj_point_positions[0]],
-            joint_velocities=[traj_point_velocities[0]],
+            # joint_velocities=[traj_point_velocities[0]],
             times=[TRAJ_APPROACH_TIME],
             ref_time=ref_time,
             max_acc=10000,
@@ -197,15 +229,14 @@ class SpotManipulationDriver(object):
             # Extract a short trajectory from the long list
             times = timepoints[traj_index[0] : traj_index[1]]
             positions = traj_point_positions[traj_index[0] : traj_index[1]]
-            velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
+            # velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
 
             # Increment indices for the next short trajectory
             traj_index = list(map(lambda x: x + 9, traj_index))
 
-
             robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
                 joint_positions=positions,
-                joint_velocities=velocities,
+                # joint_velocities=velocities,
                 times=times,
                 ref_time=ref_time,
                 max_acc=10000,
@@ -275,11 +306,11 @@ class SpotManipulationDriver(object):
             time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
             traj_index = traj_index + 1
 
-    def ee_velocity_msg_executor(self, request: arm_command_pb2.ArmVelocityCommand.Request) -> Tuple[bool, Text]:
+    def ee_velocity_msg_executor(
+        self, request: arm_command_pb2.ArmVelocityCommand.Request
+    ) -> Tuple[bool, Text]:
 
-        arm_command = arm_command_pb2.ArmCommand.Request(
-            arm_velocity_command=request
-        )
+        arm_command = arm_command_pb2.ArmCommand.Request(arm_velocity_command=request)
         synchronized_command = synchronized_command_pb2.SynchronizedCommand.Request(
             arm_command=arm_command
         )
@@ -298,7 +329,7 @@ class SpotManipulationDriver(object):
             return False, error.message
         except TimedOutError as error:
             return False, error.error_message
-        return True, 'Robot standing'
+        return True, "Robot standing"
 
     def stow_arm(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.arm_stow_command()
@@ -323,7 +354,7 @@ class SpotManipulationDriver(object):
 
     def open_gripper_to_angle(self, angle: float) -> Tuple[bool, Text]:
         if angle > 90.0 or angle < 0.0:
-            return False, Text('Could not set gripper angle to invalid angle' + angle)
+            return False, Text("Could not set gripper angle to invalid angle" + angle)
 
         # The open angle command does not take degrees but the limits
         # defined in the urdf, that is why we have to interpolate
@@ -331,7 +362,11 @@ class SpotManipulationDriver(object):
         opened = -1.396263
         angle = angle / 90.0 * (opened - closed) + closed
 
-        (success, msg, id) = robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(angle)
+        (
+            success,
+            msg,
+            id,
+        ) = robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(angle)
         self._lease_manager.robot_command(robot_cmd)
         return success, msg
 
