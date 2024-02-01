@@ -209,8 +209,8 @@ class SpotManipulationDriverROS(Node):
         )
         arm_feedback_thread.start()
 
-        SpotManipulationDriver.arm_long_trajectory_executor(
-            self, traj_point_positions, traj_point_velocities, timepoints
+        self.manipulation_driver.arm_long_trajectory_executor(
+            traj_point_positions, traj_point_velocities, timepoints
         )
 
         self.arm_feedback_publish_flag = False
