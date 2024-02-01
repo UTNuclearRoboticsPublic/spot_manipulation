@@ -41,7 +41,8 @@ from bosdyn.api import (estop_pb2,geometry_pb2, image_pb2, robot_command_pb2,
                         trajectory_pb2)
 # from bosdyn.client.arm_surface_contact import ArmSurfaceContactClient
 from bosdyn.client.frame_helpers import (BODY_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME, 
-                                         GROUND_PLANE_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b)
+                                         GROUND_PLANE_FRAME_NAME, ODOM_FRAME_NAME,
+                                         HAND_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.image import ImageClient, build_image_request
 from bosdyn.client.math_helpers import Quat, SE3Pose
 from bosdyn.client.robot_command import (RobotCommandBuilder, RobotCommandClient,
@@ -241,7 +242,7 @@ class SpotManipulationDriver(object):
                 float(time_to_goal.nanos) / float(10 ** 9)
             )
 
-    def arm_force_trajectory_executor(self, traj_point_positions, traj_point_velocities, force):
+    def arm_force_trajectory_executor(self, distance_x, distance_y, distance_z, force_x, force_y, force_z, time):
         self.robot.time_sync.wait_for_sync()
         self.verify_power_and_estop()
         robot_state_client = self.ensure_client(RobotStateClient.default_service_name)
@@ -322,35 +323,45 @@ class SpotManipulationDriver(object):
         # # Send the request
         # arm_surface_contact_client = self.robot.ensure_client(ArmSurfaceContactClient.default_service_name)
         # arm_surface_contact_client.arm_surface_contact_command(proto)
+        robot_state = self.lease_manager._robot_state_client.get_robot_state()
 
-        hand_x = 0.75  # in front of the robot.
-        hand_y_start = 0.25  # to the left
-        hand_y_end = -0.25  # to the right
-        hand_z = 0  # will be ignored since we'll have a force in the Z axis.
+        
+        hand_pose_in_odom: geometry_pb2.SE3Pose = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot,
+                              GRAV_ALIGNED_BODY_FRAME_NAME, HAND_FRAME_NAME)
+        
+        hand_x_start = hand_pose_in_odom.position.x  # in front of the robot.
+        hand_y_start = hand_pose_in_odom.position.y  # to the left
+        hand_z_start = 0  # will be ignored since we'll have a force in the Z axis.
+        hand_x_end = hand_x_start + distance_x
+        hand_y_end = hand_y_start + distance_y  # to the right
+        hand_z_end = hand_z_start + distance_z
 
-        f_z = -5  # Newtons
+        f_x = force_x
+        f_y = force_y
+        f_z = force_z  # Newtons
 
-        hand_vec3_start = geometry_pb2.Vec3(x=hand_x, y=hand_y_start, z=hand_z)
-        hand_vec3_end = geometry_pb2.Vec3(x=hand_x, y=hand_y_end, z=hand_z)
+        hand_vec3_start = geometry_pb2.Vec3(x=hand_x_start, y=hand_y_start, z=hand_z_start)
+        hand_vec3_end = geometry_pb2.Vec3(x=hand_x_end, y=hand_y_end, z=hand_z_end)
 
-        qw = 1
-        qx = 0
-        qy = 0
-        qz = 0
-        quat = geometry_pb2.Quaternion(w=qw, x=qx, y=qy, z=qz)
+        q = Quat.from_pitch(1.571)
+        quat = q.to_proto()
+        # qw = 1
+        # qx = 0
+        # qy = 0
+        # qz = 0
+        # quat = geometry_pb2.Quaternion(w=qw, x=qx, y=qy, z=qz)
 
         # Build a position trajectory
         hand_pose1_in_flat_body = geometry_pb2.SE3Pose(position=hand_vec3_start, rotation=quat)
         hand_pose2_in_flat_body = geometry_pb2.SE3Pose(position=hand_vec3_end, rotation=quat)
 
         # Convert the poses to the odometry frame.
-        robot_state = robot_state_client.get_robot_state()
         odom_T_flat_body = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot,
                                          ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
         hand_pose1 = odom_T_flat_body * SE3Pose.from_proto(hand_pose1_in_flat_body)
         hand_pose2 = odom_T_flat_body * SE3Pose.from_proto(hand_pose2_in_flat_body)
 
-        traj_time = 5.0
+        traj_time = time
         time_since_reference = seconds_to_duration(traj_time)
 
         traj_point1 = trajectory_pb2.SE3TrajectoryPoint(pose=hand_pose1.to_proto(),
@@ -363,7 +374,7 @@ class SpotManipulationDriver(object):
         # We'll use a constant wrench here.  Build a wrench trajectory with a single point.
         # Note that we only need to fill out Z-force because that is the only axis that will
         # be in force mode.
-        force_tuple = odom_T_flat_body.rotation.transform_point(x=0, y=0, z=f_z)
+        force_tuple = odom_T_flat_body.rotation.transform_point(x=f_x, y=f_y, z=f_z)
         force = geometry_pb2.Vec3(x=force_tuple[0], y=force_tuple[1], z=force_tuple[2])
         torque = geometry_pb2.Vec3(x=0, y=0, z=0)
 

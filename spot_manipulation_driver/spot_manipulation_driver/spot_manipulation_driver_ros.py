@@ -160,7 +160,7 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/open_gripper" , self.gripper_open_service_callback, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/stand"        , self.stand_service_callback, callback_group=gripper_callback_group)
         self.create_service(GripperAngleMove, "~/set_gripper_angle", self.gripper_angle_service_callback, callback_group=gripper_callback_group)
-        self.create_service(ForceTrajectory, '~/force_trajectory', self.force_trajectory_service_callback, callback=motion_callback_group)
+        self.create_service(ForceTrajectory, '~/force_trajectory', self.force_trajectory_service_callback, callback_group=motion_callback_group)
 
         # Initialize action servers
         self.arm_action_server = ActionServer(
@@ -209,9 +209,9 @@ class SpotManipulationDriverROS(Node):
         )
         arm_feedback_thread.start()
 
-        # SpotManipulationDriver.arm_long_trajectory_executor(
-        #     self, traj_point_positions, traj_point_velocities, timepoints
-        # )
+        SpotManipulationDriver.arm_long_trajectory_executor(
+            self, traj_point_positions, traj_point_velocities, timepoints
+        )
 
         self.arm_feedback_publish_flag = False
         arm_feedback_thread.join()
@@ -393,7 +393,7 @@ class SpotManipulationDriverROS(Node):
         return resp
     
     def force_trajectory_service_callback(self, req: ForceTrajectory.Request, resp: ForceTrajectory.Response):
-        (success, msg) = self.manipulation_driver.arm_force_trajectory_executor(req.distance, req.force)
+        (success, msg) = self.manipulation_driver.arm_force_trajectory_executor(req.distance_x, req.distance_y, req.distance_z, req.force_x, req.force_y, req.force_z, req.time)
         resp.success = success
         resp.message = msg
         return resp
