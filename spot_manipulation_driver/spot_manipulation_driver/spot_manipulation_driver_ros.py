@@ -254,6 +254,14 @@ class SpotManipulationDriverROS(Node):
             callback_group=gripper_callback_group,
         )
 
+        self.body_manipulation_action_server = ActionServer(
+            self,
+            FollowJointTrajectory,
+            "/body_manipulation_controller/follow_joint_trajectory",
+            self.body_manipulation_callback,
+            callback_group=motion_callback_group
+        )
+
         # Create timers to update the async tasks for publishing
         self.create_timer(
             0.5 / rates["hand_image"],
@@ -338,7 +346,13 @@ class SpotManipulationDriverROS(Node):
             goal_handle.succeed()
             self.get_logger().info("Successfully executed finger trajectory")
         return self.finger_result
+    
+    def body_manipulation_callback(self, goal_handle: ServerGoalHandle) -> bool:
+        """Callback for manipulation requests with body assist"""
+        self.get_logger().info("Received body manipulation trajectory request")
 
+        return True
+        
     def arm_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for arm action server"""
         rate = self.create_rate(frequency=2.0, clock=self.get_clock())
