@@ -36,10 +36,14 @@ from typing import Text, Tuple
 from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
                         robot_command_pb2, robot_state_pb2,
                         synchronized_command_pb2)
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
+from bosdyn.api.spot.robot_command_pb2 import BodyControlParams
 from bosdyn.client.image import ImageClient, build_image_request
+from bosdyn.client.frame_helpers import ODOM_FRAME_NAME
 from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
                                          RobotCommandBuilder, TimedOutError,
                                          blocking_stand)
+from bosdyn.client.exceptions import RpcError
 from bosdyn.util import seconds_to_timestamp
 from google.protobuf import duration_pb2, timestamp_pb2
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState
@@ -273,6 +277,42 @@ class SpotManipulationDriver(object):
         robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(position)
         self._lease_manager.robot_command(robot_cmd)
         time.sleep(time_since_ref[end_index])
+
+    def body_manipulation_trajectory_executor(self, body_trajectory, arm_trajectory) -> bool:
+        try:
+            if self._lease_manager.robot.is_powered_on(5):
+                self._logger.info("Beginning execution of body manipulation trajectory")
+            else:
+                self._logger.warn("Cannot execute body manipulation trajectory, robot is not powered on")
+                return False
+        except RpcError as e:
+            self._logger.warn(f"Cannot execute body manipulation trajectory, unable to communicate with robot\n\tMsg: {e}")
+            return False
+        
+        x = None # TODO: Fill out values
+        # Create a mobility command request
+        body_command = spot_command_pb2.BodyControlParams.BodyPose(
+            root_frame_name = ODOM_FRAME_NAME,
+            base_offset_rt_root = x
+        )
+        
+        # Create an arm command request with joint trajectory
+        arm_command = RobotCommandBuilder.arm_joint_move_helper(
+            joint_positions=x,
+            joint_velocities=x,
+            times=x,
+            ref_time=x,
+            max_acc=x,
+            max_vel=x,
+            build_on_command=body_command
+        )
+
+        # Create a gripper request
+        # TODO
+
+        # Create a synchro command from these requests
+            
+        return True
 
     def gripper_trajectory_executor_with_time_control(
         self, traj_point_positions, time_since_ref
