@@ -46,7 +46,7 @@ from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
                                          RobotCommandBuilder, TimedOutError,
                                          blocking_stand, blocking_command)
 from bosdyn.client.exceptions import RpcError
-from bosdyn.util import seconds_to_timestamp
+from bosdyn.util import seconds_to_timestamp, seconds_to_duration
 from google.protobuf import duration_pb2, timestamp_pb2
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
@@ -283,6 +283,9 @@ class SpotManipulationDriver(object):
     def body_manipulation_trajectory_executor(
             self, body_trajectory: List[SE3Pose], arm_trajectory: List[List[float]], timestamps: List[float]
         ) -> bool:
+
+        MAX_BODY_POSES = 100
+        MAX_ARM_POINTS = 10
         
         # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
         try:
@@ -296,6 +299,8 @@ class SpotManipulationDriver(object):
             return False
 
         try:
+            ref_time = self.lease_manager.robot.time_sync.robot_timestamp_from_local_secs(time.time()+1)
+
             # Build an SE3Trajectory out of the body poses
             pose: SE3Pose
             se3_trajectory_points: List[trajectory_pb2.SE3TrajectoryPoint] = []
@@ -303,37 +308,45 @@ class SpotManipulationDriver(object):
                 se3_trajectory_points.append(
                     trajectory_pb2.SE3TrajectoryPoint(
                         pose = pose.to_proto(),
-                        time_since_reference = seconds_to_timestamp(timestamp)
+                        time_since_reference = seconds_to_duration(timestamp)
                     )
                 )
 
-            final_body_traj = trajectory_pb2.SE3Trajectory(
-                points = se3_trajectory_points 
-            )
+            # Downsample body trajectory until within total allowable poses
+            while len(se3_trajectory_points) >= MAX_BODY_POSES:
+                se3_trajectory_points = se3_trajectory_points[::2]
 
-            disable_body_assist = spot_command_pb2.BodyControlParams.BodyAssistForManipulation(enable_hip_height_assist=False, enable_body_yaw_assist=False)
+            self._logger.info(f"SE3Trajectory has {len(se3_trajectory_points)} points")
+            final_body_traj = trajectory_pb2.SE3Trajectory(points = se3_trajectory_points, reference_time=ref_time)
             body_control_params = spot_command_pb2.BodyControlParams(
                 base_offset_rt_footprint = final_body_traj,
-                body_assist_for_manipulation = disable_body_assist,
-                rotation_setting = BodyControlParams.RotationSetting(BodyControlParams.RotationSetting.ROTATION_SETTING_ABSOLUTE)
+                rotation_setting = BodyControlParams.RotationSetting.ROTATION_SETTING_OFFSET
             )
-            body_command = RobotCommandBuilder.synchro_stand_command(params=body_control_params)
+            mobility_params = spot_command_pb2.MobilityParams(body_control = body_control_params)
+            body_command = RobotCommandBuilder.synchro_stand_command(params=mobility_params)
             
+            # Downsample the arm points until within allowable range
+            while len(arm_trajectory) >= MAX_ARM_POINTS:
+                arm_trajectory = arm_trajectory[::2]
+                timestamps = timestamps[::2]
+
             # Create an arm command request with joint trajectory
-            x = None # TODO: Fill out values
             arm_command = RobotCommandBuilder.arm_joint_move_helper(
                 joint_positions=arm_trajectory,
                 joint_velocities=None,
                 times=timestamps,
-                ref_time=None,
+                ref_time=ref_time,
                 max_acc=None,
                 max_vel=None,
-                build_on_command=body_command
+                build_on_command=None
             )
 
+            robot_command = RobotCommandBuilder.build_synchro_command(body_command, arm_command)
+
+            # TODO: Create actual status function
             blocking_command(
                 command_client=self.lease_manager.command_client, 
-                command=arm_command, 
+                command=robot_command, 
                 check_status_fn=lambda _: False
             )
 
