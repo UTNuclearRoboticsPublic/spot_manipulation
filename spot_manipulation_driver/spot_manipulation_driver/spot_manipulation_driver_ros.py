@@ -347,24 +347,41 @@ class SpotManipulationDriverROS(Node):
             self.get_logger().info("Successfully executed finger trajectory")
         return self.finger_result
     
-    def body_manipulation_callback(self, goal_handle: ServerGoalHandle) -> bool:
+    def body_manipulation_callback(self, goal_handle: ServerGoalHandle) -> FollowJointTrajectory.Result:
         """Callback for manipulation requests with body assist"""
-        self.get_logger().info("Received body manipulation trajectory request")
+        self.get_logger().info(
+            "Received body manipulation trajectory request with {} points and {} joints".format(
+                len(goal_handle.request.trajectory.points), len(goal_handle.request.trajectory.joint_names)
+            )
+        )
+
+        error_code = FollowJointTrajectory.Result.SUCCESSFUL
+        error_string = "Complete"
 
         try:
             body_poses_in_base_footprint, joint_positions, timestamps = \
                 ros_helpers.get_body_manipulation_trajectories(goal_handle.request.trajectory)
         except Exception as e:
-            self.get_logger().error(f"Exception raised in body_manipulation_callback: {e}")
-            return False
+            self.get_logger().error(f"Exception raised in body manipulation trajectory generation: {e}")
+            goal_handle.abort()
+            return FollowJointTrajectory.Result(error_code=-1, error_string="Unknown exception occured")
         
         # TODO: feedback
+        self.get_logger().info(f"Num body poses: {len(body_poses_in_base_footprint)} | Num joint positions: {len(joint_positions)} | Num timestamps: {len(timestamps)}")
 
         success = self.manipulation_driver.body_manipulation_trajectory_executor(
             body_poses_in_base_footprint, joint_positions, timestamps
         )
         
-        return success
+        if success:
+            goal_handle.succeed()
+            self.get_logger().info("Body maniplulation request completed successfully")
+        else:
+            goal_handle.abort()
+            error_code = -1
+            error_string = "Exception occured"
+
+        return FollowJointTrajectory.Result(error_code=error_code, error_string=error_string)
         
     def arm_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for arm action server"""
