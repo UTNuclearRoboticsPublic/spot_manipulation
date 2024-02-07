@@ -16,6 +16,7 @@ joint_order_9DoF = [
     "body_height_joint",
     "body_yaw_joint",
     "body_pitch_joint",
+    "body_roll_joint",
     "arm0_shoulder_yaw",
     "arm0_shoulder_pitch",
     "arm0_elbow_pitch",
@@ -88,25 +89,27 @@ def get_body_manipulation_trajectories(msg: JointTrajectory) -> Tuple[List[SE3Po
     # Get the arm portion of the trajectory
     point: JointTrajectoryPoint # to get intellisense type hints
     for point in msg.points:
-        body_point = [0.0, 0.0, 0.0]
+        body_point = [0.0, 0.0, 0.0, 0.0]
         arm_point  = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
         for joint_idx, joint_name in enumerate(joint_order_9DoF):
             msg_idx = msg.joint_names.index(joint_name)
             if joint_name.startswith("arm0"): 
-                arm_point[joint_idx-3] = point.positions[msg_idx]
+                arm_point[joint_idx-4] = point.positions[msg_idx]
             else:
                 body_point[joint_idx] = point.positions[msg_idx]
 
         arm_points.append(arm_point)
+        body_points.append(body_point)
         timestamps.append(point.time_from_start.sec + point.time_from_start.nanosec * 1e-9)
 
     # Get the body portion of the trajectory
-    for translation, yaw, pitch in body_points:
-        T1 = SE3Pose(0, 0, translation, Quat())
+    for translation, yaw, pitch, roll in body_points:
+        T1 = SE3Pose(0, 0, translation-0.52, Quat()) # 0.52 meters is the nominal standing height of spot
         T2 = SE3Pose(0, 0, 0, Quat.from_yaw(yaw))
         T3 = SE3Pose(0, 0, 0, Quat.from_pitch(pitch))
-        body_poses.append(T3*T2*T1)
+        T4 = SE3Pose(0, 0, 0, Quat.from_roll(roll))
+        body_poses.append(T4*T3*T2*T1)
 
     return body_poses, arm_points, timestamps
 
