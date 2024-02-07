@@ -351,7 +351,20 @@ class SpotManipulationDriverROS(Node):
         """Callback for manipulation requests with body assist"""
         self.get_logger().info("Received body manipulation trajectory request")
 
-        return True
+        try:
+            body_poses_in_base_footprint, joint_positions, timestamps = \
+                ros_helpers.get_body_manipulation_trajectories(goal_handle.request.trajectory)
+        except Exception as e:
+            self.get_logger().error(f"Exception raised in body_manipulation_callback: {e}")
+            return False
+        
+        # TODO: feedback
+
+        success = self.manipulation_driver.body_manipulation_trajectory_executor(
+            body_poses_in_base_footprint, joint_positions, timestamps
+        )
+        
+        return success
         
     def arm_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for arm action server"""

@@ -1,5 +1,7 @@
 import numpy as np
+from typing import Tuple, List
 from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2
+from bosdyn.client.math_helpers import SE3Pose, Quat
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist
 from google.protobuf import timestamp_pb2
@@ -10,6 +12,17 @@ import rclpy.time
 
 from .spot_manipulation_driver import SpotManipulationDriver
 
+joint_order_9DoF = [
+    "body_height_joint",
+    "body_yaw_joint",
+    "body_pitch_joint",
+    "arm0_shoulder_yaw",
+    "arm0_shoulder_pitch",
+    "arm0_elbow_pitch",
+    "arm0_elbow_roll",
+    "arm0_wrist_pitch",
+    "arm0_wrist_roll",
+]
 
 def joint_trajectory_to_lists(msg: JointTrajectory):
     traj_point_positions = []
@@ -49,6 +62,53 @@ def joint_trajectory_to_lists(msg: JointTrajectory):
 
     return traj_point_positions, traj_point_velocities, timepoints
 
+
+def get_body_manipulation_trajectories(msg: JointTrajectory) -> Tuple[List[SE3Pose], List[List[float]], List[float]]:
+    """
+    Maps a given ROS joint trajectory to two trajectories: one for the body and one for the arm.
+    The body trajectory contains a sequence of SE3Pose math_helpers messages 
+    The arm trajectory contains a sequence of joint positions
+
+    Args:
+        msg: The input 9DoF joint trajectory planned for the robot arm with body assist
+    Returns:
+        List of math_helpers.SE3Pose messages
+        List of joint state lists
+        List of timestamps for each point of each trajectory
+    """
+
+    if len(msg.joint_names) != len(joint_order_9DoF):
+        raise Exception(f"Invalid joint trajectory passed to body manipulation executor. Got {len(msg.joint_names)} points, expected {len(joint_order_9DoF)}")
+
+    timestamps : List[float]       = []
+    arm_points : List[List[float]] = []
+    body_points: List[List[float]] = []
+    body_poses : List[SE3Pose]     = []
+
+    # Get the arm portion of the trajectory
+    point: JointTrajectoryPoint # to get intellisense type hints
+    for point in msg.points:
+        body_point = [0.0, 0.0, 0.0]
+        arm_point  = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        for joint_idx, joint_name in enumerate(joint_order_9DoF):
+            msg_idx = msg.joint_names.index(joint_name)
+            if joint_name.startswith("arm0"): 
+                arm_point[joint_idx-3] = point.positions[msg_idx]
+            else:
+                body_point[joint_idx] = point.positions[msg_idx]
+
+        arm_points.append(arm_point)
+        timestamps.append(point.time_from_start.sec + point.time_from_start.nanosec * 1e-9)
+
+    # Get the body portion of the trajectory
+    for translation, yaw, pitch in body_points:
+        T1 = SE3Pose(0, 0, translation, Quat())
+        T2 = SE3Pose(0, 0, 0, Quat.from_yaw(yaw))
+        T3 = SE3Pose(0, 0, 0, Quat.from_pitch(pitch))
+        body_poses.append(T3*T2*T1)
+
+    return body_poses, arm_points, timestamps
 
 def twist_to_vel_request(
     robot_time: timestamp_pb2.Timestamp,

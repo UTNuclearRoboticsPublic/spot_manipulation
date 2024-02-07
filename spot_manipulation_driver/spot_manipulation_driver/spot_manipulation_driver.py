@@ -31,18 +31,20 @@
 ##############################################################################
 
 import time
-from typing import Text, Tuple
+from typing import Text, Tuple, List
 
 from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
-                        robot_command_pb2, robot_state_pb2,
+                        robot_command_pb2, robot_state_pb2, trajectory_pb2,
                         synchronized_command_pb2)
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.api.spot.robot_command_pb2 import BodyControlParams
 from bosdyn.client.image import ImageClient, build_image_request
-from bosdyn.client.frame_helpers import ODOM_FRAME_NAME
+from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, 
+                                        GRAV_ALIGNED_BODY_FRAME_NAME, get_a_tform_b)
+from bosdyn.client.math_helpers import SE3Pose
 from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
                                          RobotCommandBuilder, TimedOutError,
-                                         blocking_stand)
+                                         blocking_stand, blocking_command)
 from bosdyn.client.exceptions import RpcError
 from bosdyn.util import seconds_to_timestamp
 from google.protobuf import duration_pb2, timestamp_pb2
@@ -278,7 +280,11 @@ class SpotManipulationDriver(object):
         self._lease_manager.robot_command(robot_cmd)
         time.sleep(time_since_ref[end_index])
 
-    def body_manipulation_trajectory_executor(self, body_trajectory, arm_trajectory) -> bool:
+    def body_manipulation_trajectory_executor(
+            self, body_trajectory: List[SE3Pose], arm_trajectory: List[List[float]], timestamps: List[float]
+        ) -> bool:
+        
+        # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
         try:
             if self._lease_manager.robot.is_powered_on(5):
                 self._logger.info("Beginning execution of body manipulation trajectory")
@@ -288,29 +294,52 @@ class SpotManipulationDriver(object):
         except RpcError as e:
             self._logger.warn(f"Cannot execute body manipulation trajectory, unable to communicate with robot\n\tMsg: {e}")
             return False
-        
-        x = None # TODO: Fill out values
-        # Create a mobility command request
-        body_command = spot_command_pb2.BodyControlParams.BodyPose(
-            root_frame_name = ODOM_FRAME_NAME,
-            base_offset_rt_root = x
-        )
-        
-        # Create an arm command request with joint trajectory
-        arm_command = RobotCommandBuilder.arm_joint_move_helper(
-            joint_positions=x,
-            joint_velocities=x,
-            times=x,
-            ref_time=x,
-            max_acc=x,
-            max_vel=x,
-            build_on_command=body_command
-        )
 
-        # Create a gripper request
-        # TODO
+        try:
+            # Build an SE3Trajectory out of the body poses
+            pose: SE3Pose
+            se3_trajectory_points: List[trajectory_pb2.SE3TrajectoryPoint] = []
+            for pose, timestamp in zip(body_trajectory, timestamps):
+                se3_trajectory_points.append(
+                    trajectory_pb2.SE3TrajectoryPoint(
+                        pose = pose.to_proto(),
+                        time_since_reference = seconds_to_timestamp(timestamp)
+                    )
+                )
 
-        # Create a synchro command from these requests
+            final_body_traj = trajectory_pb2.SE3Trajectory(
+                points = se3_trajectory_points 
+            )
+
+            disable_body_assist = spot_command_pb2.BodyControlParams.BodyAssistForManipulation(enable_hip_height_assist=False, enable_body_yaw_assist=False)
+            body_control_params = spot_command_pb2.BodyControlParams(
+                base_offset_rt_footprint = final_body_traj,
+                body_assist_for_manipulation = disable_body_assist,
+                rotation_setting = BodyControlParams.RotationSetting(BodyControlParams.RotationSetting.ROTATION_SETTING_ABSOLUTE)
+            )
+            body_command = RobotCommandBuilder.synchro_stand_command(params=body_control_params)
+            
+            # Create an arm command request with joint trajectory
+            x = None # TODO: Fill out values
+            arm_command = RobotCommandBuilder.arm_joint_move_helper(
+                joint_positions=arm_trajectory,
+                joint_velocities=None,
+                times=timestamps,
+                ref_time=None,
+                max_acc=None,
+                max_vel=None,
+                build_on_command=body_command
+            )
+
+            blocking_command(
+                command_client=self.lease_manager.command_client, 
+                command=arm_command, 
+                check_status_fn=lambda _: False
+            )
+
+        except Exception as e:
+            self._logger.error(f"Unknown error occured in body_manipulation_trajectory_executor: {e}")
+            return False
             
         return True
 
