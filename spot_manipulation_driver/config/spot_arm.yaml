@@ -1,8 +1,8 @@
-/follow_joint_trajectory_node:
+/spot_manipulation_driver:
   ros__parameters:
     rates:
       sensors:
         hand_image: 10.0
-      robot_state: 10.0
+      robot_state: 15.0
 
     publish_joint_states: false

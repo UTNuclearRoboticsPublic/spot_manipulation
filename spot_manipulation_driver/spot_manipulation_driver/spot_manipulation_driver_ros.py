@@ -142,6 +142,7 @@ class SpotManipulationDriverROS(Node):
         self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/rgb/camera/camera_info"  , 10)
         self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/depth/camera/camera_info", 10)
         self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"       , 10)
+        self._manipulator_state_odom_pub = self.create_publisher(ManipulatorState, "~/manipulator_state_odom"  , 10)
         # self._arm_impedance_feedback_pub = self.create_publisher(ArmImpedanceCommand.Feedback(), '~/arm_impedance_command_feedback', 10)
 
         if publish_joint_states:        # Publishes actual states of the joints
@@ -297,6 +298,11 @@ class SpotManipulationDriverROS(Node):
         if state is None: return
         state_msg = ros_helpers.manipulator_state_to_msg(state, self.manipulation_driver)
         self._manipulator_state_pub.publish(state_msg)
+
+        odom_estimated_end_effector_force = self.manipulation_driver.force_transform(state_msg.estimated_end_effector_force_in_hand)
+        odom_state_msg = state_msg
+        odom_state_msg.estimated_end_effector_force_in_hand = odom_estimated_end_effector_force
+        self._manipulator_state_odom_pub.publish(odom_state_msg)
 
     # def arm_impedance_command_callback(self, goal_handle):
     #     """Callback for the /spot_arm/arm_controller/arm_impedance_command action server """

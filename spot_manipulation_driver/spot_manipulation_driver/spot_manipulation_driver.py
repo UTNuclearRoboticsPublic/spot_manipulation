@@ -39,6 +39,7 @@ from bosdyn.api import (estop_pb2,geometry_pb2, image_pb2, robot_command_pb2,
                         synchronized_command_pb2, arm_command_pb2, robot_state_pb2,
                         # arm_surface_contact_pb2, arm_surface_contact_service_pb2,
                         trajectory_pb2)
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 # from bosdyn.client.arm_surface_contact import ArmSurfaceContactClient
 from bosdyn.client.frame_helpers import (BODY_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME, 
                                          GROUND_PLANE_FRAME_NAME, ODOM_FRAME_NAME,
@@ -244,12 +245,11 @@ class SpotManipulationDriver(object):
                 float(time_to_goal.nanos) / float(10 ** 9)
             )
 
-    def arm_force_trajectory_executor(self, distance_x, distance_y, distance_z, force_x, force_y, force_z, time):
-        self.robot.time_sync.wait_for_sync()
-        self.verify_power_and_estop()
-        robot_state_client = self.ensure_client(RobotStateClient.default_service_name)
-        command_client = self.ensure_client(RobotCommandClient.default_service_name)
-        self.robot.logger.info("Arm is about to move.")
+    def arm_force_trajectory_executor(
+            self, distance_x, distance_y, distance_z, 
+            force_x, force_y, force_z, time):
+        self._lease_manager.robot.time_sync.wait_for_sync()
+        command_client = self._lease_manager.command_client
 
         # end_index = len(traj_point_positions) - 1
 
@@ -325,15 +325,19 @@ class SpotManipulationDriver(object):
         # # Send the request
         # arm_surface_contact_client = self.robot.ensure_client(ArmSurfaceContactClient.default_service_name)
         # arm_surface_contact_client.arm_surface_contact_command(proto)
-        robot_state = self.lease_manager._robot_state_client.get_robot_state()
 
-        
-        hand_pose_in_odom: geometry_pb2.SE3Pose = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot,
+        body_control = spot_command_pb2.BodyControlParams(
+            body_assist_for_manipulation=spot_command_pb2.BodyControlParams.
+            BodyAssistForManipulation(enable_hip_height_assist=True, enable_body_yaw_assist=True))
+        blocking_stand(command_client, timeout_sec=10,
+                       params=spot_command_pb2.MobilityParams(body_control=body_control))
+
+        hand_pose_in_odom: geometry_pb2.SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
                               GRAV_ALIGNED_BODY_FRAME_NAME, HAND_FRAME_NAME)
         
         hand_x_start = hand_pose_in_odom.position.x  # in front of the robot.
         hand_y_start = hand_pose_in_odom.position.y  # to the left
-        hand_z_start = 0  # will be ignored since we'll have a force in the Z axis.
+        hand_z_start = hand_pose_in_odom.position.y  # will be ignored since we'll have a force in the Z axis.
         hand_x_end = hand_x_start + distance_x
         hand_y_end = hand_y_start + distance_y  # to the right
         hand_z_end = hand_z_start + distance_z
@@ -358,7 +362,7 @@ class SpotManipulationDriver(object):
         hand_pose2_in_flat_body = geometry_pb2.SE3Pose(position=hand_vec3_end, rotation=quat)
 
         # Convert the poses to the odometry frame.
-        odom_T_flat_body = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot,
+        odom_T_flat_body = get_a_tform_b(self.kinematic_state.transforms_snapshot,
                                          ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
         hand_pose1 = odom_T_flat_body * SE3Pose.from_proto(hand_pose1_in_flat_body)
         hand_pose2 = odom_T_flat_body * SE3Pose.from_proto(hand_pose2_in_flat_body)
@@ -407,7 +411,22 @@ class SpotManipulationDriver(object):
 
         # Send the request
         command_client.robot_command(robot_command)
-        self.logger.info('Running mixed position and force mode.')
+        self._lease_manager.logger.info('Running mixed position and force mode.')
+
+    def force_transform(self, wrench):
+        
+        force_vector = geometry_pb2.Vec3(x=wrench.force.x, y=wrench.force.y, z=wrench.force.z)
+        torque_vector = geometry_pb2.Vec3(x=wrench.torque.x, y=wrench.torque.y, z=wrench.torque.z)      
+
+        sensor_in_odom: SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
+                                GRAV_ALIGNED_BODY_FRAME_NAME, HAND_FRAME_NAME)
+        
+        force_in_odom = sensor_in_odom.transform_vec3(force_vector)
+        torque_in_odom = sensor_in_odom.transform_vec3(torque_vector)
+
+        wrench_in_odom = geometry_pb2.Wrench(force=force_in_odom, torque=torque_in_odom)
+        return wrench_in_odom
+
     def gripper_trajectory_executor(self, traj_point_positions, time_since_ref):
 
         self._lease_manager.robot.time_sync.wait_for_sync()
