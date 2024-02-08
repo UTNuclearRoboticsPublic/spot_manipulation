@@ -35,9 +35,12 @@ from typing import Text, Tuple, List
 
 from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
                         robot_command_pb2, robot_state_pb2, trajectory_pb2,
-                        synchronized_command_pb2)
+                        synchronized_command_pb2, basic_command_pb2)
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.api.spot.robot_command_pb2 import BodyControlParams
+from bosdyn.api.robot_command_pb2 import RobotCommandFeedbackResponse
+from bosdyn.api.mobility_command_pb2 import MobilityCommand
+from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand
 from bosdyn.client.image import ImageClient, build_image_request
 from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, 
                                         GRAV_ALIGNED_BODY_FRAME_NAME, get_a_tform_b)
@@ -343,11 +346,23 @@ class SpotManipulationDriver(object):
 
             robot_command = RobotCommandBuilder.build_synchro_command(body_command, arm_command)
 
-            # TODO: Create actual status function
+            # Monitor whether both parts of the trajectory have finished
+            def status_fn(response: RobotCommandFeedbackResponse):
+                done = True
+                synchro_fb = response.feedback.synchronized_feedback
+                if synchro_fb.HasField("mobility_command_feedback"):
+                    mob_status = synchro_fb.mobility_command_feedback.stand_feedback.status
+                    done = done and mob_status == basic_command_pb2.StandCommand.Feedback.Status.STATUS_IS_STANDING
+                if synchro_fb.HasField("arm_command_feedback"):
+                    arm_status = synchro_fb.arm_command_feedback.arm_joint_move_feedback.status
+                    done = done and arm_status == ArmJointMoveCommand.Feedback.Status.STATUS_COMPLETE
+                return done
+
             blocking_command(
                 command_client=self.lease_manager.command_client, 
                 command=robot_command, 
-                check_status_fn=lambda _: False
+                check_status_fn=status_fn,
+                timeout_sec=timestamps[-1] + 5
             )
 
         except Exception as e:
