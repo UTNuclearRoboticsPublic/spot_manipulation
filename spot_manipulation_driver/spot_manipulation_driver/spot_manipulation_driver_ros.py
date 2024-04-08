@@ -254,6 +254,11 @@ class SpotManipulationDriverROS(Node):
             callback_group=gripper_callback_group,
         )
 
+        self.whole_body_control_action_server = ActionServer(self, 
+                FollowJointTrajectory, 
+                "/wbc_controller/follow_joint_trajectory", 
+                self.whole_body_control_goal_callback)
+
         # Create timers to update the async tasks for publishing
         self.create_timer(
             0.5 / rates["hand_image"],
