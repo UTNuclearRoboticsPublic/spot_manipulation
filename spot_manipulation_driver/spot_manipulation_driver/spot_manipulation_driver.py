@@ -42,6 +42,7 @@ from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
                                          blocking_stand)
 from bosdyn.util import seconds_to_timestamp
 from google.protobuf import duration_pb2, timestamp_pb2
+
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
 
@@ -184,6 +185,90 @@ class SpotManipulationDriver(object):
             self._lease_manager.robot.logger.info("Verified that robot is powered on.")
 
         self.verify_estop()
+
+    # Execute long trajectories
+    def wbc_long_trajectory_executor(
+        self, traj_point_positions, traj_point_velocities, timepoints
+    ):
+
+        self._lease_manager.robot.time_sync.wait_for_sync()
+        self.verify_power_and_estop()
+        self._lease_manager.robot.logger.info("Robot body and arm about to move.")
+
+        # Get to the start configuration of the trajectory before we execute it
+        start_time = time.time()
+        ref_time = seconds_to_timestamp(start_time)
+        TRAJ_APPROACH_TIME = 1.0
+
+        robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
+            joint_positions=[traj_point_positions[0]],
+            # joint_velocities=[traj_point_velocities[0]],
+            times=[TRAJ_APPROACH_TIME],
+            ref_time=ref_time,
+            max_acc=10000,
+            max_vel=10000,
+        )
+
+        self._lease_manager.robot_command(robot_cmd)
+
+        traj_index = [0, 9]
+        end_index = len(traj_point_positions)
+
+        # Compute reference time for the entire long trajectory
+        start_time = time.time() + TRAJ_APPROACH_TIME
+        ref_time = seconds_to_timestamp(start_time)
+
+        while traj_index[0] < end_index:
+            times = []
+            positions = []
+            velocities = []
+
+            # Don't let the extracted index range go beyond the end of the trajectory
+            if traj_index[1] > end_index:
+                traj_index[1] = end_index
+
+            # Extract a short trajectory from the long list
+            times = timepoints[traj_index[0] : traj_index[1]]
+            arm_positions = traj_point_positions[traj_index[0] : traj_index[1]]# need to extract arm portion
+            body_positions = # extract body portion
+            # velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
+
+            # Increment indices for the next short trajectory
+            traj_index = list(map(lambda x: x + 9, traj_index))
+
+            # Generate arm command
+            arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
+                joint_positions=arm_positions,
+                # joint_velocities=velocities,
+                times=times,
+                ref_time=ref_time,
+                max_acc=10000,
+                max_vel=10000,
+            )
+
+            # Generate body command
+            # body_cmd = mobility_command.se2_trajectory_request.trajectory.points.add()
+            # for (point: body_positions)
+            #     body_cmd.pose.position.x = point[0]
+            #     body_cmd.pose.position.y = point[1]
+            #     body_cmd.pose.angle = point[3]
+            wbc_cmd = RobotCommandBuilder.synchro_se2_trajectory_command(goal_se2=body_traj, frame_name="odom",build_on_command=arm_cmd)# arm and body synchro
+
+            # Compute sleep time and sleep before executing next trajectory
+            if traj_index[0] > 9:
+                time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
+
+            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd)
+
+            time_index = time.time()
+            feedback_resp = self._lease_manager.robot_command_feedback(cmd_id)
+            joint_move_feedback = (
+                feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_joint_move_feedback
+            )
+            time_to_goal: duration_pb2.Duration = joint_move_feedback.time_to_goal
+            time_to_goal_in_seconds: float = time_to_goal.seconds + (
+                float(time_to_goal.nanos) / float(10 ** 9)
+            )
 
     # Execute long trajectories
     def arm_long_trajectory_executor(
