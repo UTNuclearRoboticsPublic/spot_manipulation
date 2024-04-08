@@ -33,9 +33,16 @@
 import threading
 import time
 
+import rclpy
+import rclpy.callback_groups
 import spot_manipulation_driver.ros_helpers as ros_helpers
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist, TwistStamped
+from rcl_interfaces.msg import (FloatingPointRange, ParameterDescriptor,
+                                ParameterType)
+from rclpy.action import ActionServer
+from rclpy.action.server import ServerGoalHandle
+from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg
 from spot_driver.spot_lease_manager import SpotLeaseManager
@@ -44,14 +51,6 @@ from spot_manipulation_driver.spot_manipulation_driver import \
 from spot_msgs.msg import ManipulatorState
 from spot_msgs.srv import GripperAngleMove
 from std_srvs.srv import Trigger
-
-import rclpy
-import rclpy.callback_groups
-from rcl_interfaces.msg import (FloatingPointRange, ParameterDescriptor,
-                                ParameterType)
-from rclpy.action import ActionServer
-from rclpy.action.server import ServerGoalHandle
-from rclpy.node import Node
 
 
 class SpotManipulationDriverROS(Node):
@@ -109,6 +108,10 @@ class SpotManipulationDriverROS(Node):
         )
 
         # --- Initialize action messages --- #
+        # WBC-related attributes
+        self.wbc_feedback = FollowJointTrajectory.Feedback()
+        self.wbc_result = FollowJointTrajectory.Result()
+        # self.wbc_feedback_publish_flag = False
 
         # Arm-related attributes
         self.arm_feedback = FollowJointTrajectory.Feedback()
@@ -238,6 +241,14 @@ class SpotManipulationDriverROS(Node):
         )
 
         # Initialize action servers
+        self.whole_body_control_action_server = ActionServer(
+            self,
+            FollowJointTrajectory,
+            "/wbc_controller/follow_joint_trajectory",
+            self.whole_body_control_goal_callback,
+            callback_group=motion_callback_group,
+        )
+
         self.arm_action_server = ActionServer(
             self,
             FollowJointTrajectory,
@@ -254,11 +265,6 @@ class SpotManipulationDriverROS(Node):
             callback_group=gripper_callback_group,
         )
 
-        self.whole_body_control_action_server = ActionServer(self, 
-                FollowJointTrajectory, 
-                "/wbc_controller/follow_joint_trajectory", 
-                self.whole_body_control_goal_callback)
-
         # Create timers to update the async tasks for publishing
         self.create_timer(
             0.5 / rates["hand_image"],
@@ -270,6 +276,40 @@ class SpotManipulationDriverROS(Node):
         )
 
         return True
+
+    def whole_body_control_goal_callback(self, goal_handle: ServerGoalHandle):
+        """Callback for the /spot_driver/wbc_controller/follow_joint_trajectory action server """
+
+        self.get_logger().info(
+            "D:Executing goal for the /spot_driver/wbc_controller/follow_joint_trajectory action server"
+        )
+
+        success = True
+
+        # Convert ROS message to python lists
+        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
+            goal_handle.request.trajectory, group="wbc"
+        )
+
+        # self.arm_feedback_publish_flag = True
+        # arm_feedback_thread = threading.Thread(
+        # target=self.arm_follow_joint_trajectory_feedback, args=(goal_handle,)
+        # )
+        # arm_feedback_thread.start()
+
+        self.manipulation_driver.wbc_long_trajectory_executor(
+            traj_point_positions, traj_point_velocities, timepoints
+        )
+
+        # self.arm_feedback_publish_flag = False
+        # arm_feedback_thread.join()
+
+        if success:
+            goal_handle.succeed()
+            self.get_logger().info(
+                "Successfully executed spot whole-body-control trajectory"
+            )
+        return self.arm_result
 
     def arm_goal_callback(self, goal_handle: ServerGoalHandle):
         """Callback for the /spot_arm/arm_controller/follow_joint_trajectory action server """
