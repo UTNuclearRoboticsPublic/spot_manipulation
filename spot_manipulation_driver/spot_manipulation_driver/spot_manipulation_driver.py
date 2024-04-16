@@ -186,7 +186,7 @@ class SpotManipulationDriver(object):
 
         self.verify_estop()
 
-    def se2trajectory_generator(self, wbc_points, frame_name):
+    def generate_se2trajectory(self, wbc_points, frame_name):
 
         wbc_cmd = []
         for point in wbc_points:
@@ -194,7 +194,7 @@ class SpotManipulationDriver(object):
            position = geometry_pb2.Vec2(x=point[0], y=point[1])
            pose = geometry_pb2.SE2Pose(position=position, angle=point[2])
            # Convert to command
-           wbc_cmd.append(RobotCommandBuilder.synchro_se2_trajectory_command(goal_se2=body_traj, frame_name=frame_name))
+           wbc_cmd.append(RobotCommandBuilder.synchro_se2_trajectory_command(goal_se2=pose, frame_name=frame_name))
         return wbc_cmd
 
 
@@ -212,6 +212,7 @@ class SpotManipulationDriver(object):
         start_time = time.time()
         ref_time = seconds_to_timestamp(start_time)
         TRAJ_APPROACH_TIME = 1.0
+        END_TIME = 1.0
 
         robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=[traj_point_positions[0]],
@@ -259,11 +260,18 @@ class SpotManipulationDriver(object):
                 max_vel=10000,
             )
 
+            # Generate body command
+            body_cmd = self.generate_se2trajectory(wbc_points=body_positions,frame_name="odom")
+
+            # Build synchro command
+            robot_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd, body_cmd)
+
             # Compute sleep time and sleep before executing next trajectory
             if traj_index[0] > 9:
                 time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
 
-            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd)
+            # success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd)
+            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+END_TIME)
 
             time_index = time.time()
             feedback_resp = self._lease_manager.robot_command_feedback(cmd_id)
