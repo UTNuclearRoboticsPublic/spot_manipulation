@@ -186,6 +186,19 @@ class SpotManipulationDriver(object):
 
         self.verify_estop()
 
+    def se2trajectory_generator(self, wbc_points, frame_name):
+
+        wbc_cmd = []
+        for point in wbc_points:
+           # Extract and generate se2 pose
+           position = geometry_pb2.Vec2(x=point[0], y=point[1])
+           pose = geometry_pb2.SE2Pose(position=position, angle=point[2])
+           # Convert to command
+           wbc_cmd.append(RobotCommandBuilder.synchro_se2_trajectory_command(goal_se2=body_traj, frame_name=frame_name))
+        return wbc_cmd
+
+
+
     # Execute long trajectories
     def wbc_long_trajectory_executor(
         self, traj_point_positions, traj_point_velocities, timepoints
@@ -245,14 +258,6 @@ class SpotManipulationDriver(object):
                 max_acc=10000,
                 max_vel=10000,
             )
-
-            # Generate body command
-            # body_cmd = mobility_command.se2_trajectory_request.trajectory.points.add()
-            # for (point: body_positions)
-            #     body_cmd.pose.position.x = point[0]
-            #     body_cmd.pose.position.y = point[1]
-            #     body_cmd.pose.angle = point[3]
-            wbc_cmd = RobotCommandBuilder.synchro_se2_trajectory_command(goal_se2=body_traj, frame_name="odom",build_on_command=arm_cmd)# arm and body synchro
 
             # Compute sleep time and sleep before executing next trajectory
             if traj_index[0] > 9:
