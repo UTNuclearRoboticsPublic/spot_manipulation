@@ -50,9 +50,11 @@ def joint_trajectory_to_lists(msg: JointTrajectory):
 def twist_to_vel_request(
         robot_time: timestamp_pb2.Timestamp, 
         msg: Twist, 
+        execution_time = 100,
         linear_lims: "list[float]" = [-1e9, 1e9],
         angular_lims: "list[float]" = [-1e9, 1e9],
         robot_frame = "body") -> arm_command_pb2.ArmVelocityCommand.Request:
+        
 
     # Enforce velocity limits
     linear_vel = np.clip(
@@ -76,10 +78,10 @@ def twist_to_vel_request(
     )
 
     # TODO: Verify that this works
-    # Velocity command will live for 0.1 seconds
+    # Velocity command will live for 0.1 seconds or specified execution time
     end_time = timestamp_pb2.Timestamp()
     end_time.CopyFrom(robot_time)
-    end_time.FromMilliseconds(end_time.ToMilliseconds() + 100)
+    end_time.FromMilliseconds(end_time.ToMilliseconds() + execution_time)
 
     arm_velocity_command = arm_command_pb2.ArmVelocityCommand.Request(
         cartesian_velocity=end_effector_velocity,
@@ -136,7 +138,7 @@ def manipulator_state_to_msg(manipulator_state: robot_state_pb2.ManipulatorState
     Returns:
         spot_msgs/ManipulatorState ROS message
     """
-    stamp = driver.lease_manager.robotToLocalTime(driver.robot_time)
+    stamp = robot_time_as_local_time(driver)
     ros_stamp = rclpy.time.Time(nanoseconds=stamp.ToNanoseconds())
 
     if manipulator_state is None:
@@ -154,3 +156,7 @@ def manipulator_state_to_msg(manipulator_state: robot_state_pb2.ManipulatorState
     # manipulator_state_msg.velocity_of_hand_in_odom = manipulator_state.velocity_of_hand_in_odom
     manipulator_state_msg.carry_state = manipulator_state.carry_state
     return manipulator_state_msg
+
+def robot_time_as_local_time(driver: SpotManipulationDriver):
+    local_time = driver._lease_manager.robotToLocalTime(driver.robot_time)
+    return local_time

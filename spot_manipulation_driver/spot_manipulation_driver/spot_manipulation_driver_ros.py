@@ -31,17 +31,19 @@
 ##############################################################################
 
 import threading
-import time
+import rclpy.time
+import numpy as np
+import geometry_msgs.msg
 
 import rclpy
 import rclpy.callback_groups
 from rclpy.action.server import ServerGoalHandle
 from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist, TwistStamped
+from geometry_msgs.msg import Twist, TwistStamped, PointStamped
 from rclpy.action import ActionServer
 from rclpy.node import Node
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType, FloatingPointRange
-from sensor_msgs.msg import JointState, Image, CameraInfo
+from sensor_msgs.msg import JointState, Image, CameraInfo, PointCloud2
 from std_srvs.srv import Trigger
 
 from spot_driver.spot_lease_manager import SpotLeaseManager
@@ -50,8 +52,8 @@ import spot_manipulation_driver.ros_helpers as ros_helpers
 from spot_driver.ros_helpers import getImageMsg, JointStatesToMsg
 # from spot_msgs.action import ArmImpedanceCommand
 from spot_msgs.msg import ManipulatorState
-from spot_msgs.srv import GripperAngleMove, ForceTrajectory
-
+from spot_msgs.srv import GripperAngleMove, ForceTrajectory, NonContactTrajectory
+import spot_manipulation_driver.get_points as get_points
 
 class SpotManipulationDriverROS(Node):
     def __init__(self):
@@ -130,19 +132,21 @@ class SpotManipulationDriverROS(Node):
         # Create a control group to prevent multiple callbacks from commanding motion simultaneously
         motion_callback_group  = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
         gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup() 
+        sensor_callback_group =  rclpy.callback_groups.ReentrantCallbackGroup()
         # impedance_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup() 
 
         # Create data publishers and subscribers
-        self._hand_image_pub             = self.create_publisher(Image           , "~/rgb/tof/image"           , 10)
-        self._hand_depth_map_pub         = self.create_publisher(Image           , "~/depth/tof/image"         , 10)
-        self._hand_4k_image_pub          = self.create_publisher(Image           , "~/rgb/camera/image"        , 10)
-        self._hand_4k_depth_map_pub      = self.create_publisher(Image           , "~/depth/camera/image"      , 10)
-        self._hand_image_info_pub        = self.create_publisher(CameraInfo      , "~/rgb/tof/camera_info"     , 10)
-        self._hand_depth_map_info_pub    = self.create_publisher(CameraInfo      , "~/depth/tof/camera_info"   , 10)
-        self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/rgb/camera/camera_info"  , 10)
-        self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/depth/camera/camera_info", 10)
-        self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"       , 10)
-        self._manipulator_state_odom_pub = self.create_publisher(ManipulatorState, "~/manipulator_state_odom"  , 10)
+        self._hand_image_pub             = self.create_publisher(Image           , "~/rgb/tof/image"                , 10)
+        self._hand_depth_map_pub         = self.create_publisher(Image           , "~/depth/tof/image"              , 10)
+        self._hand_4k_image_pub          = self.create_publisher(Image           , "~/rgb/camera/image"             , 10)
+        self._hand_4k_depth_map_pub      = self.create_publisher(Image           , "~/depth/camera/image"           , 10)
+        self._hand_image_info_pub        = self.create_publisher(CameraInfo      , "~/rgb/tof/camera_info"          , 10)
+        self._hand_depth_map_info_pub    = self.create_publisher(CameraInfo      , "~/depth/tof/camera_info"        , 10)
+        self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/rgb/camera/camera_info"       , 10)
+        self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/depth/camera/camera_info"     , 10)
+        self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"            , 10)
+        self._manipulator_state_odom_pub = self.create_publisher(ManipulatorState, "~/manipulator_state_body_frame" , 10)
+        self._manipulator_offset_pub     = self.create_publisher(PointStamped    , "~/manipulator_offset"           , 10)
         # self._arm_impedance_feedback_pub = self.create_publisher(ArmImpedanceCommand.Feedback(), '~/arm_impedance_command_feedback', 10)
 
         if publish_joint_states:        # Publishes actual states of the joints
@@ -151,17 +155,20 @@ class SpotManipulationDriverROS(Node):
         self.ee_vel_sub    = self.create_subscription(Twist, "~/cmd_vel", self.ee_vel_sub_callback, 10, callback_group=motion_callback_group)
         self.ap_ee_vel_sub = self.create_subscription(TwistStamped, "/ee_twist_cmds", self.ap_ee_vel_sub_callback, 10,callback_group=motion_callback_group)
 
+        self.hand_points_texture_sub = self.create_subscription(PointCloud2, "/hand_points_texture", self.hand_points_texture_sub_callback, 10, callback_group=sensor_callback_group)
         # Create services for arm motions
-        self.create_service(Trigger, "~/claim"        , self.claim_callback)
-        self.create_service(Trigger, "~/release"      , self.release_callback)
-        self.create_service(Trigger, "~/power_on"     , self.power_on_callback)
-        self.create_service(Trigger, "~/unstow_arm"   , self.unstow_service_callback, callback_group=motion_callback_group)
-        self.create_service(Trigger, "~/stow_arm"     , self.stow_service_callback, callback_group=motion_callback_group)
-        self.create_service(Trigger, "~/close_gripper", self.gripper_close_service_callback, callback_group=gripper_callback_group)
-        self.create_service(Trigger, "~/open_gripper" , self.gripper_open_service_callback, callback_group=gripper_callback_group)
-        self.create_service(Trigger, "~/stand"        , self.stand_service_callback, callback_group=gripper_callback_group)
-        self.create_service(GripperAngleMove, "~/set_gripper_angle", self.gripper_angle_service_callback, callback_group=gripper_callback_group)
-        self.create_service(ForceTrajectory, '~/force_trajectory', self.force_trajectory_service_callback, callback_group=motion_callback_group)
+        self.create_service(Trigger,              "~/claim"                 , self.claim_callback)
+        self.create_service(Trigger,              "~/release"               , self.release_callback)
+        self.create_service(Trigger,              "~/power_on"              , self.power_on_callback)
+        self.create_service(Trigger,              "~/unstow_arm"            , self.unstow_service_callback,              callback_group=motion_callback_group)
+        self.create_service(Trigger,              "~/stow_arm"              , self.stow_service_callback,                callback_group=motion_callback_group)
+        self.create_service(Trigger,              "~/close_gripper"         , self.gripper_close_service_callback,       callback_group=gripper_callback_group)
+        self.create_service(Trigger,              "~/open_gripper"          , self.gripper_open_service_callback,        callback_group=gripper_callback_group)
+        self.create_service(Trigger,              "~/stand"                 , self.stand_service_callback,               callback_group=gripper_callback_group)
+        self.create_service(Trigger,              "~/stand_body_assist"     , self.stand_service_body_assist_callback,   callback_group=gripper_callback_group)
+        self.create_service(GripperAngleMove,     "~/set_gripper_angle"     , self.gripper_angle_service_callback,       callback_group=gripper_callback_group)
+        self.create_service(ForceTrajectory,      "~/force_trajectory"      , self.force_trajectory_service_callback,    callback_group=motion_callback_group)
+        self.create_service(NonContactTrajectory, "~/non_contact_trajectory", self.ncontact_trajectory_service_callback, callback_group=motion_callback_group)
 
         # Initialize action servers
         self.arm_action_server = ActionServer(
@@ -293,16 +300,23 @@ class SpotManipulationDriverROS(Node):
         """Callback for Affordance Primitive end effector velocity command subscriber"""
         self.ee_vel_sub_callback(msg.twist)
 
+    def hand_points_texture_sub_callback(self, msg:PointCloud2):
+        """Callback for hand image point cloud subscriber"""
+        self.hand_points_texture = msg
+
+
     def arm_state_callback(self, _):
         state = self.manipulation_driver.arm_state
         if state is None: return
         state_msg = ros_helpers.manipulator_state_to_msg(state, self.manipulation_driver)
         self._manipulator_state_pub.publish(state_msg)
-
-        odom_estimated_end_effector_force = self.manipulation_driver.force_transform(state_msg.estimated_end_effector_force_in_hand)
-        odom_state_msg = state_msg
-        odom_state_msg.estimated_end_effector_force_in_hand = odom_estimated_end_effector_force
-        self._manipulator_state_odom_pub.publish(odom_state_msg)
+        
+        body_frame_state_msg = state_msg
+        body_frame_estimated_end_effector_force_wrench = self.manipulation_driver.force_transform(state_msg.estimated_end_effector_force_in_hand.wrench)
+        body_frame_estimated_end_effector_force = geometry_msgs.msg.WrenchStamped(header=state_msg.estimated_end_effector_force_in_hand.header,
+                                                                            wrench=body_frame_estimated_end_effector_force_wrench)        
+        body_frame_state_msg.estimated_end_effector_force_in_hand = body_frame_estimated_end_effector_force
+        self._manipulator_state_odom_pub.publish(body_frame_state_msg)
 
     # def arm_impedance_command_callback(self, goal_handle):
     #     """Callback for the /spot_arm/arm_controller/arm_impedance_command action server """
@@ -392,6 +406,12 @@ class SpotManipulationDriverROS(Node):
         resp.message = msg
         return resp
     
+    def stand_service_body_assist_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
+        (success, msg) = self.manipulation_driver.stand_robot_body_assist()
+        resp.success = success
+        resp.message = msg
+        return resp
+    
     def gripper_angle_service_callback(self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response):
         (success, msg) = self.manipulation_driver.open_gripper_to_angle(req.gripper_angle)
         resp.success = success
@@ -399,9 +419,79 @@ class SpotManipulationDriverROS(Node):
         return resp
     
     def force_trajectory_service_callback(self, req: ForceTrajectory.Request, resp: ForceTrajectory.Response):
-        (success, msg) = self.manipulation_driver.arm_force_trajectory_executor(req.distance_x, req.distance_y, req.distance_z, req.force_x, req.force_y, req.force_z, req.time)
+        (success, msg, error) = self.manipulation_driver.arm_force_trajectory_executor(req.distance_x, req.distance_y, req.distance_z, req.force_x, req.force_y, req.force_z, req.speed)
         resp.success = success
         resp.message = msg
+        resp.error = error
+        return resp
+    
+    def ncontact_trajectory_service_callback(self, req:NonContactTrajectory.Request, resp:NonContactTrajectory.Response):
+        frequency = 15
+        offset_correction = np.array([-0.03555556,0.082, 0.0031])
+        # point_cloud = self.hand_points_texture
+        # self._logger.info('in executor')
+
+        offset = geometry_msgs.msg.Vector3(x=req.offset_x, y=req.offset_y, z=req.offset_z)
+        # start_location = self.manipulation_driver.current_location(self)
+        # current_location = start_location
+        distance = np.linalg.norm([req.distance_x,req.distance_y,req.distance_z])
+        distance_per_time = req.speed/frequency
+        steps = int(distance/distance_per_time)
+
+        step_time = distance_per_time/req.speed
+        step_time = int(step_time*1e3)
+
+        offset.x = offset.x + (offset_correction[0]*offset.x**2 + offset_correction[1]*offset.x + offset_correction[2])
+        offset.z = offset.z + (offset_correction[0]*offset.z**2 + offset_correction[1]*offset.z + offset_correction[2])
+
+        step_distance = geometry_msgs.msg.Vector3(x=req.distance_x*3/steps, y=req.distance_y*3/steps, z=req.distance_z*3/steps)
+        # self._logger.info(f'number of steps: {steps}')
+        for i in range(steps):
+        # while current_location != start_location+distance:
+            try:
+                # current_location = self.manipulation_driver.current_location(self)
+                img_msg, info_msg, _ = getImageMsg(self.hand_depth_image, self.manipulation_driver.lease_manager)
+                self.hand_image = img_msg
+                self.hand_image_info = info_msg
+            
+
+                # self._logger.info("got image messages")
+
+                distance_in_hand = self.manipulation_driver.transform_frame(step_distance, ['hand', 'body'])
+
+                old, new = get_points.get_points(self.hand_image, self.hand_image_info, -distance_in_hand.z, distance_in_hand.y, self._logger)
+
+                output = old
+                output.x = old.x - (offset_correction[0]*offset.z**2 + offset_correction[1]*offset.z + offset_correction[2])
+                # self._logger.info('got points')
+
+                offset_point = PointStamped(point=output)
+                offset_point.header.stamp = rclpy.time.Time(nanoseconds=ros_helpers.robot_time_as_local_time(self.manipulation_driver).ToNanoseconds()).to_msg()
+
+                self._manipulator_offset_pub.publish(offset_point)
+
+                old = self.manipulation_driver.transform_frame(old, ['body', 'hand'])
+                new = self.manipulation_driver.transform_frame(new, ['body', 'hand'])
+
+                twist_msg = self.manipulation_driver.arm_ncontact_trajectory_executor(
+                                                step_distance, offset, req.speed,
+                                                i, steps, old, new, distance)
+                
+                self._logger.info('ncontact trajectory executed')
+
+                arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, twist_msg, step_time)
+                success, msg = self.manipulation_driver.ee_velocity_msg_executor(arm_vel_request)
+                
+                resp.success = success
+                resp.message = msg
+                # resp.error = error
+            except Exception as e:
+                self._logger.info(f"Exception doing shit: {e}")
+                resp.success = False
+                return resp
+
+        self._logger.info('after loop')
+        
         return resp
     
     def publish_hand_images(self, _):
@@ -414,7 +504,8 @@ class SpotManipulationDriverROS(Node):
                 pub_info = self._hand_image_info_pub
             elif image.source.name == "hand_depth":
                 pub_img  = self._hand_depth_map_pub
-                pub_info = self._hand_depth_map_info_pub
+                pub_info = self._hand_depth_map_info_pub 
+                self.hand_depth_image = image               
             elif image.source.name == "hand_color_image":
                 pub_img  = self._hand_4k_image_pub
                 pub_info = self._hand_4k_image_info_pub

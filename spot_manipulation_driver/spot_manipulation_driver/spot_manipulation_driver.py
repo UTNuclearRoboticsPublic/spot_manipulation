@@ -33,12 +33,15 @@
 import time
 from typing import Text, Tuple
 import numpy as np
+import geometry_msgs.msg
+import scipy
+import copy
 
 from google.protobuf import duration_pb2, timestamp_pb2
 from bosdyn.api import (estop_pb2,geometry_pb2, image_pb2, robot_command_pb2,
                         synchronized_command_pb2, arm_command_pb2, robot_state_pb2,
                         # arm_surface_contact_pb2, arm_surface_contact_service_pb2,
-                        trajectory_pb2)
+                        trajectory_pb2, point_cloud_pb2, image_pb2)
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 # from bosdyn.client.arm_surface_contact import ArmSurfaceContactClient
 from bosdyn.client.frame_helpers import (BODY_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME, 
@@ -46,9 +49,11 @@ from bosdyn.client.frame_helpers import (BODY_FRAME_NAME, GRAV_ALIGNED_BODY_FRAM
                                          HAND_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.image import ImageClient, build_image_request
 from bosdyn.client.math_helpers import Quat, SE3Pose
+from bosdyn.client.point_cloud import PointCloudClient
 from bosdyn.client.robot_command import (RobotCommandBuilder, RobotCommandClient,
                                          blocking_stand, TimedOutError, CommandFailedErrorWithFeedback)
 from bosdyn.client.robot_state import RobotStateClient
+from bosdyn.client import image
 from bosdyn.util import seconds_to_timestamp, seconds_to_duration
 
 from spot_driver.spot_lease_manager import SpotLeaseManager
@@ -247,97 +252,16 @@ class SpotManipulationDriver(object):
 
     def arm_force_trajectory_executor(
             self, distance_x, distance_y, distance_z, 
-            force_x, force_y, force_z, time):
+            force_x, force_y, force_z, speed):
         self._lease_manager.robot.time_sync.wait_for_sync()
         command_client = self._lease_manager.command_client
 
-        # end_index = len(traj_point_positions) - 1
-
-        # # Extract a short trajectory from the long list
-        # # times = time_since_ref[traj_index[0] : traj_index[1]]
-        # # positions = traj_point_positions[traj_index[0] : traj_index[1]]
-        # # velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
-
-        # # First, let's pick a task frame that is in front of the robot on the ground.
-        # robot_state_client = self.robot.ensure_client(RobotStateClient.default_service_name)
-        # robot_state = robot_state_client.get_robot_state()
-        # odom_T_grav_body = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot,
-        #                                  ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
-
-        # odom_T_gpe = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot, ODOM_FRAME_NAME,
-        #                            GROUND_PLANE_FRAME_NAME)
-
-        # # Get the frame on the ground right underneath the center of the body.
-        # odom_T_ground_body = odom_T_grav_body
-        # odom_T_ground_body.z = odom_T_gpe.z
-
-
-        # wr1_T_tool = SE3Pose(0.23589, 0, -0.03943, Quat.from_pitch(-np.pi / 2))
-        # odom_T_task = odom_T_ground_body * SE3Pose(x=0.6, y=0, z=0, rot=Quat(w=1, x=0, y=0, z=0))
-
-        # impedance_cmd = arm_command_pb2.ArmImpedanceCommand
-
-        # # Set up our root frame, task frame, and tool frame.
-        # impedance_cmd.root_frame_name = ODOM_FRAME_NAME
-        # impedance_cmd.root_tform_task.CopyFrom(odom_T_task.to_proto())
-        # impedance_cmd.wrist_tform_tool.CopyFrom(wr1_T_tool.to_proto())
-
-        # # Set up downward force.
-        # impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.force.x = 0
-        # impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.force.y = 0
-        # impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.force.z = force  # Newtons
-        # impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.torque.x = 0
-        # impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.torque.y = 0
-        # impedance_cmd.feed_forward_wrench_at_tool_in_desired_tool.torque.z = 0
-        # # Increment indices for the next short trajectory
-        # traj_index = list(map(lambda x: x + 9, traj_index))
-
-        # if traj_index[1] > end_index:
-        #     traj_index[1] = end_index
-
-        # cmd = arm_surface_contact_pb2.ArmSurfaceContact.Request(
-        #     pose_trajectory_in_task=traj_point_positions, 
-        #     # root_frame_name=api_send_frame,
-        #     # root_tform_task=world_T_admittance, 
-        #     # press_forcetraj_percentage=press_force,
-        #     x_axis=arm_surface_contact_pb2.ArmSurfaceContact.Request.AXIS_MODE_POSITION,
-        #     y_axis=arm_surface_contact_pb2.ArmSurfaceContact.Request.AXIS_MODE_POSITION,
-        #     z_axis=arm_surface_contact_pb2.ArmSurfaceContact.Request.AXIS_MODE_POSITION,
-        #     max_linear_velocity=max(traj_point_velocities))
-
-        # # TODO: finish force trajectory executor using surface contact and impedance control
-        # # surface contact to follow given trajectory and set admittance setting
-        # # impecance control to set downward force 
-
-        # # Add admittance options
-        # cmd.z_axis = arm_surface_contact_pb2.ArmSurfaceContact.Request.AXIS_MODE_FORCE
-        # cmd.press_force_percentage.z = 100
-
-        # #if admittance_frame is not None:
-
-        # # Set the robot to be really stiff in x/y and really sensitive to admittance in z.
-        # cmd.xy_admittance = arm_surface_contact_pb2.ArmSurfaceContact.Request.ADMITTANCE_SETTING_VERY_STIFF
-        # cmd.z_admittance = arm_surface_contact_pb2.ArmSurfaceContact.Request.ADMITTANCE_SETTING_LOOSE
-
-        # # Build the request proto
-        # proto = arm_surface_contact_service_pb2.ArmSurfaceContactCommand(request=cmd)
-
-        # # Send the request
-        # arm_surface_contact_client = self.robot.ensure_client(ArmSurfaceContactClient.default_service_name)
-        # arm_surface_contact_client.arm_surface_contact_command(proto)
-
-        body_control = spot_command_pb2.BodyControlParams(
-            body_assist_for_manipulation=spot_command_pb2.BodyControlParams.
-            BodyAssistForManipulation(enable_hip_height_assist=True, enable_body_yaw_assist=True))
-        blocking_stand(command_client, timeout_sec=10,
-                       params=spot_command_pb2.MobilityParams(body_control=body_control))
-
-        hand_pose_in_odom: geometry_pb2.SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
+        hand_pose_in_body_frame: geometry_pb2.SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
                               GRAV_ALIGNED_BODY_FRAME_NAME, HAND_FRAME_NAME)
         
-        hand_x_start = hand_pose_in_odom.position.x  # in front of the robot.
-        hand_y_start = hand_pose_in_odom.position.y  # to the left
-        hand_z_start = hand_pose_in_odom.position.y  # will be ignored since we'll have a force in the Z axis.
+        hand_x_start = hand_pose_in_body_frame.position.x  # in front of the robot.
+        hand_y_start = hand_pose_in_body_frame.position.y  # to the left
+        hand_z_start = hand_pose_in_body_frame.position.z  # will be ignored since we'll have a force in the Z axis.
         hand_x_end = hand_x_start + distance_x
         hand_y_end = hand_y_start + distance_y  # to the right
         hand_z_end = hand_z_start + distance_z
@@ -349,7 +273,8 @@ class SpotManipulationDriver(object):
         hand_vec3_start = geometry_pb2.Vec3(x=hand_x_start, y=hand_y_start, z=hand_z_start)
         hand_vec3_end = geometry_pb2.Vec3(x=hand_x_end, y=hand_y_end, z=hand_z_end)
 
-        q = Quat.from_pitch(1.571)
+        q = Quat.from_pitch(1.571) # for pointing eef downward
+        # q = Quat.from_pitch(0) # for eef pointing forward
         quat = q.to_proto()
         # qw = 1
         # qx = 0
@@ -361,14 +286,25 @@ class SpotManipulationDriver(object):
         hand_pose1_in_flat_body = geometry_pb2.SE3Pose(position=hand_vec3_start, rotation=quat)
         hand_pose2_in_flat_body = geometry_pb2.SE3Pose(position=hand_vec3_end, rotation=quat)
 
+        distance = np.linalg.norm([distance_x,distance_y,distance_z])
+
+        traj_time = distance/speed
+        self._logger.info(f"trajectory time: {traj_time}")
+        time_since_reference = seconds_to_duration(traj_time)
+
+        # Set arm against ground
+        command = RobotCommandBuilder.arm_wrench_command(f_x, f_y, f_z, 
+                                                         0, 0, 0,
+                                                         ODOM_FRAME_NAME, traj_time)
+        # Send the request
+        command_client.robot_command(command)
+
         # Convert the poses to the odometry frame.
         odom_T_flat_body = get_a_tform_b(self.kinematic_state.transforms_snapshot,
                                          ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
         hand_pose1 = odom_T_flat_body * SE3Pose.from_proto(hand_pose1_in_flat_body)
         hand_pose2 = odom_T_flat_body * SE3Pose.from_proto(hand_pose2_in_flat_body)
 
-        traj_time = time
-        time_since_reference = seconds_to_duration(traj_time)
 
         traj_point1 = trajectory_pb2.SE3TrajectoryPoint(pose=hand_pose1.to_proto(),
                                                         time_since_reference=seconds_to_duration(0))
@@ -403,15 +339,19 @@ class SpotManipulationDriver(object):
             rx_axis=arm_command_pb2.ArmCartesianCommand.Request.AXIS_MODE_POSITION,
             ry_axis=arm_command_pb2.ArmCartesianCommand.Request.AXIS_MODE_POSITION,
             rz_axis=arm_command_pb2.ArmCartesianCommand.Request.AXIS_MODE_POSITION)
+        self._logger.info(f'cartesian command: {arm_cartesian_command}')
         arm_command = arm_command_pb2.ArmCommand.Request(
             arm_cartesian_command=arm_cartesian_command)
         synchronized_command = synchronized_command_pb2.SynchronizedCommand.Request(
             arm_command=arm_command)
         robot_command = robot_command_pb2.RobotCommand(synchronized_command=synchronized_command)
 
-        # Send the request
-        command_client.robot_command(robot_command)
+        success,msg = command_client.robot_command(robot_command)
         self._lease_manager.logger.info('Running mixed position and force mode.')
+        
+        hand_pose_in_body_frame_end: geometry_pb2.SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
+                              GRAV_ALIGNED_BODY_FRAME_NAME, HAND_FRAME_NAME)
+        error = hand_vec3_end - hand_pose_in_body_frame_end.position
 
     def force_transform(self, wrench):
         
@@ -421,11 +361,162 @@ class SpotManipulationDriver(object):
         sensor_in_odom: SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
                                 GRAV_ALIGNED_BODY_FRAME_NAME, HAND_FRAME_NAME)
         
-        force_in_odom = sensor_in_odom.transform_vec3(force_vector)
-        torque_in_odom = sensor_in_odom.transform_vec3(torque_vector)
+        force_transformed = sensor_in_odom.transform_vec3(force_vector)
+        torque_transformed = sensor_in_odom.transform_vec3(torque_vector)
 
-        wrench_in_odom = geometry_pb2.Wrench(force=force_in_odom, torque=torque_in_odom)
+        force_in_odom = geometry_msgs.msg.Vector3(x=force_transformed.x, y=force_transformed.y, z=force_transformed.z)
+        torque_in_odom = geometry_msgs.msg.Vector3(x=torque_transformed.x, y=torque_transformed.y, z=torque_transformed.z)
+
+        wrench_in_odom = geometry_msgs.msg.Wrench(force=force_in_odom, torque=torque_in_odom)
+
         return wrench_in_odom
+
+    def current_location(self):
+        current_location_body_frame: SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
+                            GRAV_ALIGNED_BODY_FRAME_NAME, HAND_FRAME_NAME)
+        return current_location_body_frame
+    
+    def arm_ncontact_trajectory_executor(
+            self, step_distance, offset, speed,
+            i, steps, old, new, distance):
+        
+        # self._logger.info('in ncontact trajectory executor')
+        # self._logger.info(f'step distance: {step_distance}'+ '\n' +
+        #                   f'offset: {offset}'+ '\n' +
+        #                   f'speed: {speed}'+ '\n' +
+        #                   f'i: {i}'+ '\n' +
+        #                   f'steps: {steps}'+ '\n' +
+        #                   f'old: {old}'+ '\n' +
+        #                   f'new: {new}'+ '\n' +
+        #                   f'distance: {distance}')
+        
+        old = geometry_pb2.Vec3(x=old.x, y=old.y, z=old.z)
+        new = geometry_pb2.Vec3(x=new.x, y=new.y, z=new.z)
+        
+        self._lease_manager.robot.time_sync.wait_for_sync()
+        command_client = self._lease_manager.command_client
+
+        
+        # q = Quat.from_pitch(1.571) # for pointing eef downward
+        q = Quat.from_pitch(0) # for eef pointing forward
+        quat = q.to_proto()
+
+        hand_pose_in_body_frame: SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
+                            GRAV_ALIGNED_BODY_FRAME_NAME, HAND_FRAME_NAME)
+
+        if i == 0:
+            hand_x_start = hand_pose_in_body_frame.x
+            hand_y_start = hand_pose_in_body_frame.y
+            hand_z_start = hand_pose_in_body_frame.z
+
+            hand_x_end = hand_x_start + step_distance.x*steps
+            hand_y_end = hand_y_start + step_distance.y*steps
+            hand_z_end = hand_z_start + step_distance.z*steps
+            hand_vec3_end = geometry_pb2.Vec3(x=hand_x_end, y=hand_y_end, z=hand_z_end)
+            # self._logger.info('start position saved')
+
+        hand_x_current = hand_pose_in_body_frame.x  # in front of the robot.
+        hand_y_current = hand_pose_in_body_frame.y  # to the left
+        hand_z_current = hand_pose_in_body_frame.z  # will be ignored since we'll have a force in the Z axis.
+        hand_vec3_current = geometry_pb2.Vec3(x=hand_x_current, y=hand_y_current, z=hand_z_current)
+
+        perception_distance = geometry_pb2.Vec3(x=(new.x-old.x), y=(new.y-old.y), z=(new.z-old.z))
+
+        hand_x_predicted = new.x - offset.x
+        hand_y_predicted = hand_y_current + step_distance.y 
+        hand_z_predicted = new.z + offset.z
+        # hand_z_predicted = hand_z_current
+
+        self._logger.info(f'new x: {new.x}, offset x: {offset.x}')
+
+        hand_pose_in_body_frame_predicted = copy.copy(hand_pose_in_body_frame)
+        hand_vec3_predicted = geometry_pb2.Vec3(x=hand_x_predicted, y=hand_y_predicted, z=hand_z_predicted)
+        # self._logger.info(f'predicted position: {hand_vec3_predicted}')
+        hand_pose_in_body_frame_predicted.x = hand_vec3_predicted.x
+        hand_pose_in_body_frame_predicted.y = hand_vec3_predicted.y
+        hand_pose_in_body_frame_predicted.z = hand_vec3_predicted.z
+
+        self._logger.info(f'HTMs calculated'+ '\n' +
+                          f'current: {hand_pose_in_body_frame}' + '\n' +
+                          f'predicted: {hand_pose_in_body_frame_predicted}')
+        # self._logger.info(f'current: {hand_pose_in_body_frame}')
+        # self._logger.info(f'predicted: {hand_pose_in_body_frame_predicted}')
+
+        # skew_twist = scipy.linalg.logm(geometry_pb2.SE3Pose.from_proto(hand_pose_in_body_frame_predicted) * 
+        #                                SE3Pose.inverse(geometry_pb2.SE3Pose.from_proto(hand_pose_in_body_frame)))
+        skew_twist = scipy.linalg.logm((hand_pose_in_body_frame_predicted * hand_pose_in_body_frame.inverse()).to_matrix())
+        linear_velocity= np.array([skew_twist[0,3], # Hand frame
+                    skew_twist[1,3],
+                    skew_twist[2,3]])
+        
+        self._logger.info(f'skew SE3 calculated: {skew_twist}'+ '\n' +
+                          f'velocity calculated: {linear_velocity}')
+        linear_velocity[1] = speed
+        if step_distance.y < 0:
+            linear_velocity[1] = linear_velocity[1]*-1
+            
+        lim = 0.02
+        if abs(linear_velocity[0]) < lim and abs(hand_x_current - hand_x_predicted) > 0.01:
+            linear_velocity[0] = linear_velocity[0]*(lim/abs(linear_velocity[2]))
+        if abs(linear_velocity[2]) < lim and abs(hand_z_current - hand_z_predicted) > 0.01:
+            linear_velocity[2] = linear_velocity[2]*(lim/abs(linear_velocity[2]))
+
+        if step_distance.x == 0: linear_velocity[0] = 0
+        # if step_distance.z == 0: linear_velocity[2] = 0
+        elif step_distance.y == 0: linear_velocity[1] = 0
+
+        # magnitude = np.linalg.norm(linear_velocity)
+        # if  magnitude > speed:
+        #     linear_velocity = linear_velocity*(speed/magnitude)
+
+        self._logger.info(f'linear velocity limited: {linear_velocity}')
+        linear = geometry_msgs.msg.Vector3(x=linear_velocity[0], y=linear_velocity[1], z=linear_velocity[2])
+
+        linear_velocity = geometry_pb2.Vec3(x=linear_velocity[0], y=linear_velocity[1], z=linear_velocity[2])
+        angular_velocity = np.array([skew_twist[2,1], # Hand frame
+                    skew_twist[0,2],
+                    skew_twist[1,0]])
+        self._logger.info(f'angular velocity calculated: {angular_velocity}')
+        
+        magnitude = np.linalg.norm(angular_velocity)
+        if  magnitude > speed:
+            angular_velocity = angular_velocity*(speed/magnitude)
+        angular = geometry_msgs.msg.Vector3(x=angular_velocity[0], y=angular_velocity[1], z=angular_velocity[2])
+        twist_msg=geometry_msgs.msg.Twist(linear=linear)#, angular=angular)
+        self._logger.info(f'angular velocity limited: {angular_velocity}')
+        angular_velocity = geometry_pb2.Vec3(x=angular_velocity[0], y=angular_velocity[1], z=angular_velocity[2])
+        # Get to the start configuration of the trajectory before we execute it
+
+        self._logger.info(f'velocity:{linear_velocity}')
+        self._logger.info(f'twist: {twist_msg}')
+
+        # hand_pose_in_body_frame_end: geometry_pb2.SE3Pose =s, time_since_ref):
+        #                         BODY_FRAME_NAME, HAND_FRAME_NAME)
+        # error = hand_vec3_end - hand_pose_in_body_frame_end.position
+
+        return twist_msg
+
+    def transform_frame(self, point, frames):
+        self._logger.info(f"point: {point}, frames: {frames}")
+        point_coord = geometry_pb2.Vec3(x=point.x, y=point.y, z=point.z)
+
+        for frame in frames:
+            self._logger.info('correcting frame names')
+            if frame == 'hand':
+                frame = HAND_FRAME_NAME
+            elif frame == 'body':
+                frame = BODY_FRAME_NAME
+
+        sensor_in_new_frame: SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
+                               frames[0] ,frames[1])
+        self._logger.info("Got a_tform_b")
+        
+        point_transformed = sensor_in_new_frame.transform_vec3(point_coord)
+
+        point = geometry_msgs.msg.Point(x=point_transformed.x, y=point_transformed.y, z=point_transformed.z)
+        self._logger.info("returning point")
+
+        return point
 
     def gripper_trajectory_executor(self, traj_point_positions, time_since_ref):
 
@@ -485,7 +576,7 @@ class SpotManipulationDriver(object):
         robot_cmd = robot_command_pb2.RobotCommand(
             synchronized_command=synchronized_command
         )
-
+        self._logger.info(f'arm command: {request}')
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
 
@@ -493,6 +584,22 @@ class SpotManipulationDriver(object):
         self._lease_manager.robot.logger.info("Commanding robot to stand...")
         try:
             blocking_stand(self._lease_manager.command_client, timeout_sec=10)
+        except CommandFailedErrorWithFeedback as error:
+            return False, error.message
+        except TimedOutError as error:
+            return False, error.error_message
+        return True, 'Robot standing'
+    
+    def stand_robot_body_assist(self) -> Tuple[bool, Text]:
+        self._lease_manager.robot.logger.info("Commanding robot to stand...")
+        command_client = self._lease_manager.command_client
+
+        try:
+            body_control = spot_command_pb2.BodyControlParams(
+                body_assist_for_manipulation=spot_command_pb2.BodyControlParams.
+                BodyAssistForManipulation(enable_hip_height_assist=True, enable_body_yaw_assist=True))
+            blocking_stand(command_client, timeout_sec=10,
+                       params=spot_command_pb2.MobilityParams(body_control=body_control))
         except CommandFailedErrorWithFeedback as error:
             return False, error.message
         except TimedOutError as error:
