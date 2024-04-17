@@ -37,7 +37,7 @@ import rclpy
 import rclpy.callback_groups
 import spot_manipulation_driver.ros_helpers as ros_helpers
 from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist, TwistStamped
+from geometry_msgs.msg import Twist, TwistStamped, TransformStamped
 from rcl_interfaces.msg import (FloatingPointRange, ParameterDescriptor,
                                 ParameterType)
 from rclpy.action import ActionServer
@@ -51,6 +51,7 @@ from spot_manipulation_driver.spot_manipulation_driver import \
 from spot_msgs.msg import ManipulatorState
 from spot_msgs.srv import GripperAngleMove
 from std_srvs.srv import Trigger
+from tf2_ros import Buffer, TransformListener, transform_broadcaster
 
 
 class SpotManipulationDriverROS(Node):
@@ -122,6 +123,23 @@ class SpotManipulationDriverROS(Node):
         self.finger_feedback = FollowJointTrajectory.Feedback()
         self.finger_result = FollowJointTrajectory.Result()
         self.finger_feedback_publish_flag = False
+
+        # TF parameters
+        self.buffer = Buffer()
+        self.listener = TransformListener(self.buffer)
+        self.broadcaster = transform_broadcaster(self.get_logger())
+
+    def read_transform(self, source_frame, target_frame):
+        try:
+            now = rclpy.time.time()
+            transform_stamped = self.buffer.lookup_transform(
+                target_frame, source_frame, now, timeout=rclpy.time.duration.Duration(seconds=1.0))
+            self.broadcaster.sendTransform(transform_stamped)
+            self.get_logger().info("Transform from {self.source_frame} to {self.target_frame}:")
+            self.get_logger().info(transform_stamped)
+        except (TransformException, LookupException) as e:
+            self.get_logger().warn(f"Could not get transform: {e}")
+
 
     def connect(self, lease_manager: SpotLeaseManager) -> bool:
         self.get_logger().info("Connecting manipulation driver")
