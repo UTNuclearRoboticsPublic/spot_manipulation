@@ -243,9 +243,10 @@ class SpotManipulationDriver(object):
 
             # Extract a short trajectory from the long list
             times = timepoints[traj_index[0] : traj_index[1]]
-            arm_positions = traj_point_positions[traj_index[0] : traj_index[1]]# need to extract arm portion
-            body_positions = # extract body portion
+            positions = traj_point_positions[traj_index[0] : traj_index[1]]# need to extract arm portion
             # velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
+            body_positions = [sublist[:3] for sublist in positions] # first 3 are body
+            arm_positions = [sublist[:-6] for sublist in positions] #last six elements are arm
 
             # Increment indices for the next short trajectory
             traj_index = list(map(lambda x: x + 9, traj_index))
