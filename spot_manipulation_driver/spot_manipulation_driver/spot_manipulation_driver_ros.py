@@ -287,8 +287,8 @@ class SpotManipulationDriverROS(Node):
         success = True
 
         # Convert ROS message to python lists
-        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
-            goal_handle.request.trajectory, group="wbc"
+        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.wbc_joint_trajectory_to_lists(
+            goal_handle.request.trajectory
         )
 
         # self.arm_feedback_publish_flag = True
