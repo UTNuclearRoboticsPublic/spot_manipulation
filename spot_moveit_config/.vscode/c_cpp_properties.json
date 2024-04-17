@@ -1,0 +1,54 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/alex/workspaces/spot_test/install/trac_ik_kinematics_plugin/include/**",
+        "/home/alex/workspaces/spot_test/install/trac_ik_lib/include/**",
+        "/home/alex/workspaces/spot_test/install/spot_msgs/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/pilz_industrial_motion_planner_testutils/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/pilz_industrial_motion_planner/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_control_interface/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_simple_controller_manager/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_setup_assistant/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_setup_srdf_plugins/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_setup_core_plugins/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_setup_controllers/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_setup_app_plugins/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_setup_framework/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_servo/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_visualization/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_py/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_hybrid_planning/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_planning_interface/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_benchmarks/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_warehouse/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_robot_interaction/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_perception/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_move_group/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_planners_ompl/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_kinematics/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_planning/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_ros_occupancy_map_monitor/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_resources_prbt_ikfast_manipulator_plugin/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_planners_stomp/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/chomp_motion_planner/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_core/include/**",
+        "/home/alex/workspaces/fork_moveit2_ws/install/moveit_msgs/include/**",
+        "/opt/ros/humble/include/**",
+        "/home/alex/workspaces/spot_test/src/trac_ik/trac_ik_kinematics_plugin/include/**",
+        "/home/alex/workspaces/spot_test/src/trac_ik/trac_ik_lib/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++17"
+    }
+  ],
+  "version": 4
+}

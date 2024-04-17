@@ -1,0 +1,74 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:macro name="spot_ros2_control" params="name initial_positions_file">
+        <xacro:property name="initial_positions" value="${load_yaml(initial_positions_file)['initial_positions']}"/>
+
+        <ros2_control name="${name}" type="system">
+            <hardware>
+                <!-- By default, set up controllers for simulation. This won't work on real hardware -->
+                <plugin>mock_components/GenericSystem</plugin>
+            </hardware>
+            <joint name="body_height_joint">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['body_height_joint']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="body_yaw_joint">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['body_yaw_joint']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="body_pitch_joint">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['body_pitch_joint']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="body_roll_joint">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['body_roll_joint']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="arm0_shoulder_yaw">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['arm0_shoulder_yaw']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="arm0_shoulder_pitch">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['arm0_shoulder_pitch']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="arm0_elbow_pitch">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['arm0_elbow_pitch']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="arm0_elbow_roll">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['arm0_elbow_roll']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="arm0_wrist_pitch">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['arm0_wrist_pitch']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="arm0_wrist_roll">
+                <state_interface name="position">
+                  <param name="initial_value">${initial_positions['arm0_wrist_roll']}</param>
+                </state_interface>
+                <state_interface name="velocity"/>
+            </joint>
+
+        </ros2_control>
+    </xacro:macro>
+</robot>
