@@ -11,7 +11,7 @@ import rclpy.time
 from .spot_manipulation_driver import SpotManipulationDriver
 
 
-def wbc_joint_trajectory_to_lists(msg: JointTrajectory):
+def wbc_joint_trajectory_to_lists(msg: JointTrajectory, T_foot_wrt_odom):
     traj_point_positions = []
     traj_point_velocities = []
     timepoints = []

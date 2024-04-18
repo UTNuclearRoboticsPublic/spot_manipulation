@@ -137,6 +137,7 @@ class SpotManipulationDriverROS(Node):
             self.broadcaster.sendTransform(transform_stamped)
             self.get_logger().info("Transform from {self.source_frame} to {self.target_frame}:")
             self.get_logger().info(transform_stamped)
+            return transform_stamped
         except (TransformException, LookupException) as e:
             self.get_logger().warn(f"Could not get transform: {e}")
 
@@ -304,9 +305,12 @@ class SpotManipulationDriverROS(Node):
 
         success = True
 
+        # Get base_footprint to odom transform
+        T_foot_wrt_odom = self.read_transform("base_footprint","odom")
+
         # Convert ROS message to python lists
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.wbc_joint_trajectory_to_lists(
-            goal_handle.request.trajectory
+            goal_handle.request.trajectory, T_foot_wrt_odom
         )
 
         # self.arm_feedback_publish_flag = True
