@@ -308,12 +308,12 @@ class SpotManipulationDriverROS(Node):
         success = True
 
         # Get base_footprint to odom transform
-        T_foot_wrt_odom = self.read_transform("base_footprint","odom")
-        HTM_foot_wrt_odom, yaw = ros_helpers.convert_transformstamped_to_matrix(T_foot_wrt_odom)
+        rosT_o2f = self.read_transform("base_footprint","odom") # Transformation in the form of ROS transformstamped representing the pose of the base_footprint frame in odom frame
+        T_o2f, yaw_o2f = ros_helpers.convert_transformstamped_to_matrix(rosT_o2f)
 
         # Convert ROS message to python lists
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.wbc_joint_trajectory_to_lists(
-            goal_handle.request.trajectory, HTM_foot_wrt_odom, yaw
+            goal_handle.request.trajectory, T_o2f, yaw_o2f
         )
 
         # self.arm_feedback_publish_flag = True
@@ -334,7 +334,7 @@ class SpotManipulationDriverROS(Node):
             self.get_logger().info(
                 "Successfully executed spot whole-body-control trajectory"
             )
-        return self.arm_result
+        return self.wbc_result
 
     def arm_goal_callback(self, goal_handle: ServerGoalHandle):
         """Callback for the /spot_arm/arm_controller/follow_joint_trajectory action server """
