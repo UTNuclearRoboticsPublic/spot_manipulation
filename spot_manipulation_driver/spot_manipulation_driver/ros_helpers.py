@@ -5,13 +5,14 @@ from geometry_msgs.msg import Twist, TransformStamped
 from google.protobuf import timestamp_pb2
 from spot_msgs.msg import ManipulatorState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from scipy.spatial.transform import Rotation as R
 
 import rclpy.time
 
 from .spot_manipulation_driver import SpotManipulationDriver
 
 
-def wbc_joint_trajectory_to_lists(msg: JointTrajectory, T_foot_wrt_odom):
+def wbc_joint_trajectory_to_lists(msg: JointTrajectory, T_o2f, yaw_o2f):
     traj_point_positions = []
     traj_point_velocities = []
     timepoints = []
@@ -43,6 +44,11 @@ def wbc_joint_trajectory_to_lists(msg: JointTrajectory, T_foot_wrt_odom):
         traj_point_positions.append(
             list(map(lambda joint_name: pos_dict[joint_name], joint_order))
         )
+
+        # Transform the body joint points
+        [x,y,theta] = traj_point_positions[-1][:3]
+        traj_point_positions[-1][:3] = transform_planar_point_and_or(x, y, theta, T_o2f, yaw_o2f)
+
         # traj_point_velocities.append(
         #     list(map(lambda joint_name: vel_dict[joint_name], joint_order))
         # )
@@ -216,8 +222,30 @@ def convert_transformstamped_to_matrix(transform_stamped):
 
     # Construct HTM representation
     rot = R.from_quat([quat_x, quat_y, quat_z, quat_w])
+    yaw = rot.as_euler('zxy')[0]
     HTM_foot_wrt_odom = np.eye(4)
     HTM_foot_wrt_odom[:3, :3] = rot.as_matrix  # Assign rotation matrix
     HTM_foot_wrt_odom[:3, 3] = [x, y, z]       # Assign translation vector
 
-    return HTM_foot_wrt_odom
+    return HTM_foot_wrt_odom, yaw
+
+def transform_planar_point_and_or(x, y, yaw_f2b, T_o2f, yaw_o2f):
+
+
+    # Create HTM representation base_footprint to body transformation
+    T_f2b = np.eye(4)
+
+    # Assign rotation to the HTM
+    R_f2b = R.from_euler('z', yaw_f2b)
+    T_f2b[:3, :3] = R_f2b.as_matrix
+
+    # Assign translation to the HTM
+    p_b = [x, y, 0]  # z 0 since footprint
+    T_f2b[:3, 3] = p_b
+
+    # Compute HTM representing body in odom
+    T_o2b = T_o2f @ T_f2b
+
+    p_o = [T_o2b[0, 2], T_o2b[1, 2], yaw_o2f + yaw_f2b]  # Extract transformed x, y, and updated yaw
+
+    return p_o
