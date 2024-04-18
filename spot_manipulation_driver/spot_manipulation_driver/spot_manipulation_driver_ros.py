@@ -52,6 +52,8 @@ from spot_msgs.msg import ManipulatorState
 from spot_msgs.srv import GripperAngleMove
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener, transform_broadcaster
+from scipy.spatial.transform import Rotation as R
+import numpy as np
 
 
 class SpotManipulationDriverROS(Node):
@@ -307,10 +309,11 @@ class SpotManipulationDriverROS(Node):
 
         # Get base_footprint to odom transform
         T_foot_wrt_odom = self.read_transform("base_footprint","odom")
+        HTM_foot_wrt_odom, yaw = ros_helpers.convert_transformstamped_to_matrix(T_foot_wrt_odom)
 
         # Convert ROS message to python lists
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.wbc_joint_trajectory_to_lists(
-            goal_handle.request.trajectory, T_foot_wrt_odom
+            goal_handle.request.trajectory, HTM_foot_wrt_odom, yaw
         )
 
         # self.arm_feedback_publish_flag = True
