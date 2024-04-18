@@ -15,6 +15,9 @@
     <group name="arm">
         <chain base_link="arm0_base_link" tip_link="arm0_hand"/>
     </group>
+    <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
+    <end_effector name="arm0_hand" parent_link="arm0_base_link" group="arm_with_body"/>
+    <end_effector name="arm0_hand" parent_link="base_footprint" group="arm"/>
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_elbow_roll" reason="Adjacent"/>
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_fingers" reason="Never"/>

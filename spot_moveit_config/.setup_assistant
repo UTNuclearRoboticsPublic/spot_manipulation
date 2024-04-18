@@ -8,7 +8,7 @@ moveit_setup_assistant_config:
   package_settings:
     author_name: Alex Navarro
     author_email: alexnavtt@utexas.edu
-    generated_timestamp: 1707441458
+    generated_timestamp: 1713404819
   control_xacro:
     command:
       []

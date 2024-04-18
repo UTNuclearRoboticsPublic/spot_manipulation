@@ -27,7 +27,7 @@ def generate_launch_description():
     # inhibit these default MoveGroup capabilities (space separated)
     ld.add_action(DeclareLaunchArgument("disable_capabilities", default_value=""))
 
-    moveit_config = MoveItConfigsBuilder("spot", package_name="spot_moveit_config").to_moveit_configs()
+    moveit_config = MoveItConfigsBuilder("spot").to_moveit_configs()
 
     move_group_configuration = {
         "publish_robot_description_semantic": True,

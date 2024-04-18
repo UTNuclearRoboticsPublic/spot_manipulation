@@ -23,14 +23,14 @@ moveit_simple_controller_manager:
       - arm0_wrist_pitch
       - arm0_wrist_roll
 
-    arm_controller:
-      type: FollowJointTrajectory
-      action_ns: follow_joint_trajectory
-      default: true
-      joints:
-        - arm0_shoulder_yaw
-        - arm0_shoulder_pitch
-        - arm0_elbow_pitch
-        - arm0_elbow_roll
-        - arm0_wrist_pitch
-        - arm0_wrist_roll
+  arm_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - arm0_shoulder_yaw
+      - arm0_shoulder_pitch
+      - arm0_elbow_pitch
+      - arm0_elbow_roll
+      - arm0_wrist_pitch
+      - arm0_wrist_roll
