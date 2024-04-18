@@ -1,7 +1,7 @@
 import numpy as np
 from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2
 from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TransformStamped
 from google.protobuf import timestamp_pb2
 from spot_msgs.msg import ManipulatorState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -202,3 +202,22 @@ def manipulator_state_to_msg(
     # manipulator_state_msg.velocity_of_hand_in_odom = manipulator_state.velocity_of_hand_in_odom
     manipulator_state_msg.carry_state = manipulator_state.carry_state
     return manipulator_state_msg
+
+
+def convert_transformstamped_to_matrix(transform_stamped):
+    # Extract quaternion and translation components
+    quat_x = transform_stamped.transform.rotation.x
+    quat_y = transform_stamped.transform.rotation.y
+    quat_z = transform_stamped.transform.rotation.z
+    quat_w = transform_stamped.transform.rotation.w
+    x = transform_stamped.transform.translation.x
+    y = transform_stamped.transform.translation.y
+    z = transform_stamped.transform.translation.z
+
+    # Construct HTM representation
+    rot = R.from_quat([quat_x, quat_y, quat_z, quat_w])
+    HTM_foot_wrt_odom = np.eye(4)
+    HTM_foot_wrt_odom[:3, :3] = rot.as_matrix  # Assign rotation matrix
+    HTM_foot_wrt_odom[:3, 3] = [x, y, z]       # Assign translation vector
+
+    return HTM_foot_wrt_odom
