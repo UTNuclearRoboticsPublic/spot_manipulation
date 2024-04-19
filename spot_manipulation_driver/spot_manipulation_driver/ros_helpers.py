@@ -45,7 +45,7 @@ def wbc_joint_trajectory_to_lists(msg: JointTrajectory, T_o2f, yaw_o2f):
             list(map(lambda joint_name: pos_dict[joint_name], joint_order))
         )
 
-        # Transform the body joint points
+        # Transform the body joints from body to odom frame
         [x,y,theta] = traj_point_positions[-1][:3]
         traj_point_positions[-1][:3] = transform_planar_point_and_or(x, y, theta, T_o2f, yaw_o2f)
 
@@ -222,12 +222,12 @@ def convert_transformstamped_to_matrix(transform_stamped):
 
     # Construct HTM representation
     rot = R.from_quat([quat_x, quat_y, quat_z, quat_w])
-    yaw = rot.as_euler('zxy')[0]
+    yaw = rot.as_euler('zxy')
     HTM_foot_wrt_odom = np.eye(4)
     HTM_foot_wrt_odom[:3, :3] = rot.as_matrix  # Assign rotation matrix
     HTM_foot_wrt_odom[:3, 3] = [x, y, z]       # Assign translation vector
 
-    return HTM_foot_wrt_odom, yaw
+    return HTM_foot_wrt_odom, yaw[0]
 
 def transform_planar_point_and_or(x, y, yaw_f2b, T_o2f, yaw_o2f):
 
@@ -246,6 +246,6 @@ def transform_planar_point_and_or(x, y, yaw_f2b, T_o2f, yaw_o2f):
     # Compute HTM representing body in odom
     T_o2b = T_o2f @ T_f2b
 
-    p_o = [T_o2b[0, 2], T_o2b[1, 2], yaw_o2f + yaw_f2b]  # Extract transformed x, y, and updated yaw
+    p_o = [T_o2b[0, 3], T_o2b[1, 3], yaw_o2f + yaw_f2b]  # Extract transformed x, y, and updated yaw
 
     return p_o

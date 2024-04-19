@@ -51,7 +51,9 @@ from spot_manipulation_driver.spot_manipulation_driver import \
 from spot_msgs.msg import ManipulatorState
 from spot_msgs.srv import GripperAngleMove
 from std_srvs.srv import Trigger
-from tf2_ros import Buffer, TransformListener, transform_broadcaster
+from tf2_ros import TransformException
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 from scipy.spatial.transform import Rotation as R
 import numpy as np
 
@@ -128,19 +130,14 @@ class SpotManipulationDriverROS(Node):
 
         # TF parameters
         self.buffer = Buffer()
-        self.listener = TransformListener(self.buffer)
-        self.broadcaster = transform_broadcaster(self.get_logger())
+        self.listener = TransformListener(self.buffer, self)
 
     def read_transform(self, source_frame, target_frame):
         try:
-            now = rclpy.time.time()
             transform_stamped = self.buffer.lookup_transform(
-                target_frame, source_frame, now, timeout=rclpy.time.duration.Duration(seconds=1.0))
-            self.broadcaster.sendTransform(transform_stamped)
-            self.get_logger().info("Transform from {self.source_frame} to {self.target_frame}:")
-            self.get_logger().info(transform_stamped)
+                target_frame, source_frame, rclpy.time.Time())
             return transform_stamped
-        except (TransformException, LookupException) as e:
+        except TransformException as e:
             self.get_logger().warn(f"Could not get transform: {e}")
 
 
@@ -265,7 +262,8 @@ class SpotManipulationDriverROS(Node):
         self.whole_body_control_action_server = ActionServer(
             self,
             FollowJointTrajectory,
-            "/wbc_controller/follow_joint_trajectory",
+            "/body_and_arm_controller/follow_joint_trajectory",
+            # "/wbc_controller/follow_joint_trajectory",
             self.whole_body_control_goal_callback,
             callback_group=motion_callback_group,
         )
@@ -308,13 +306,33 @@ class SpotManipulationDriverROS(Node):
         success = True
 
         # Get base_footprint to odom transform
-        rosT_o2f = self.read_transform("base_footprint","odom") # Transformation in the form of ROS transformstamped representing the pose of the base_footprint frame in odom frame
+        rosT_o2f = self.read_transform("base_footprint", "odom") # Transformation in the form of ROS transformstamped representing the pose of the base_footprint frame in odom frame
+        self.get_logger().info(f"Rotation x: {rosT_o2f.transform.rotation.x}")
+        self.get_logger().info(f"Rotation y: {rosT_o2f.transform.rotation.y}")
+        self.get_logger().info(f"Rotation z: {rosT_o2f.transform.rotation.z}")
+        self.get_logger().info(f"Rotation w: {rosT_o2f.transform.rotation.w}")
+        self.get_logger().info(f"Translation x: {rosT_o2f.transform.translation.x}")
+        self.get_logger().info(f"Translation y: {rosT_o2f.transform.translation.y}")
+        self.get_logger().info(f"Translation z: {rosT_o2f.transform.translation.z}")
+
+        # Convert from ros-type transform to a numpy matrix
         T_o2f, yaw_o2f = ros_helpers.convert_transformstamped_to_matrix(rosT_o2f)
+        self.get_logger().info(f"Transform as np matrix: {T_o2f}")
+        self.get_logger().info(f"Yaw_o2f: {yaw_o2f}")
+
+        self.get_logger().info("Here is the trajectory before conversion:")
+        self.get_logger().info(f"Joint Names: {goal_handle.request.trajectory.joint_names}")
+        for point in goal_handle.request.trajectory.points:
+            positions = point.positions
+            point_time = point.time_from_start.sec + point.time_from_start.nanosec * 1e-9
+            self.get_logger().info(f"Time from start: {point_time}")
+            self.get_logger().info(f"Joint Positions: {positions}")
 
         # Convert ROS message to python lists
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.wbc_joint_trajectory_to_lists(
             goal_handle.request.trajectory, T_o2f, yaw_o2f
         )
+        self.get_logger().info(f"Here is the trajectory after conversion: {traj_point_positions}")
 
         # self.arm_feedback_publish_flag = True
         # arm_feedback_thread = threading.Thread(
@@ -322,9 +340,9 @@ class SpotManipulationDriverROS(Node):
         # )
         # arm_feedback_thread.start()
 
-        self.manipulation_driver.wbc_long_trajectory_executor(
-            traj_point_positions, traj_point_velocities, timepoints
-        )
+        # self.manipulation_driver.wbc_long_trajectory_executor(
+        #     traj_point_positions, traj_point_velocities, timepoints
+        # )
 
         # self.arm_feedback_publish_flag = False
         # arm_feedback_thread.join()
