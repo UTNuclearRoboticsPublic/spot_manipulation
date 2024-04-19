@@ -302,7 +302,7 @@ class SpotManipulationDriver(object):
             return False
 
         try:
-            ref_time = self.lease_manager.robot.time_sync.robot_timestamp_from_local_secs(time.time()+1)
+            ref_time = seconds_to_timestamp(time.time()+1)
 
             # Build an SE3Trajectory out of the body poses
             pose: SE3Pose
@@ -339,8 +339,8 @@ class SpotManipulationDriver(object):
                 joint_velocities=None,
                 times=timestamps,
                 ref_time=ref_time,
-                max_acc=None,
-                max_vel=None,
+                max_acc=10000,
+                max_vel=10000,
                 build_on_command=None
             )
 
@@ -350,6 +350,7 @@ class SpotManipulationDriver(object):
             def status_fn(response: RobotCommandFeedbackResponse):
                 done = True
                 synchro_fb = response.feedback.synchronized_feedback
+                print(f"Feedback: {synchro_fb}")
                 if synchro_fb.HasField("mobility_command_feedback"):
                     mob_status = synchro_fb.mobility_command_feedback.stand_feedback.status
                     done = done and mob_status == basic_command_pb2.StandCommand.Feedback.Status.STATUS_IS_STANDING
