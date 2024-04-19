@@ -222,12 +222,13 @@ def convert_transformstamped_to_matrix(transform_stamped):
 
     # Construct HTM representation
     rot = R.from_quat([quat_x, quat_y, quat_z, quat_w])
-    yaw = rot.as_euler('zxy')
-    HTM_foot_wrt_odom = np.eye(4)
-    HTM_foot_wrt_odom[:3, :3] = rot.as_matrix  # Assign rotation matrix
-    HTM_foot_wrt_odom[:3, 3] = [x, y, z]       # Assign translation vector
+    euler_o2f = rot.as_euler('zxy')
+    T_o2f = np.eye(4)
+    self.get_logger().info(f"Identity inside func: {T_o2f}")
+    T_o2f[:3, :3] = rot.as_matrix()  # Assign rotation matrix
+    T_o2f[:3, 3] = [x, y, z]       # Assign translation vector
 
-    return HTM_foot_wrt_odom, yaw[0]
+    return T_o2f, euler_o2f[0]
 
 def transform_planar_point_and_or(x, y, yaw_f2b, T_o2f, yaw_o2f):
 
