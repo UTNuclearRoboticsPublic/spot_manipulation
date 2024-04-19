@@ -368,10 +368,13 @@ class SpotManipulationDriverROS(Node):
         
         # TODO: feedback
         self.get_logger().info(f"Num body poses: {len(body_poses_in_base_footprint)} | Num joint positions: {len(joint_positions)} | Num timestamps: {len(timestamps)}")
-
-        success = self.manipulation_driver.body_manipulation_trajectory_executor(
-            body_poses_in_base_footprint, joint_positions, timestamps
-        )
+        try:
+            success = self.manipulation_driver.body_manipulation_trajectory_executor(
+                body_poses_in_base_footprint, joint_positions, timestamps
+            )
+        except Exception as e:
+            self._logger.warn(f"Error executing body manipulation trajectory: {e}")
+            success = False
         
         if success:
             goal_handle.succeed()
