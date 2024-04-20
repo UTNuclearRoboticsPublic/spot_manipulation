@@ -36,7 +36,7 @@ def wbc_joint_trajectory_to_lists(msg: JointTrajectory, T_o2f, yaw_o2f):
         pos_dict = {}
         # vel_dict = {}
 
-        for j in range(0, 6):
+        for j in range(0, len(joint_order)):
             name = msg.joint_names[j]
             pos_dict[name] = point.positions[j]
             # vel_dict[name] = point.velocities[j]
@@ -224,7 +224,6 @@ def convert_transformstamped_to_matrix(transform_stamped):
     rot = R.from_quat([quat_x, quat_y, quat_z, quat_w])
     euler_o2f = rot.as_euler('zxy')
     T_o2f = np.eye(4)
-    self.get_logger().info(f"Identity inside func: {T_o2f}")
     T_o2f[:3, :3] = rot.as_matrix()  # Assign rotation matrix
     T_o2f[:3, 3] = [x, y, z]       # Assign translation vector
 
@@ -238,7 +237,7 @@ def transform_planar_point_and_or(x, y, yaw_f2b, T_o2f, yaw_o2f):
 
     # Assign rotation to the HTM
     R_f2b = R.from_euler('z', yaw_f2b)
-    T_f2b[:3, :3] = R_f2b.as_matrix
+    T_f2b[:3, :3] = R_f2b.as_matrix()
 
     # Assign translation to the HTM
     p_b = [x, y, 0]  # z 0 since footprint
