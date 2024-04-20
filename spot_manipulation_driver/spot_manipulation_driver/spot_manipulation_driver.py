@@ -188,25 +188,28 @@ class SpotManipulationDriver(object):
 
         self.verify_estop()
 
-    def generate_se2trajectory(self, ros_logger, wbc_points, frame_name, times, body_cmd):
+    def generate_se2trajectory(self, ros_logger, wbc_points, frame_name, times, wbc_cmd):
 
+        # body_cmd = robot_command_pb2.RobotCommand()
         for point, traj_time in zip(wbc_points, times):
-           body_cmd_point = body_cmd.mobility_command.se2_trajectory_request.trajectory.points.add()
+           wbc_cmd_point = wbc_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points.add()
            # Assign spatial parameters
-           body_cmd_point.pose.position.x = point[0]
-           body_cmd_point.pose.position.y = point[1]
-           body_cmd_point.pose.angle = point[2]
+           wbc_cmd_point.pose.position.x = point[0]
+           wbc_cmd_point.pose.position.y = point[1]
+           wbc_cmd_point.pose.angle = point[2]
            # Assign time
            duration = seconds_to_duration(traj_time)
-           body_cmd_point.time_since_reference.CopyFrom(duration)
+           wbc_cmd_point.time_since_reference.CopyFrom(duration)
+        # Specify frame name
+        wbc_cmd.synchronized_command.mobility_command.se2_trajectory_request.se2_frame_name = frame_name
         # Apply mobility constraints
         speed_limit = SE2VelocityLimit(max_vel=SE2Velocity(linear=Vec2(x=2, y=2), angular=2),
                                        min_vel=SE2Velocity(linear=Vec2(x=-2, y=-2), angular=-2))
         mobility_params = spot_command_pb2.MobilityParams(vel_limit=speed_limit)
 
-        body_cmd.mobility_command.params.CopyFrom(
+        wbc_cmd.synchronized_command.mobility_command.params.CopyFrom(
             RobotCommandBuilder._to_any(mobility_params))
-        return body_cmd
+        return wbc_cmd
 
 
 
@@ -224,13 +227,13 @@ class SpotManipulationDriver(object):
         start_time = time.time()
         ref_time = seconds_to_timestamp(start_time)
         TRAJ_APPROACH_TIME = 1.0
-        END_TIME = 1.0
+        # END_TIME = 1.0
 
-        ros_logger.info(f"Traj point positions [0]: \n {traj_point_positions[0]}")
+        # ros_logger.info(f"Traj point positions [0]: \n {traj_point_positions[0]}")
         body_positions = traj_point_positions[0][:3] # first 3 are body
         arm_positions = traj_point_positions[0][-6:] #last six elements are arm
-        ros_logger.info(f"Here are body positions: \n {body_positions}")
-        ros_logger.info(f"Here are arm positions: \n {arm_positions}")
+        # ros_logger.info(f"Here are body positions: \n {body_positions}")
+        # ros_logger.info(f"Here are arm positions: \n {arm_positions}")
         arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=[arm_positions],
             # joint_velocities=[traj_point_velocities[0]],
@@ -240,14 +243,19 @@ class SpotManipulationDriver(object):
             max_vel=10000,
         )
 
-        synchro_cmd_temp = RobotCommandBuilder.build_synchro_command(arm_cmd)
-        body_cmd = self.generate_se2trajectory(ros_logger, wbc_points=[body_positions],frame_name="odom", times = [TRAJ_APPROACH_TIME], body_cmd=synchro_cmd_temp)
-        robot_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd, body_cmd)
-        ros_logger.info(f"WBC cmd: \n {robot_cmd}")
+        ros_logger.info(f"arm cmd before wbc: \n {arm_cmd}")
+        # synchro_arm_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd)
+        wbc_cmd = self.generate_se2trajectory(ros_logger, wbc_points=[body_positions],frame_name="odom", times = [TRAJ_APPROACH_TIME], wbc_cmd=arm_cmd)
+        # robot_cmd = RobotCommandBuilder.build_synchro_command(body_cmd, arm_cmd)
+        robot_cmd = wbc_cmd
+        ros_logger.info(f"arm cmd: \n {arm_cmd}")
+        ros_logger.info(f"WBC cmd: \n {wbc_cmd}")
+        # ros_logger.info(f"WBC cmd: \n {robot_cmd}")
+        # ros_logger.info(f"WBC cmd id: \n {robot_cmd}")
 
         # Send command to the robot
         # self._lease_manager.robot_command(robot_cmd)
-        self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+TRAJ_APPROACH_TIME)
+        # self._lease_manager.robot_command(robot_cmd, time.time()+TRAJ_APPROACH_TIME)
 
         traj_index = [0, 9]
         end_index = len(traj_point_positions)
@@ -272,8 +280,8 @@ class SpotManipulationDriver(object):
             # velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
             body_positions = [sublist[:3] for sublist in positions] # first 3 are body
             arm_positions = [sublist[-6:] for sublist in positions] #last six elements are arm
-            ros_logger.info(f"Here are body positions: \n {body_positions}")
-            ros_logger.info(f"Here are arm positions: \n {arm_positions}")
+            # ros_logger.info(f"Here are body positions: \n {body_positions}")
+            # ros_logger.info(f"Here are arm positions: \n {arm_positions}")
 
             # Increment indices for the next short trajectory
             traj_index = list(map(lambda x: x + 9, traj_index))
@@ -289,23 +297,30 @@ class SpotManipulationDriver(object):
             )
 
             # Generate body command
-            body_cmd = self.generate_se2trajectory(ros_logger, wbc_points=body_positions,frame_name="odom", times = times, body_cmd=synchro_cmd_temp)
-            self._lease_manager.robot.logger.info("Here is the body command: \n", body_cmd)
-            self._lease_manager.robot.logger.info("Here is the arm command: \n", arm_cmd)
+            # body_cmd = self.generate_se2trajectory(ros_logger, wbc_points=body_positions,frame_name="odom", times = times, body_cmd=synchro_cmd_temp)
+            # self._lease_manager.robot.logger.info("Here is the body command: \n", body_cmd)
+            # self._lease_manager.robot.logger.info("Here is the arm command: \n", arm_cmd)
 
             # Build synchro command
-            robot_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd, body_cmd)
-            ros_logger.info(f"WBC cmd: \n {robot_cmd}")
-            ros_logger.info(f"End time: \n {times[-1]}")
+            # robot_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd, body_cmd)
+            # robot_cmd = RobotCommandBuilder.build_synchro_command(mobility_request=body_cmd, arm_request=arm_cmd)
+            # synchro_arm_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd)
+            wbc_cmd = self.generate_se2trajectory(ros_logger, wbc_points=body_positions,frame_name="odom", times = times, wbc_cmd=arm_cmd)
+            robot_cmd = wbc_cmd
+            # robot_cmd = RobotCommandBuilder.build_synchro_command(body_cmd, arm_cmd)
+            # ros_logger.info(f"arm cmd: \n {arm_cmd}")
+            # ros_logger.info(f"WBC cmd: \n {wbc_cmd}")
+            # ros_logger.info(f"End time: \n {times[-1]}")
 
-            break
+            # break
 
             # Compute sleep time and sleep before executing next trajectory
             if traj_index[0] > 9:
                 time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
 
             # success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd)
-            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+times[-1])
+            # success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, time.time()+times[-1])
+            # ros_logger.info(f"Command success: {success}")
 
             time_index = time.time()
             feedback_resp = self._lease_manager.robot_command_feedback(cmd_id)
