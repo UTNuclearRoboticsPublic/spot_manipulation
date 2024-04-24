@@ -202,74 +202,47 @@ class SpotManipulationDriver(object):
         self, traj_point_positions, traj_point_velocities, timepoints
     ):
 
-        self._lease_manager.robot.time_sync.wait_for_sync()
-        self.verify_power_and_estop()
-        self._lease_manager.robot.logger.info("Arm is about to move.")
+        # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
+        try:
+            if self._lease_manager.robot.is_powered_on(5):
+                self._logger.info("Arm is about to move.")
+            else:
+                self._logger.warn("Cannot execute arm long trajectory, robot is not powered on")
+                return False
+        except RpcError as e:
+            self._logger.warn(f"Cannot execute arm long trajectory, unable to communicate with robot\n\tMsg: {e}")
+            return False
 
-        # Get to the start configuration of the trajectory before we execute it
         start_time = time.time()
         ref_time = seconds_to_timestamp(start_time)
-        TRAJ_APPROACH_TIME = 1.0
 
-        robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
-            joint_positions=[traj_point_positions[0]],
-            # joint_velocities=[traj_point_velocities[0]],
-            times=[TRAJ_APPROACH_TIME],
-            ref_time=ref_time,
-            max_acc=10000,
-            max_vel=10000,
+        arm_trajectory_manager = TrajectoryManager(
+            points=traj_point_positions,
+            times_since_ref=timepoints,
+            ref_time=start_time
         )
 
-        self._lease_manager.robot_command(robot_cmd)
-
-        traj_index = [0, 9]
-        end_index = len(traj_point_positions)
-
-        # Compute reference time for the entire long trajectory
-        start_time = time.time() + TRAJ_APPROACH_TIME
-        ref_time = seconds_to_timestamp(start_time)
-
-        while traj_index[0] < end_index:
-            times = []
-            positions = []
-            velocities = []
-
-            # Don't let the extracted index range go beyond the end of the trajectory
-            if traj_index[1] > end_index:
-                traj_index[1] = end_index
-
-            # Extract a short trajectory from the long list
-            times = timepoints[traj_index[0] : traj_index[1]]
-            positions = traj_point_positions[traj_index[0] : traj_index[1]]
-            # velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
-
-            # Increment indices for the next short trajectory
-            traj_index = list(map(lambda x: x + 9, traj_index))
+        while not arm_trajectory_manager.done():
+            window, timestamps, sleep_time = arm_trajectory_manager.get_window(MAX_ARM_POINTS)
 
             robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
-                joint_positions=positions,
-                # joint_velocities=velocities,
-                times=times,
+                joint_positions=window,
+                times=timestamps,
                 ref_time=ref_time,
                 max_acc=10000,
                 max_vel=10000,
             )
 
-            # Compute sleep time and sleep before executing next trajectory
-            if traj_index[0] > 9:
-                time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
+            success, msg, _ = self._lease_manager.robot_command(robot_cmd)
 
-            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd)
+            if not success:
+                self._logger.warn(f"arm_long_trajectory_executor: Error executing robot command: {msg}")
+                return False
 
-            time_index = time.time()
-            feedback_resp = self._lease_manager.robot_command_feedback(cmd_id)
-            joint_move_feedback = (
-                feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_joint_move_feedback
-            )
-            time_to_goal: duration_pb2.Duration = joint_move_feedback.time_to_goal
-            time_to_goal_in_seconds: float = time_to_goal.seconds + (
-                float(time_to_goal.nanos) / float(10 ** 9)
-            )
+            if arm_trajectory_manager.last():
+                time.sleep(sleep_time)
+            else:
+                time.sleep(max(sleep_time - 0.2, 0))
 
     def gripper_trajectory_executor(self, traj_point_positions, time_since_ref):
 

@@ -294,9 +294,12 @@ class SpotManipulationDriverROS(Node):
         )
         arm_feedback_thread.start()
 
-        self.manipulation_driver.arm_long_trajectory_executor(
-            traj_point_positions, traj_point_velocities, timepoints
-        )
+        try:
+            self.manipulation_driver.arm_long_trajectory_executor(
+                traj_point_positions, traj_point_velocities, timepoints
+            )
+        except Exception as e:
+            self._logger.info(f"Error executing arm long trajectory: {e}")
 
         self.arm_feedback_publish_flag = False
         arm_feedback_thread.join()
