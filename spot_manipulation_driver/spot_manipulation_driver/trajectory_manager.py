@@ -8,10 +8,10 @@ class TrajectoryManager:
         self.ref_time: float = ref_time
         self._last = False
         
-        if (len(self.times_since_ref == len(self.points))):
-            self.size = len(points)
-        else:
+        if (len(self.times_since_ref) != len(self.points)):
             raise Exception("Trajecory Manager must take an equal number of points and timestamps")
+
+        self.size = len(self.points)
             
 
     def get_window(self, window_size) -> tuple[list, list[float], float]:
@@ -28,13 +28,14 @@ class TrajectoryManager:
         """
 
         # Calculate where we are on the trajectory
-        current_time_since_ref = time.time() - self.ref_time
+        current_time_since_ref = max(time.time() - self.ref_time, 0.0)
 
-        # Get the index of the point that was most recently executed
+        # Get the index of the point after the one that was most recently executed
         active_index = self.size
         for idx, time_since_ref in enumerate(self.times_since_ref):
             if (time_since_ref > current_time_since_ref):
-                active_index = max(idx-1, 0)
+                active_index = idx
+                break
 
         # Get the final index in this window
         end_index = min(active_index + window_size, self.size)

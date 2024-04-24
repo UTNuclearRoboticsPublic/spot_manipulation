@@ -53,7 +53,7 @@ from bosdyn.util import seconds_to_timestamp, seconds_to_duration
 from google.protobuf import duration_pb2, timestamp_pb2
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
-from trajectory_manager import TrajectoryManager
+from .trajectory_manager import TrajectoryManager
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
@@ -302,9 +302,11 @@ class SpotManipulationDriver(object):
             return False
 
         # Add a small epsilon to the start time to account for small errors in the time sync
-        ref_time = seconds_to_timestamp(time.time()+0.1)
+        ref_time_seconds = time.time() + 0.1
+        ref_time = seconds_to_timestamp(ref_time_seconds)
+        ref_time_robot = self._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(ref_time_seconds)
 
-        # Build an SE3Trajectory out of the body poses
+        # # Build an SE3Trajectory out of the body poses
         se3_trajectory_points = [
             trajectory_pb2.SE3TrajectoryPoint(
                 pose=pose.to_proto(), 
@@ -312,109 +314,120 @@ class SpotManipulationDriver(object):
             ) for (pose, timestamp) in zip(body_trajectory, timestamps)
         ]
 
-        # Manage the trajectories for the arm and the body
-        body_trajectory_manager = TrajectoryManager(
-            points=se3_trajectory_points, 
-            times_since_ref=timestamps, 
-            ref_time=ref_time
+        # Downsample body trajectory until within total allowable poses
+        while len(se3_trajectory_points) >= MAX_BODY_POSES:
+            se3_trajectory_points = se3_trajectory_points[::2]
+
+        self._logger.info(f"SE3Trajectory has {len(se3_trajectory_points)} points")
+        final_body_traj = trajectory_pb2.SE3Trajectory(points = se3_trajectory_points) #, reference_time=ref_time_robot)
+        body_control_params = spot_command_pb2.BodyControlParams(
+            base_offset_rt_footprint = final_body_traj,
+            rotation_setting = BodyControlParams.RotationSetting.ROTATION_SETTING_OFFSET
         )
+        mobility_params = spot_command_pb2.MobilityParams(body_control = body_control_params)
+        body_command = RobotCommandBuilder.synchro_stand_command(params=mobility_params)
 
-        arm_trajectory_manager = TrajectoryManager(
-            points=arm_trajectory,
-            times_since_ref=timestamps,
-            ref_time=ref_time
-        )
-
-        while not (arm_trajectory_manager.done() and body_trajectory_manager.done()):
-
-            arm_window, arm_stamps, arm_sleep = arm_trajectory_manager.get_window(MAX_ARM_POINTS) 
-            body_window, _, body_sleep = body_trajectory_manager.get_window(MAX_BODY_POSES)
-            segment_duration = min(arm_sleep, body_sleep)
-
-            body_control_params = spot_command_pb2.BodyControlParams(
-                base_offset_rt_footprint = trajectory_pb2.SE3Trajectory(points=body_window, reference_time=ref_time),
-                rotation_setting = BodyControlParams.RotationSetting.ROTATION_SETTING_OFFSET
-            )
-
-            body_command = RobotCommandBuilder.synchro_stand_command(
-                params=spot_command_pb2.MobilityParams(body_contro=body_control_params),
-            )
-
-            robot_command = RobotCommandBuilder.arm_joint_move_helper(
-                joint_positions=arm_window,
-                joint_velocities=None,
-                times=arm_stamps,
-                ref_time=ref_time,
-                max_acc=10000,
-                max_vel=10000,
-                build_on_command=body_command
-            )
-
-            success, msg, _ = self.lease_manager.robot_command(robot_command, segment_duration+0.2)
-            if not success:
-                self._logger.warn(f"body_manipulation_trajectory_executor: Error executing robot command: {msg}")
-                return False
-
-            if arm_trajectory_manager.last() and body_trajectory_manager.last():
-                time.sleep(segment_duration)
-            else:
-                time.sleep(max(segment_duration - 0.2, 0))
-                
-        self._logger.info("Trajectory complete")
-        return True
-
-        # # Downsample body trajectory until within total allowable poses
-        # while len(se3_trajectory_points) >= MAX_BODY_POSES:
-        #     se3_trajectory_points = se3_trajectory_points[::2]
-
-        # self._logger.info(f"SE3Trajectory has {len(se3_trajectory_points)} points")
-        # final_body_traj = trajectory_pb2.SE3Trajectory(points = se3_trajectory_points, reference_time=ref_time)
-        # body_control_params = spot_command_pb2.BodyControlParams(
-        #     base_offset_rt_footprint = final_body_traj,
-        #     rotation_setting = BodyControlParams.RotationSetting.ROTATION_SETTING_OFFSET
-        # )
-        # mobility_params = spot_command_pb2.MobilityParams(body_control = body_control_params)
-        # body_command = RobotCommandBuilder.synchro_stand_command(params=mobility_params)
-
-        # # Downsample the arm points until within allowable range
-        # while len(arm_trajectory) >= MAX_ARM_POINTS:
-        #     arm_trajectory = arm_trajectory[::2]
-        #     timestamps = timestamps[::2]
+        # Downsample the arm points until within allowable range
+        while len(arm_trajectory) >= MAX_ARM_POINTS:
+            arm_trajectory = arm_trajectory[::2]
+            timestamps = timestamps[::2]
 
         # Create an arm command request with joint trajectory
-        # arm_command = RobotCommandBuilder.arm_joint_move_helper(
+        robot_command = RobotCommandBuilder.arm_joint_move_helper(
+            joint_positions=arm_trajectory,
+            joint_velocities=None,
+            times=timestamps,
+            ref_time=ref_time,
+            max_acc=None,
+            max_vel=None,
+            build_on_command=body_command
+        )
+
+        # Monitor whether both parts of the trajectory have finished
+        def status_fn(response):
+            done = True
+            synchro_fb = response.feedback.synchronized_feedback # RobotCommandFeedbackResponse
+            if synchro_fb.HasField("mobility_command_feedback"):
+                mob_status = synchro_fb.mobility_command_feedback.stand_feedback.status
+                done = done and mob_status == basic_command_pb2.StandCommand.Feedback.Status.STATUS_IS_STANDING
+            if synchro_fb.HasField("arm_command_feedback"):
+                arm_status = synchro_fb.arm_command_feedback.arm_joint_move_feedback.status
+                done = done and arm_status == ArmJointMoveCommand.Feedback.Status.STATUS_COMPLETE
+            return done
+        
+        try:
+            blocking_command(
+                command_client=self.lease_manager.command_client, 
+                command=robot_command, 
+                check_status_fn=status_fn,
+                timeout_sec=timestamps[-1] + 5
+            )
+
+        except Exception as e:
+            self._logger.error(f"Unknown error occured in body_manipulation_trajectory_executor: {e}")
+            return False
+
+        # Manage the trajectories for the arm and the body
+        # body_trajectory_manager = TrajectoryManager(
+        #     points=se3_trajectory_points, 
+        #     times_since_ref=timestamps, 
+        #     ref_time=ref_time_seconds
+        # )
+
+        # arm_trajectory_manager = TrajectoryManager(
+        #     points=arm_trajectory,
+        #     times_since_ref=timestamps,
+        #     ref_time=ref_time_seconds
+        # )
+
+        # body_control_params = spot_command_pb2.BodyControlParams(
+        #     base_offset_rt_footprint = trajectory_pb2.SE3Trajectory(points=se3_trajectory_points, reference_time=ref_time_robot),
+        #     rotation_setting = BodyControlParams.RotationSetting.ROTATION_SETTING_OFFSET
+        # )
+
+        # body_command = RobotCommandBuilder.synchro_stand_command(
+        #     params=spot_command_pb2.MobilityParams(body_control=body_control_params),
+        # )
+
+        # success_1, msg_1, _ = self.lease_manager.robot_command(body_command)
+
+        # while not (arm_trajectory_manager.done()):
+
+        #     arm_window, arm_stamps, arm_sleep = arm_trajectory_manager.get_window(MAX_ARM_POINTS) 
+        #     # body_window, _, body_sleep = body_trajectory_manager.get_window(MAX_BODY_POSES)
+        #     # segment_duration = min(arm_sleep, body_sleep)
+
+        #     # body_control_params = spot_command_pb2.BodyControlParams(
+        #     #     base_offset_rt_footprint = trajectory_pb2.SE3Trajectory(points=body_window, reference_time=ref_time_robot),
+        #     #     rotation_setting = BodyControlParams.RotationSetting.ROTATION_SETTING_OFFSET
+        #     # )
+
+        #     # body_command = RobotCommandBuilder.synchro_stand_command(
+        #     #     params=spot_command_pb2.MobilityParams(body_control=body_control_params),
+        #     # )
+
+        #     robot_command = RobotCommandBuilder.arm_joint_move_helper(
         #         joint_positions=arm_window,
         #         joint_velocities=None,
-        #         times=timestamps,
+        #         times=arm_stamps,
         #         ref_time=ref_time,
         #         max_acc=10000,
         #         max_vel=10000,
-        #         build_on_command=None
+        #         # build_on_command=body_command
         #     )
 
-        # # Monitor whether both parts of the trajectory have finished
-        # def status_fn(response):
-        #     done = True
-        #     synchro_fb = response.feedback.synchronized_feedback # RobotCommandFeedbackResponse
-        #     if synchro_fb.HasField("mobility_command_feedback"):
-        #         mob_status = synchro_fb.mobility_command_feedback.stand_feedback.status
-        #         done = done and mob_status == basic_command_pb2.StandCommand.Feedback.Status.STATUS_IS_STANDING
-        #     if synchro_fb.HasField("arm_command_feedback"):
-        #         arm_status = synchro_fb.arm_command_feedback.arm_joint_move_feedback.status
-        #         done = done and arm_status == ArmJointMoveCommand.Feedback.Status.STATUS_COMPLETE
-        #     return done
-        
-        # try:
-        #         blocking_command(
-        #             command_client=self.lease_manager.command_client, 
-        #             command=robot_command, 
-        #             check_status_fn=status_fn,
-        #             timeout_sec=timestamps[-1] + 5
-        #         )
-
-        #     except Exception as e:
-        #         self._logger.error(f"Unknown error occured in body_manipulation_trajectory_executor: {e}")
+        #     success, msg, _ = self.lease_manager.robot_command(robot_command, end_time_secs=arm_sleep+0.2)
+        #     if not success:
+        #         self._logger.warn(f"body_manipulation_trajectory_executor: Error executing robot command: {msg}")
         #         return False
+
+        #     if arm_trajectory_manager.last(): # and body_trajectory_manager.last():
+        #         time.sleep(arm_sleep)
+        #     else:
+        #         time.sleep(max(arm_sleep - 0.2, 0))
+                
+        # self._logger.info("Trajectory complete")
+        # return True
 
     def gripper_trajectory_executor_with_time_control(
         self, traj_point_positions, time_since_ref
