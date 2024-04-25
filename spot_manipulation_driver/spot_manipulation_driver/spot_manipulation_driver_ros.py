@@ -136,12 +136,10 @@ class SpotManipulationDriverROS(Node):
             "hand_image": self.get_parameter("rates.sensors.hand_image").value,
         }
 
-        publish_joint_states = self.get_parameter("publish_joint_states").value
-        if publish_joint_states:
-            callbacks["robot_state"] = lambda t: (
-                self.publish_joint_states(t),
-                self.arm_state_callback(t),
-            )
+        callbacks["robot_state"] = lambda t: (
+            self.publish_joint_states(t),
+            self.arm_state_callback(t),
+        )
 
         if self.manipulation_driver.connect(lease_manager, rates, callbacks):
             self.get_logger().info(f"Connected to Spot {lease_manager.ID.nickname}")
@@ -176,10 +174,9 @@ class SpotManipulationDriverROS(Node):
             ManipulatorState, "~/manipulator_state", 10
         )
 
-        if publish_joint_states:
-            self._joint_state_pub = self.create_publisher(
-                JointState, "~/joint_state", 10
-            )
+        self._joint_state_pub = self.create_publisher(
+            JointState, "/joint_states", 10
+        )
 
         self.ee_vel_sub = self.create_subscription(
             Twist,
