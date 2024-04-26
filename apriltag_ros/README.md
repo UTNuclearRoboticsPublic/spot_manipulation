@@ -1,3 +1,4 @@
+** Based on https://github.com/Adlink-ROS/apriltag_ros/tree/foxy-devel
 # apriltag_ros ROS2 Node
 
 Inspired from https://github.com/christianrauch/apriltag_ros.git and fuse features from ros1 version.
@@ -11,11 +12,11 @@ You can specify number in tag family to filter detection of output, and set fram
 Starting with a working ROS installation:
 
 ```
-mkdir -p ~/apriltag_ros2_ws/src                # Make a new workspace 
+mkdir -p ~/apriltag_ros2_ws/src                # Make a new workspace
 cd ~/apriltag_ros2_ws/src                      # Navigate to the source space
 git clone https://github.com/AprilRobotics/apriltag.git                  # Clone Apriltag library
 git clone https://github.com/Adlink-ROS/apriltag_ros.git -b foxy-devel   # Clone Apriltag ROS wrapper
-cd ..               
+cd ..
 rosdep install --from-paths src --ignore-src -r -y  # Install any missing packages
 colcon build --symlink-install                      # Build all packages in the workspace
 ```
