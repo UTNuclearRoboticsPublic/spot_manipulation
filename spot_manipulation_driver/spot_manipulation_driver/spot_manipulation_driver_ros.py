@@ -55,6 +55,7 @@ from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from scipy.spatial.transform import Rotation as R
+from trajectory_msgs.msg import JointTrajectory
 import numpy as np
 
 
@@ -173,6 +174,9 @@ class SpotManipulationDriverROS(Node):
         # Create a control group to prevent multiple callbacks from commanding motion simultaneously
         motion_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
         gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
+
+        # Action server goal publishers
+        self.arm_goal_pub = self.create_publisher(JointTrajectory, "/arm_controller/follow_joint_trajectory/goal", 10)
 
         # Create data publishers and subscribers
         self._hand_image_pub = self.create_publisher(Image, "~/rgb/tof/image", 10)
@@ -369,6 +373,8 @@ class SpotManipulationDriverROS(Node):
         )
 
         self.arm_feedback_publish_flag = True
+        arm_goal_publisher_thread = threading.Thread(target=self.arm_goal_publisher, args=(goal_handle,))
+        arm_goal_publisher_thread.start()
         arm_feedback_thread = threading.Thread(
             target=self.arm_follow_joint_trajectory_feedback, args=(goal_handle,)
         )
@@ -426,6 +432,13 @@ class SpotManipulationDriverROS(Node):
             goal_handle.succeed()
             self.get_logger().info("Successfully executed finger trajectory")
         return self.finger_result
+
+    def arm_goal_publisher(self, goal_handle: ServerGoalHandle):
+        """Feedback for arm action server"""
+        # Publish the message to the goal trajectory only once
+        while(self.arm_goal_pub.get_subscription_count()<1):
+            self.get_logger.info("Waiting for an arm_controller/follow_joint_trajectory/goal subscriber to be available")
+        self.arm_goal_pub.publish(goal_handle.request.trajectory)
 
     def arm_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for arm action server"""
