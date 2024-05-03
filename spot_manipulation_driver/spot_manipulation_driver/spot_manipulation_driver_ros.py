@@ -30,28 +30,27 @@
 #          data of any kind.
 ##############################################################################
 
-import threading
 import time
-
-import spot_manipulation_driver.ros_helpers as ros_helpers
-from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist, TwistStamped
-from sensor_msgs.msg import CameraInfo, Image, JointState
-from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg
-from spot_driver.spot_lease_manager import SpotLeaseManager
-from spot_manipulation_driver.spot_manipulation_driver import \
-    SpotManipulationDriver
-from spot_msgs.msg import ManipulatorState
-from spot_msgs.srv import GripperAngleMove
-from std_srvs.srv import Trigger
+import threading
 
 import rclpy
 import rclpy.callback_groups
-from rcl_interfaces.msg import (FloatingPointRange, ParameterDescriptor,
-                                ParameterType)
+from rclpy.node import Node
 from rclpy.action import ActionServer
 from rclpy.action.server import ServerGoalHandle
-from rclpy.node import Node
+from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, ParameterType
+
+from spot_msgs.msg import ManipulatorState
+from sensor_msgs.msg import CameraInfo, Image, JointState
+from geometry_msgs.msg import Twist, TwistStamped
+from std_srvs.srv import Trigger
+from spot_msgs.srv import GripperAngleMove
+from control_msgs.action import FollowJointTrajectory
+
+import spot_manipulation_driver.ros_helpers as ros_helpers
+from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg
+from spot_driver.spot_lease_manager import SpotLeaseManager
+from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
 
 class SpotManipulationDriverROS(Node):
@@ -152,27 +151,15 @@ class SpotManipulationDriverROS(Node):
         gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
 
         # Create data publishers and subscribers
-        self._hand_image_pub = self.create_publisher(Image, "~/rgb/tof/image", 10)
-        self._hand_depth_map_pub = self.create_publisher(Image, "~/depth/tof/image", 10)
-        self._hand_4k_image_pub = self.create_publisher(Image, "~/rgb/camera/image", 10)
-        self._hand_4k_depth_map_pub = self.create_publisher(
-            Image, "~/depth/camera/image", 10
-        )
-        self._hand_image_info_pub = self.create_publisher(
-            CameraInfo, "~/rgb/tof/camera_info", 10
-        )
-        self._hand_depth_map_info_pub = self.create_publisher(
-            CameraInfo, "~/depth/tof/camera_info", 10
-        )
-        self._hand_4k_image_info_pub = self.create_publisher(
-            CameraInfo, "~/rgb/camera/camera_info", 10
-        )
-        self._hand_4k_depth_map_info_pub = self.create_publisher(
-            CameraInfo, "~/depth/camera/camera_info", 10
-        )
-        self._manipulator_state_pub = self.create_publisher(
-            ManipulatorState, "~/manipulator_state", 10
-        )
+        self._hand_image_pub             = self.create_publisher(Image           , "~/rgb/tof/image"           , 10)
+        self._hand_depth_map_pub         = self.create_publisher(Image           , "~/depth/tof/image"         , 10)
+        self._hand_4k_image_pub          = self.create_publisher(Image           , "~/rgb/camera/image"        , 10)
+        self._hand_4k_depth_map_pub      = self.create_publisher(Image           , "~/depth/camera/image"      , 10)
+        self._hand_image_info_pub        = self.create_publisher(CameraInfo      , "~/rgb/tof/camera_info"     , 10)
+        self._hand_depth_map_info_pub    = self.create_publisher(CameraInfo      , "~/depth/tof/camera_info"   , 10)
+        self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/rgb/camera/camera_info"  , 10)
+        self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/depth/camera/camera_info", 10)
+        self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"       , 10)
 
         self._joint_state_pub = self.create_publisher(
             JointState, "/joint_states", 10
@@ -194,45 +181,16 @@ class SpotManipulationDriverROS(Node):
         )
 
         # Create services for arm motions
-        self.create_service(Trigger, "~/claim", self.claim_callback)
-        self.create_service(Trigger, "~/release", self.release_callback)
-        self.create_service(Trigger, "~/power_on", self.power_on_callback)
-        self.create_service(
-            Trigger,
-            "~/unstow_arm",
-            self.unstow_service_callback,
-            callback_group=motion_callback_group,
-        )
-        self.create_service(
-            Trigger,
-            "~/stow_arm",
-            self.stow_service_callback,
-            callback_group=motion_callback_group,
-        )
-        self.create_service(
-            Trigger,
-            "~/close_gripper",
-            self.gripper_close_service_callback,
-            callback_group=gripper_callback_group,
-        )
-        self.create_service(
-            Trigger,
-            "~/open_gripper",
-            self.gripper_open_service_callback,
-            callback_group=gripper_callback_group,
-        )
-        self.create_service(
-            Trigger,
-            "~/stand",
-            self.stand_service_callback,
-            callback_group=gripper_callback_group,
-        )
-        self.create_service(
-            GripperAngleMove,
-            "~/set_gripper_angle",
-            self.gripper_angle_service_callback,
-            callback_group=gripper_callback_group,
-        )
+        self.create_service(Trigger, "~/claim"          , self.claim_callback   )
+        self.create_service(Trigger, "~/release"        , self.release_callback )
+        self.create_service(Trigger, "~/power_on"       , self.power_on_callback)
+        self.create_service(Trigger, "~/unstow_arm"     , self.unstow_service_callback       , callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/mini_unstow_arm", self.mini_unstow_service_callback  , callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/stow_arm"       , self.stow_service_callback         , callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/close_gripper"  , self.gripper_close_service_callback, callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/open_gripper"   , self.gripper_open_service_callback , callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/stand"          , self.stand_service_callback        , callback_group=gripper_callback_group)
+        self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
 
         # Initialize action servers
         self.arm_action_server = ActionServer(
@@ -431,58 +389,49 @@ class SpotManipulationDriverROS(Node):
         )
         self._manipulator_state_pub.publish(state_msg)
 
-    def claim_callback(
-        self, _: Trigger.Request, resp: Trigger.Response
-    ) -> Trigger.Response:
+    def claim_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.claim()
         resp.success = success
         resp.message = msg
         return resp
 
-    def release_callback(
-        self, _: Trigger.Request, resp: Trigger.Response
-    ) -> Trigger.Response:
+    def release_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.release()
         resp.success = success
         resp.message = msg
         return resp
 
-    def power_on_callback(
-        self, _: Trigger.Request, resp: Trigger.Response
-    ) -> Trigger.Response:
+    def power_on_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         self.get_logger().info("Powering on...")
         (success, msg) = self.manipulation_driver.lease_manager.power_on()
         resp.success = success
         resp.message = msg
         return resp
 
-    def stow_service_callback(
-        self, _: Trigger.Request, resp: Trigger.Response
-    ) -> Trigger.Response:
+    def stow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.stow_arm()
         resp.success = success
         resp.message = msg
         return resp
 
-    def unstow_service_callback(
-        self, _: Trigger.Request, resp: Trigger.Response
-    ) -> Trigger.Response:
+    def unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.unstow_arm()
         resp.success = success
         resp.message = msg
         return resp
+    
+    def mini_unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response :
+        arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, Twist())
+        resp.success, resp.message = self.manipulation_driver.ee_velocity_msg_executor(arm_vel_request)
+        return resp
 
-    def gripper_close_service_callback(
-        self, _, resp: Trigger.Response
-    ) -> Trigger.Response:
+    def gripper_close_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.close_gripper()
         resp.success = success
         resp.message = msg
         return resp
 
-    def gripper_open_service_callback(
-        self, _, resp: Trigger.Response
-    ) -> Trigger.Response:
+    def gripper_open_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.open_gripper()
         resp.success = success
         resp.message = msg
@@ -494,9 +443,7 @@ class SpotManipulationDriverROS(Node):
         resp.message = msg
         return resp
 
-    def gripper_angle_service_callback(
-        self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response
-    ):
+    def gripper_angle_service_callback(self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response):
         (success, msg) = self.manipulation_driver.open_gripper_to_angle(
             req.gripper_angle
         )
