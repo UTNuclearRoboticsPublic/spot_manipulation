@@ -184,14 +184,15 @@ class SpotManipulationDriverROS(Node):
         )
 
         # Create services for arm motions
-        self.create_service(Trigger, "~/claim"        , self.claim_callback   )
-        self.create_service(Trigger, "~/release"      , self.release_callback )
-        self.create_service(Trigger, "~/power_on"     , self.power_on_callback)
-        self.create_service(Trigger, "~/unstow_arm"   , self.unstow_service_callback       , callback_group=motion_callback_group)
-        self.create_service(Trigger, "~/stow_arm"     , self.stow_service_callback         , callback_group=motion_callback_group)
-        self.create_service(Trigger, "~/close_gripper", self.gripper_close_service_callback, callback_group=gripper_callback_group)
-        self.create_service(Trigger, "~/open_gripper" , self.gripper_open_service_callback , callback_group=gripper_callback_group)
-        self.create_service(Trigger, "~/stand"        , self.stand_service_callback        , callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/claim"          , self.claim_callback   )
+        self.create_service(Trigger, "~/release"        , self.release_callback )
+        self.create_service(Trigger, "~/power_on"       , self.power_on_callback)
+        self.create_service(Trigger, "~/unstow_arm"     , self.unstow_service_callback       , callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/mini_unstow_arm", self.mini_unstow_service_callback  , callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/stow_arm"       , self.stow_service_callback         , callback_group=motion_callback_group)
+        self.create_service(Trigger, "~/close_gripper"  , self.gripper_close_service_callback, callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/open_gripper"   , self.gripper_open_service_callback , callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/stand"          , self.stand_service_callback        , callback_group=gripper_callback_group)
         self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
 
         # Initialize action servers
@@ -370,6 +371,11 @@ class SpotManipulationDriverROS(Node):
         (success, msg) = self.manipulation_driver.unstow_arm()
         resp.success = success
         resp.message = msg
+        return resp
+    
+    def mini_unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response :
+        arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, Twist())
+        resp.success, resp.message = self.manipulation_driver.ee_velocity_msg_executor(arm_vel_request)
         return resp
 
     def gripper_close_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
