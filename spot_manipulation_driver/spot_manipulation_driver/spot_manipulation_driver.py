@@ -545,64 +545,64 @@ class SpotManipulationDriver(object):
     #####################################################################
     def capture_image(self, camera_name):
 
-     source = camera_name
+        source = camera_name
 
-     # Optionally capture one or more images.
-     # Capture and save images to disk
-     pixel_format = self.pixel_format_string_to_enum("PIXEL_FORMAT_RGB_U8")
-     image_request = [build_image_request(source, pixel_format=pixel_format)]
-     image_responses = self._image_client.get_image(image_request)
+        # Optionally capture one or more images.
+        # Capture and save images to disk
+        pixel_format = self.pixel_format_string_to_enum("PIXEL_FORMAT_RGB_U8")
+        image_request = [build_image_request(source, pixel_format=pixel_format)]
+        image_responses = self._image_client.get_image(image_request)
 
-     for image in image_responses:
-         num_bytes = 1  # Assume a default of 1 byte encodings.
-         if image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_DEPTH_U16:
-             dtype = np.uint16
-             extension = ".png"
-         else:
-             if image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_RGB_U8:
-                 num_bytes = 3
-             elif (
-                 image.shot.image.pixel_format
-                 == image_pb2.Image.PIXEL_FORMAT_RGBA_U8
-             ):
-                 num_bytes = 4
-             elif (
-                 image.shot.image.pixel_format
-                 == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U8
-             ):
-                 num_bytes = 1
-             elif (
-                 image.shot.image.pixel_format
-                 == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U16
-             ):
-                 num_bytes = 2
-             dtype = np.uint8
-             extension = ".jpg"
+        for image in image_responses:
+            num_bytes = 1  # Assume a default of 1 byte encodings.
+            if image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_DEPTH_U16:
+                dtype = np.uint16
+                extension = ".png"
+            else:
+                if image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_RGB_U8:
+                    num_bytes = 3
+                elif (
+                    image.shot.image.pixel_format
+                    == image_pb2.Image.PIXEL_FORMAT_RGBA_U8
+                ):
+                    num_bytes = 4
+                elif (
+                    image.shot.image.pixel_format
+                    == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U8
+                ):
+                    num_bytes = 1
+                elif (
+                    image.shot.image.pixel_format
+                    == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U16
+                ):
+                    num_bytes = 2
+                dtype = np.uint8
+                extension = ".jpg"
 
-         img = np.frombuffer(image.shot.image.data, dtype=dtype)
-         if image.shot.image.format == image_pb2.Image.FORMAT_RAW:
-             try:
-                 # Attempt to reshape array into a RGB rows X cols shape.
-                 img = img.reshape(
-                     (image.shot.image.rows, image.shot.image.cols, num_bytes)
-                 )
-             except ValueError:
-                 # Unable to reshape the image data, trying a regular decode.
-                 img = cv2.imdecode(img, -1)
-         else:
-             img = cv2.imdecode(img, -1)
-     # cv2.imwrite('/home/spot/trashcan/', img)
-     # Convert to ROS type
-     # CVBridge Instance
-     bridge = CvBridge()
-     image_msg = Image()
-     image_msg = bridge.cv2_to_imgmsg(img, encoding="passthrough")
-     # image_msg.encoding = "rgb8"
-     # image_msg.is_bigendian = True
-     # image_msg.step = 3 * image_responses[0].shot.image.cols
-     # image_msg.data = image_responses[0].shot.image.data
+            img = np.frombuffer(image.shot.image.data, dtype=dtype)
+            if image.shot.image.format == image_pb2.Image.FORMAT_RAW:
+                try:
+                    # Attempt to reshape array into a RGB rows X cols shape.
+                    img = img.reshape(
+                        (image.shot.image.rows, image.shot.image.cols, num_bytes)
+                    )
+                except ValueError:
+                    # Unable to reshape the image data, trying a regular decode.
+                    img = cv2.imdecode(img, -1)
+            else:
+                img = cv2.imdecode(img, -1)
+        # cv2.imwrite('/home/spot/trashcan/', img)
+        # Convert to ROS type
+        # CVBridge Instance
+        bridge = CvBridge()
+        image_msg = Image()
+        image_msg = bridge.cv2_to_imgmsg(img, encoding="passthrough")
+        # image_msg.encoding = "rgb8"
+        # image_msg.is_bigendian = True
+        # image_msg.step = 3 * image_responses[0].shot.image.cols
+        # image_msg.data = image_responses[0].shot.image.data
 
-     return img, image_responses[0], image_msg
+        return img, image_responses[0], image_msg
 
     def pixel_format_string_to_enum(self, enum_string):
         return dict(image_pb2.Image.PixelFormat.items()).get(enum_string)
