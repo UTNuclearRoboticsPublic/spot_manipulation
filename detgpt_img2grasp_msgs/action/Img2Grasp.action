@@ -1,0 +1,9 @@
+#Request
+float32 pixel_x
+float32 pixel_y
+string camera_name
+---
+#Result
+bool success
+---
+#Feedback

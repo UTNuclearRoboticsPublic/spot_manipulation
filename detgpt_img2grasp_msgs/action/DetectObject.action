@@ -1,0 +1,12 @@
+# Request
+sensor_msgs/Image image
+string identifier
+
+---
+# Result
+float32 x
+float32 y
+bool success
+
+---
+# Feedback
