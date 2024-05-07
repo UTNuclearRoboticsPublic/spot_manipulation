@@ -446,7 +446,6 @@ class SpotManipulationDriverROS(Node):
             self.get_logger().info("Successfully executed finger trajectory")
         return self.finger_result
 
-
     def img2grasp_goal_callback(self, goal_handle):
 
     def arm_goal_publisher(self, goal_handle: ServerGoalHandle):
