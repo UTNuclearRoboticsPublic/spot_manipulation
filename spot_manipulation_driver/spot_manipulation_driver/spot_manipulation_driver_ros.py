@@ -453,7 +453,7 @@ class SpotManipulationDriverROS(Node):
             "Executing goal for the /image_to_grasp action server"
         )
         success = True
-        SpotManipulationDriver.image_to_grasp(self, goal_handle.request.pixel_x, goal_handle.request.pixel_y, goal_handle.request.camera_name)
+        self.manipulation_driver.image_to_grasp(goal_handle.request.pixel_x, goal_handle.request.pixel_y, goal_handle.request.camera_name)
         if success:
             goal_handle.succeed()
             self.get_logger().info("Successfully executed image_to_grasp goal")
