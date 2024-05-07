@@ -57,6 +57,7 @@ from tf2_ros.transform_listener import TransformListener
 from scipy.spatial.transform import Rotation as R
 from trajectory_msgs.msg import JointTrajectory
 import numpy as np
+from detgpt_img2grasp_msgs.action import Img2Grasp
 
 
 class SpotManipulationDriverROS(Node):
@@ -128,6 +129,10 @@ class SpotManipulationDriverROS(Node):
         self.finger_feedback = FollowJointTrajectory.Feedback()
         self.finger_result = FollowJointTrajectory.Result()
         self.finger_feedback_publish_flag = False
+
+        # Finger-related attributes
+        self.img2grasp_feedback = Img2Grasp.Feedback()
+        self.img2grasp_result = Img2Grasp.Result()
 
         # TF parameters
         self.buffer = Buffer()
@@ -288,6 +293,14 @@ class SpotManipulationDriverROS(Node):
             callback_group=gripper_callback_group,
         )
 
+        self.img2grasp_action_server = ActionServer(
+            self,
+            Img2Grasp,
+            "image_to_grasp",
+            self.img2grasp_goal_callback,
+            # callback_group=gripper_callback_group,
+        )
+
         # Create timers to update the async tasks for publishing
         self.create_timer(
             0.5 / rates["hand_image"],
@@ -432,6 +445,9 @@ class SpotManipulationDriverROS(Node):
             goal_handle.succeed()
             self.get_logger().info("Successfully executed finger trajectory")
         return self.finger_result
+
+
+    def img2grasp_goal_callback(self, goal_handle):
 
     def arm_goal_publisher(self, goal_handle: ServerGoalHandle):
         """Feedback for arm action server"""
