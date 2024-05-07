@@ -47,6 +47,10 @@ from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from bosdyn.api.geometry_pb2 import SE2Velocity, SE2VelocityLimit, Vec2
+from cv_bridge import CvBridge
+import numpy as np
+import cv2
+from sensor_msgs.msg import Image
 
 
 class SpotManipulationDriver(object):
@@ -535,3 +539,183 @@ class SpotManipulationDriver(object):
             return False, Text(err)
 
         return True, "Success"
+
+    #####################################################################
+    ##DetGPT-related Stuff##
+    #####################################################################
+    def capture_image(self, camera_name):
+
+     source = camera_name
+
+     # Optionally capture one or more images.
+     # Capture and save images to disk
+     pixel_format = self.pixel_format_string_to_enum("PIXEL_FORMAT_RGB_U8")
+     image_request = [build_image_request(source, pixel_format=pixel_format)]
+     image_responses = self._image_client.get_image(image_request)
+
+     for image in image_responses:
+         num_bytes = 1  # Assume a default of 1 byte encodings.
+         if image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_DEPTH_U16:
+             dtype = np.uint16
+             extension = ".png"
+         else:
+             if image.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_RGB_U8:
+                 num_bytes = 3
+             elif (
+                 image.shot.image.pixel_format
+                 == image_pb2.Image.PIXEL_FORMAT_RGBA_U8
+             ):
+                 num_bytes = 4
+             elif (
+                 image.shot.image.pixel_format
+                 == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U8
+             ):
+                 num_bytes = 1
+             elif (
+                 image.shot.image.pixel_format
+                 == image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U16
+             ):
+                 num_bytes = 2
+             dtype = np.uint8
+             extension = ".jpg"
+
+         img = np.frombuffer(image.shot.image.data, dtype=dtype)
+         if image.shot.image.format == image_pb2.Image.FORMAT_RAW:
+             try:
+                 # Attempt to reshape array into a RGB rows X cols shape.
+                 img = img.reshape(
+                     (image.shot.image.rows, image.shot.image.cols, num_bytes)
+                 )
+             except ValueError:
+                 # Unable to reshape the image data, trying a regular decode.
+                 img = cv2.imdecode(img, -1)
+         else:
+             img = cv2.imdecode(img, -1)
+     # cv2.imwrite('/home/spot/trashcan/', img)
+     # Convert to ROS type
+     # CVBridge Instance
+     bridge = CvBridge()
+     image_msg = Image()
+     image_msg = bridge.cv2_to_imgmsg(img, encoding="passthrough")
+     # image_msg.encoding = "rgb8"
+     # image_msg.is_bigendian = True
+     # image_msg.step = 3 * image_responses[0].shot.image.cols
+     # image_msg.data = image_responses[0].shot.image.data
+
+     return img, image_responses[0], image_msg
+
+    def pixel_format_string_to_enum(self, enum_string):
+        return dict(image_pb2.Image.PixelFormat.items()).get(enum_string)
+
+    def image_to_grasp(self, center_px_x, center_px_y, camera_name):
+        _, image, _ = self.capture_image(camera_name)
+
+        # # capturing an image
+        # self.robot.time_sync.wait_for_sync()
+        # # camera_name = "left_fisheye_image"
+        # image_response = self.image_client.get_image_from_sources([camera_name])
+        # image = image_response[0]
+        # image = image_responses[0]
+
+        # Filling out grasping request
+        pick_vec = geometry_pb2.Vec2(x=center_px_x, y=center_px_y)
+        grasp = manipulation_api_pb2.PickObjectInImage(
+            pixel_xy=pick_vec,
+            transforms_snapshot_for_camera=image.shot.transforms_snapshot,
+            frame_name_image_sensor=image.shot.frame_name_image_sensor,
+            camera_model=image.source.pinhole,
+        )
+        grasp.grasp_params.grasp_palm_to_fingertip = (
+            0.6
+        )  # might need to adjust for object size
+
+        # Specify top-down grasp
+
+        # Add a constraint that requests that the x-axis of the gripper is pointing in the
+        # negative-z direction in the vision frame.
+
+        # The axis on the gripper is the x-axis.
+        axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0)
+
+        # The axis in the vision frame is the negative z-axis
+        axis_to_align_with_ewrt_vision = geometry_pb2.Vec3(x=0, y=0, z=-1)
+
+        # Add the vector constraint to our proto.
+        constraint = grasp.grasp_params.allowable_orientation.add()
+        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
+            axis_on_gripper_ewrt_gripper
+        )
+        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
+            axis_to_align_with_ewrt_vision
+        )
+
+        # We'll take anything within about 15 degrees for top-down or horizontal grasps.
+        # constraint.vector_alignment_with_tolerance.threshold_radians = 0.25
+        constraint.vector_alignment_with_tolerance.threshold_radians = 1.22
+
+        # Specify the frame we're using.
+        grasp.grasp_params.grasp_params_frame_name = frame_helpers.VISION_FRAME_NAME
+
+        # Build the proto
+        grasp_request = manipulation_api_pb2.ManipulationApiRequest(
+            pick_object_in_image=grasp
+        )
+
+        # Send the request
+        print("Sending grasp request...")
+        cmd_response = self.manipulation_api_client.manipulation_api_command(
+            manipulation_api_request=grasp_request
+        )
+        # Wait for the grasp to finish
+        grasp_done = False
+        failed = False
+        time_start = time.time()
+        while not grasp_done:
+            feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
+                manipulation_cmd_id=cmd_response.manipulation_cmd_id
+            )
+
+            # Send a request for feedback
+            response = self.manipulation_api_client.manipulation_api_feedback_command(
+                manipulation_api_feedback_request=feedback_request
+            )
+
+            current_state = response.current_state
+            current_time = time.time() - time_start
+            print(
+                "Current state ({time:.1f} sec): {state}".format(
+                    time=current_time,
+                    state=manipulation_api_pb2.ManipulationFeedbackState.Name(
+                        current_state
+                    ),
+                ),
+                end="                \r",
+            )
+            sys.stdout.flush()
+
+            failed_states = [
+                manipulation_api_pb2.MANIP_STATE_GRASP_FAILED,
+                manipulation_api_pb2.MANIP_STATE_GRASP_PLANNING_NO_SOLUTION,
+                manipulation_api_pb2.MANIP_STATE_GRASP_FAILED_TO_RAYCAST_INTO_MAP,
+                manipulation_api_pb2.MANIP_STATE_GRASP_PLANNING_WAITING_DATA_AT_EDGE,
+            ]
+
+            failed = current_state in failed_states
+            grasp_done = (
+                current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED
+                or failed
+            )
+
+            time.sleep(0.1)
+
+        holding_trash = not failed
+
+        # Move the arm to a carry position.
+        print("")
+        print("Grasp finished ...")
+        carry_cmd = RobotCommandBuilder.arm_carry_command()
+        self.command_client.robot_command(carry_cmd)
+
+        # Wait for the carry command to finish
+        time.sleep(0.75)
+        return holding_trash

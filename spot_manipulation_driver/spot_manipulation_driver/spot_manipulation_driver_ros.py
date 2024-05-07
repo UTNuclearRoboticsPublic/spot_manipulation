@@ -447,6 +447,18 @@ class SpotManipulationDriverROS(Node):
         return self.finger_result
 
     def img2grasp_goal_callback(self, goal_handle):
+        """Callback for the /image_to_grasp action server """
+
+        self.get_logger().info(
+            "Executing goal for the /image_to_grasp action server"
+        )
+        success = True
+        SpotManipulationDriver.image_to_grasp(self, goal_handle.request.pixel_x, goal_handle.request.pixel_y, goal_handle.request.camera_name)
+        if success:
+            goal_handle.succeed()
+            self.get_logger().info("Successfully executed image_to_grasp goal")
+        return self.img2grasp_result
+
 
     def arm_goal_publisher(self, goal_handle: ServerGoalHandle):
         """Feedback for arm action server"""
