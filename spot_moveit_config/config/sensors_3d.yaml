@@ -1,0 +1,12 @@
+sensors:
+  - velodyne
+
+velodyne:
+  point_cloud_topic: /velodyne_points
+  max_range: 10.0
+  max_update_rate: 1.0
+  padding_offset: 0.1
+  padding_scale: 1.0
+  point_subsample: 1
+  filtered_cloud_topic: spot_moveit_pointcloud
+  sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater

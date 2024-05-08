@@ -41,21 +41,21 @@ joint_limits:
     max_acceleration: 10.0
   body_height_joint:
     has_velocity_limits: true
-    max_velocity: 0.1
+    max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 10.0
   body_pitch_joint:
     has_velocity_limits: true
-    max_velocity: 0.1
+    max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 10.0
   body_roll_joint:
     has_velocity_limits: true
-    max_velocity: 0.1
+    max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 10.0
   body_yaw_joint:
     has_velocity_limits: true
-    max_velocity: 0.1
+    max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 10.0
