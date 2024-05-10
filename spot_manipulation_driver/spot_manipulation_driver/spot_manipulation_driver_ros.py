@@ -434,8 +434,8 @@ class SpotManipulationDriverROS(Node):
         )
         finger_feedback_thread.start()
 
-        SpotManipulationDriver.gripper_trajectory_executor(
-            self, traj_point_positions, time_since_ref
+        self.manipulation_driver.gripper_trajectory_executor(
+            traj_point_positions, time_since_ref
         )
 
         self.finger_feedback_publish_flag = False
