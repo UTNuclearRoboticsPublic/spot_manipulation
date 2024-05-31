@@ -7,7 +7,7 @@ ros2 launch spot_bringup bringup.launch.py hostname:=192.168.50.3
 2) Position the arm close to the contact surface using the MoveIt Motion Planning GUI
 3) Call the service from command line. Example distance: `distance__y: -0.4`, `force_z: -20`. Force units in Newtons. `speed: 0.05`. Equivalent to 2in/s
 
-##Additional Pertinent Information about the Code
+## Additional Pertinent Information about the Code
 To switch plane force is applied on, in the function `arm_force_trajectory_executor` in `spot_manipulaton_driver.py`, the axis mode of each axis must be adjusted accordingly under `arm_cartesian_command`, and the quaternion, `q`, needs to be adjusted to point the end-effector in the appropriate direction.
 
 
