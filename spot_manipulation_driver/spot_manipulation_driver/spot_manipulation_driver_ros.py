@@ -34,6 +34,7 @@ import threading
 import rclpy.time
 import numpy as np
 import geometry_msgs.msg
+import struct
 
 import rclpy
 import rclpy.callback_groups
@@ -54,6 +55,7 @@ from spot_driver.ros_helpers import getImageMsg, JointStatesToMsg
 from spot_msgs.msg import ManipulatorState
 from spot_msgs.srv import GripperAngleMove, ForceTrajectory, NonContactTrajectory
 import spot_manipulation_driver.get_points as get_points
+from spot_manipulation_driver.arduino import SerialMessenger
 
 class SpotManipulationDriverROS(Node):
     def __init__(self):
@@ -427,13 +429,11 @@ class SpotManipulationDriverROS(Node):
     
     def ncontact_trajectory_service_callback(self, req:NonContactTrajectory.Request, resp:NonContactTrajectory.Response):
         frequency = 15
-        offset_correction = np.array([-0.03555556,0.082, 0.0031])
-        # point_cloud = self.hand_points_texture
-        # self._logger.info('in executor')
+
+        # Spot depth reading correction
+        offset_correction = np.array([0.01055556, 0.0155, 0.0114])
 
         offset = geometry_msgs.msg.Vector3(x=req.offset_x, y=req.offset_y, z=req.offset_z)
-        # start_location = self.manipulation_driver.current_location(self)
-        # current_location = start_location
         distance = np.linalg.norm([req.distance_x,req.distance_y,req.distance_z])
         distance_per_time = req.speed/frequency
         steps = int(distance/distance_per_time)
@@ -441,29 +441,33 @@ class SpotManipulationDriverROS(Node):
         step_time = distance_per_time/req.speed
         step_time = int(step_time*1e3)
 
-        offset.x = offset.x + (offset_correction[0]*offset.x**2 + offset_correction[1]*offset.x + offset_correction[2])
-        offset.z = offset.z + (offset_correction[0]*offset.z**2 + offset_correction[1]*offset.z + offset_correction[2])
-
         step_distance = geometry_msgs.msg.Vector3(x=req.distance_x*3/steps, y=req.distance_y*3/steps, z=req.distance_z*3/steps)
-        # self._logger.info(f'number of steps: {steps}')
         for i in range(steps):
-        # while current_location != start_location+distance:
             try:
-                # current_location = self.manipulation_driver.current_location(self)
                 img_msg, info_msg, _ = getImageMsg(self.hand_depth_image, self.manipulation_driver.lease_manager)
                 self.hand_image = img_msg
                 self.hand_image_info = info_msg
             
-
-                # self._logger.info("got image messages")
-
                 distance_in_hand = self.manipulation_driver.transform_frame(step_distance, ['hand', 'body'])
+                
+                tof_offset = SerialMessenger.readOffset(SerialMessenger, self._logger)
+                tof_offset.replace(b'\r\n', b'')
+                tof_offset = float(tof_offset)
+                # tof_offset.decode()
+                # [tof_offset] = struct.unpack('f', tof_offset)
+                self._logger.info(f'tof_offset = {tof_offset}')
+                self._logger.info(f'tof_offset type: {type(tof_offset)}')
 
-                old, new = get_points.get_points(self.hand_image, self.hand_image_info, -distance_in_hand.z, distance_in_hand.y, self._logger)
+                # Uses Spot hand camera
+                old, new = get_points.get_points(self.hand_image, self.hand_image_info, -distance_in_hand.z/3, distance_in_hand.y/3, self._logger)
+                old.x = old.x - (offset_correction[0]*offset.z**2 + offset_correction[1]*offset.z + offset_cdistance_in_handorrection[2])
+                new.x = new.x - (offset_correction[0]*offset.z**2 + offset_correction[1]*offset.z + offset_correction[2])
+                
+                # Uses ToF sensor
+                # old = geometry_msgs.msg.Point(x = tof_offset, y = 0.0, z = 0.0)
+                # new = geometry_msgs.msg.Point(x = offset.z, y = distance_in_hand.y/3, z = -distance_in_hand.z/3)
 
                 output = old
-                output.x = old.x - (offset_correction[0]*offset.z**2 + offset_correction[1]*offset.z + offset_correction[2])
-                # self._logger.info('got points')
 
                 offset_point = PointStamped(point=output)
                 offset_point.header.stamp = rclpy.time.Time(nanoseconds=ros_helpers.robot_time_as_local_time(self.manipulation_driver).ToNanoseconds()).to_msg()
@@ -472,26 +476,80 @@ class SpotManipulationDriverROS(Node):
 
                 old = self.manipulation_driver.transform_frame(old, ['body', 'hand'])
                 new = self.manipulation_driver.transform_frame(new, ['body', 'hand'])
-
                 twist_msg = self.manipulation_driver.arm_ncontact_trajectory_executor(
                                                 step_distance, offset, req.speed,
                                                 i, steps, old, new, distance)
                 
                 self._logger.info('ncontact trajectory executed')
 
-                arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, twist_msg, step_time)
+                twist_msg = self.manipulation_driver.twist_transform(twist_msg, ['odom', 'body'])
+                arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, twist_msg, step_time)#, robot_frame='odom')
                 success, msg = self.manipulation_driver.ee_velocity_msg_executor(arm_vel_request)
                 
                 resp.success = success
                 resp.message = msg
-                # resp.error = error
             except Exception as e:
                 self._logger.info(f"Exception doing shit: {e}")
-                resp.success = False
-                return resp
+    #     )
 
-        self._logger.info('after loop')
-        
+    #     self.arm_feedback_publish_flag = False
+    #     arm_feedback_thread.join()
+
+    #     if success:
+    #         goal_handle.succeed()
+    #         self.get_logger().info("Successfully executed arm_impedance trajectory")
+    #     return self.arm_result
+    
+    # def arm_impedance_command_feedback(self,goal_handle: ServerGoalHandle):
+    #     """Feedback for arm impedance command aciton server"""
+    #     rate = self.create_rate(frequency=2.0, clock=self.get_clock())
+
+    #     while self.arm_impedance_feedback_publish_flag:
+    #         self.arm_impedance_feedback = ros_helpers.get_arm_impedance_feedback(self.manipulation_driver)
+    #         goal_handle.publish_feedback(self.arm_impedance_feedback)
+    #         rate.sleep()
+
+    def claim_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+        (success, msg) = self.manipulation_driver.claim()
+        resp.success = success
+        resp.message = msg
+        return resp
+    
+    def release_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+        (success, msg) = self.manipulation_driver.release()
+        resp.success = success
+        resp.message = msg
+        return resp
+    
+    def power_on_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+        self.get_logger().info("Powering on...")
+        (success, msg) = self.manipulation_driver.lease_manager.power_on()
+        resp.success = success
+        resp.message = msg
+        return resp
+
+    def stow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+        (success, msg) = self.manipulation_driver.stow_arm()
+        resp.success = success
+        resp.message = msg
+        return resp
+    
+    def unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+        (success, msg) = self.manipulation_driver.unstow_arm()
+        resp.success = success
+        resp.message = msg
+        return resp
+    
+    def gripper_close_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
+        (success, msg) = self.manipulation_driver.close_gripper()
+        resp.success = success
+        resp.message = msg
+        return resp
+
+    def gripper_open_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
+        (success, msg) = self.manipulation_driver.open_gripper()
+        resp.success = success
+        resp.message = msg
         return resp
     
     def publish_hand_images(self, _):

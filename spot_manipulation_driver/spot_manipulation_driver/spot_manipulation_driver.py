@@ -132,12 +132,6 @@ class SpotManipulationDriver(object):
         if state is None: return None
         ee_force = state.manipulator_state.estimated_end_effector_force_in_hand
         return ee_force.x, ee_force.y, ee_force.z
-
-# TODO
-    # @property
-    # def arm_impedance(self) -> arm_command_pb2.ArmImpedanceCommand:
-    #     if self._robot_state_task.proto is None: return None
-    #     return self.arm_impedance
     
     @property
     def robot_time(self) -> timestamp_pb2.Timestamp:
@@ -276,11 +270,6 @@ class SpotManipulationDriver(object):
         q = Quat.from_pitch(1.571) # for pointing eef downward
         # q = Quat.from_pitch(0) # for eef pointing forward
         quat = q.to_proto()
-        # qw = 1
-        # qx = 0
-        # qy = 0
-        # qz = 0
-        # quat = geometry_pb2.Quaternion(w=qw, x=qx, y=qy, z=qz)
 
         # Build a position trajectory
         hand_pose1_in_flat_body = geometry_pb2.SE3Pose(position=hand_vec3_start, rotation=quat)
@@ -380,15 +369,9 @@ class SpotManipulationDriver(object):
             self, step_distance, offset, speed,
             i, steps, old, new, distance):
         
-        # self._logger.info('in ncontact trajectory executor')
-        # self._logger.info(f'step distance: {step_distance}'+ '\n' +
-        #                   f'offset: {offset}'+ '\n' +
-        #                   f'speed: {speed}'+ '\n' +
-        #                   f'i: {i}'+ '\n' +
-        #                   f'steps: {steps}'+ '\n' +
-        #                   f'old: {old}'+ '\n' +
-        #                   f'new: {new}'+ '\n' +
-        #                   f'distance: {distance}')
+        self._logger.info(f'offset: {offset}'+ '\n' +\
+                          f'old: {old}'+ '\n' +
+                          f'new: {new}')
         
         old = geometry_pb2.Vec3(x=old.x, y=old.y, z=old.z)
         new = geometry_pb2.Vec3(x=new.x, y=new.y, z=new.z)
@@ -397,8 +380,8 @@ class SpotManipulationDriver(object):
         command_client = self._lease_manager.command_client
 
         
-        # q = Quat.from_pitch(1.571) # for pointing eef downward
-        q = Quat.from_pitch(0) # for eef pointing forward
+        q = Quat.from_pitch(1.571) # for pointing eef downward
+        # q = Quat.from_pitch(0) # for eef pointing forward
         quat = q.to_proto()
 
         hand_pose_in_body_frame: SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
@@ -413,7 +396,6 @@ class SpotManipulationDriver(object):
             hand_y_end = hand_y_start + step_distance.y*steps
             hand_z_end = hand_z_start + step_distance.z*steps
             hand_vec3_end = geometry_pb2.Vec3(x=hand_x_end, y=hand_y_end, z=hand_z_end)
-            # self._logger.info('start position saved')
 
         hand_x_current = hand_pose_in_body_frame.x  # in front of the robot.
         hand_y_current = hand_pose_in_body_frame.y  # to the left
@@ -422,16 +404,14 @@ class SpotManipulationDriver(object):
 
         perception_distance = geometry_pb2.Vec3(x=(new.x-old.x), y=(new.y-old.y), z=(new.z-old.z))
 
-        hand_x_predicted = new.x - offset.x
+        hand_x_predicted = new.x - offset.x - perception_distance.x
         hand_y_predicted = hand_y_current + step_distance.y 
-        hand_z_predicted = new.z + offset.z
-        # hand_z_predicted = hand_z_current
+        hand_z_predicted = new.z + offset.z - perception_distance.z
 
-        self._logger.info(f'new x: {new.x}, offset x: {offset.x}')
+        self._logger.info(f'new x: {new.z}, offset x: {offset.z}')
 
         hand_pose_in_body_frame_predicted = copy.copy(hand_pose_in_body_frame)
         hand_vec3_predicted = geometry_pb2.Vec3(x=hand_x_predicted, y=hand_y_predicted, z=hand_z_predicted)
-        # self._logger.info(f'predicted position: {hand_vec3_predicted}')
         hand_pose_in_body_frame_predicted.x = hand_vec3_predicted.x
         hand_pose_in_body_frame_predicted.y = hand_vec3_predicted.y
         hand_pose_in_body_frame_predicted.z = hand_vec3_predicted.z
@@ -439,11 +419,7 @@ class SpotManipulationDriver(object):
         self._logger.info(f'HTMs calculated'+ '\n' +
                           f'current: {hand_pose_in_body_frame}' + '\n' +
                           f'predicted: {hand_pose_in_body_frame_predicted}')
-        # self._logger.info(f'current: {hand_pose_in_body_frame}')
-        # self._logger.info(f'predicted: {hand_pose_in_body_frame_predicted}')
 
-        # skew_twist = scipy.linalg.logm(geometry_pb2.SE3Pose.from_proto(hand_pose_in_body_frame_predicted) * 
-        #                                SE3Pose.inverse(geometry_pb2.SE3Pose.from_proto(hand_pose_in_body_frame)))
         skew_twist = scipy.linalg.logm((hand_pose_in_body_frame_predicted * hand_pose_in_body_frame.inverse()).to_matrix())
         linear_velocity= np.array([skew_twist[0,3], # Hand frame
                     skew_twist[1,3],
@@ -456,19 +432,19 @@ class SpotManipulationDriver(object):
             linear_velocity[1] = linear_velocity[1]*-1
             
         lim = 0.02
-        if abs(linear_velocity[0]) < lim and abs(hand_x_current - hand_x_predicted) > 0.01:
-            linear_velocity[0] = linear_velocity[0]*(lim/abs(linear_velocity[2]))
-        if abs(linear_velocity[2]) < lim and abs(hand_z_current - hand_z_predicted) > 0.01:
+        if abs(linear_velocity[0]) < lim and abs(hand_x_current - hand_x_predicted) > 0.004:
+            linear_velocity[0] = linear_velocity[0]*(lim/abs(linear_velocity[0]))
+        elif abs(hand_x_current - hand_x_predicted) < 0.002:
+            linear_velocity[0] = 0
+        if abs(linear_velocity[2]) < lim and abs(hand_z_current - hand_z_predicted) > 0.004:
             linear_velocity[2] = linear_velocity[2]*(lim/abs(linear_velocity[2]))
+        elif abs(hand_z_current - hand_z_predicted) < 0.002:
+            linear_velocity[2] = 0
 
-        if step_distance.x == 0: linear_velocity[0] = 0
-        # if step_distance.z == 0: linear_velocity[2] = 0
-        elif step_distance.y == 0: linear_velocity[1] = 0
-
-        # magnitude = np.linalg.norm(linear_velocity)
-        # if  magnitude > speed:
-        #     linear_velocity = linear_velocity*(speed/magnitude)
-
+        if step_distance.x == 0 and offset.x == 0: linear_velocity[0] = 0
+        if step_distance.y == 0 and offset.y == 0: linear_velocity[1] = 0
+        if step_distance.z == 0 and offset.z == 0: linear_velocity[2] = 0
+        
         self._logger.info(f'linear velocity limited: {linear_velocity}')
         linear = geometry_msgs.msg.Vector3(x=linear_velocity[0], y=linear_velocity[1], z=linear_velocity[2])
 
@@ -490,14 +466,9 @@ class SpotManipulationDriver(object):
         self._logger.info(f'velocity:{linear_velocity}')
         self._logger.info(f'twist: {twist_msg}')
 
-        # hand_pose_in_body_frame_end: geometry_pb2.SE3Pose =s, time_since_ref):
-        #                         BODY_FRAME_NAME, HAND_FRAME_NAME)
-        # error = hand_vec3_end - hand_pose_in_body_frame_end.position
-
         return twist_msg
 
     def transform_frame(self, point, frames):
-        self._logger.info(f"point: {point}, frames: {frames}")
         point_coord = geometry_pb2.Vec3(x=point.x, y=point.y, z=point.z)
 
         for frame in frames:
@@ -506,17 +477,58 @@ class SpotManipulationDriver(object):
                 frame = HAND_FRAME_NAME
             elif frame == 'body':
                 frame = BODY_FRAME_NAME
+            elif frame == 'flat_body':
+                frame = GRAV_ALIGNED_BODY_FRAME_NAME
+            elif frame == 'odom':
+                frame = ODOM_FRAME_NAME
 
         sensor_in_new_frame: SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
                                frames[0] ,frames[1])
-        self._logger.info("Got a_tform_b")
         
         point_transformed = sensor_in_new_frame.transform_vec3(point_coord)
 
         point = geometry_msgs.msg.Point(x=point_transformed.x, y=point_transformed.y, z=point_transformed.z)
-        self._logger.info("returning point")
 
         return point
+
+    def twist_transform(self, twist, frames):
+        self._logger.info(f'twist: {twist}')
+    
+        for frame in frames:
+            self._logger.info('correcting frame names')
+            if frame == 'hand':
+                frame = HAND_FRAME_NAME
+            elif frame == 'body':
+                frame = BODY_FRAME_NAME
+            elif frame == 'flat_body':
+                frame = GRAV_ALIGNED_BODY_FRAME_NAME
+            elif frame == 'odom':
+                frame = ODOM_FRAME_NAME
+
+        sensor_in_frame_desired: SE3Pose = get_a_tform_b(self.kinematic_state.transforms_snapshot,
+                               frames[0] ,frames[1])
+        self._logger.info(f'{sensor_in_frame_desired}')
+
+        linear_vector = geometry_pb2.Vec3(x=twist.linear.x, y=twist.linear.y, z=twist.linear.z)
+        if twist.linear.x == 0: linear_vector.x = 0.000001
+        if twist.linear.y == 0: linear_vector.y = 0.000001
+        if twist.linear.z == 0: linear_vector.z = 0.000001
+        
+        linear_transformed = sensor_in_frame_desired.transform_vec3(linear_vector)
+        linear_in_frame_desired = geometry_msgs.msg.Vector3(x=linear_transformed.x, y=linear_transformed.y, z=linear_transformed.z)
+
+        angular_vector = geometry_pb2.Vec3(x=twist.angular.x, y=twist.angular.y, z=twist.angular.z) 
+        # if angular_vector is not None:
+        #     if twist.angular.x == 0: angular_vector.x = 0.000001
+        #     if twist.angular.y == 0: angular_vector.y = 0.000001
+        #     if twist.angular.z == 0: angular_vector.z = 0.000001
+
+        angular_transformed = sensor_in_frame_desired.transform_vec3(angular_vector)
+        angular_transformed = angular_vector
+        angular_in_frame_desired = geometry_msgs.msg.Vector3(x=angular_transformed.x, y=angular_transformed.y, z=angular_transformed.z)
+
+        twist_in_frame_desired = geometry_msgs.msg.Twist(linear=linear_in_frame_desired, angular=angular_in_frame_desired)
+        return twist_in_frame_desired
 
     def gripper_trajectory_executor(self, traj_point_positions, time_since_ref):
 
