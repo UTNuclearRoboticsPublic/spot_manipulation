@@ -201,4 +201,5 @@
     <disable_collisions link1="rear_right_upper_leg" link2="velodyne" reason="Never"/>
     <disable_collisions link1="rear_right_upper_leg" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="velodyne" link2="velodyne_base_link" reason="Adjacent"/>
+    <disable_collisions link1="body" link2="eap_2_assembly" reason="Adjacent"/>
 </robot>
