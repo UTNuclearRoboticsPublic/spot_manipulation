@@ -459,8 +459,8 @@ class SpotManipulationDriverROS(Node):
                 self._logger.info(f'tof_offset type: {type(tof_offset)}')
 
                 # Uses Spot hand camera
-                old, new = get_points.get_points(self.hand_image, self.hand_image_info, -distance_in_hand.z/3, distance_in_hand.y/3, self._logger)
-                old.x = old.x - (offset_correction[0]*offset.z**2 + offset_correction[1]*offset.z + offset_cdistance_in_handorrection[2])
+                # old, new = get_points.get_points(self.hand_image, self.hand_image_info, -distance_in_hand.z/3, distance_in_hand.y/3, self._logger)
+                old.x = old.x - (offset_correction[0]*offset.z**2 + offset_correction[1]*offset.z + offset_correction[2])
                 new.x = new.x - (offset_correction[0]*offset.z**2 + offset_correction[1]*offset.z + offset_correction[2])
                 
                 # Uses ToF sensor
@@ -482,7 +482,7 @@ class SpotManipulationDriverROS(Node):
                 
                 self._logger.info('ncontact trajectory executed')
 
-                twist_msg = self.manipulation_driver.twist_transform(twist_msg, ['odom', 'body'])
+                # twist_msg = self.manipulation_driver.twist_transform(twist_msg, ['odom', 'body'])
                 arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, twist_msg, step_time)#, robot_frame='odom')
                 success, msg = self.manipulation_driver.ee_velocity_msg_executor(arm_vel_request)
                 
