@@ -412,29 +412,34 @@ class SpotManipulationDriverROS(Node):
         (success, msg) = self.manipulation_driver.stow_arm()
         resp.success = success
         resp.message = msg
+        time.sleep(1) # sleep to ensure end config is reached
         return resp
 
     def unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.unstow_arm()
         resp.success = success
         resp.message = msg
+        time.sleep(1) # sleep to ensure end config is reached
         return resp
     
     def mini_unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response :
         arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, Twist())
         resp.success, resp.message = self.manipulation_driver.ee_velocity_msg_executor(arm_vel_request)
+        time.sleep(1) # sleep to ensure end config is reached
         return resp
 
     def gripper_close_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.close_gripper()
         resp.success = success
         resp.message = msg
+        time.sleep(0.5) # sleep to ensure end config is reached
         return resp
 
     def gripper_open_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.open_gripper()
         resp.success = success
         resp.message = msg
+        time.sleep(0.5) # sleep to ensure end config is reached
         return resp
 
     def stand_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
@@ -449,6 +454,7 @@ class SpotManipulationDriverROS(Node):
         )
         resp.success = success
         resp.message = msg
+        time.sleep(0.5) # sleep to ensure end config is reached
         return resp
 
     def publish_hand_images(self, _):
