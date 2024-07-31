@@ -189,7 +189,7 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/stow_arm"       , self.stow_service_callback         , callback_group=motion_callback_group)
         self.create_service(Trigger, "~/close_gripper"  , self.gripper_close_service_callback, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/open_gripper"   , self.gripper_open_service_callback , callback_group=gripper_callback_group)
-        self.create_service(Trigger, "~/stand"          , self.stand_service_callback        , callback_group=gripper_callback_group)
+        self.create_service(Trigger, "~/stand"          , self.stand_service_callback        , callback_group=motion_callback_group)
         self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
 
         # Initialize action servers
@@ -218,13 +218,16 @@ class SpotManipulationDriverROS(Node):
         )
 
         # Create timers to update the async tasks for publishing
+        update_group = rclpy.callback_groups.ReentrantCallbackGroup()
         self.create_timer(
             0.5 / rates["hand_image"],
             lambda: self.manipulation_driver._hand_image_task.update(),
+            callback_group=update_group
         )
         self.create_timer(
             0.5 / rates["robot_state"],
             lambda: self.manipulation_driver._robot_state_task.update(),
+            callback_group=update_group
         )
 
         return True
