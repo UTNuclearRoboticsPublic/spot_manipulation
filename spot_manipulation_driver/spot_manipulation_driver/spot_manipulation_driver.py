@@ -229,8 +229,7 @@ class SpotManipulationDriver(object):
                 joint_positions=window,
                 times=timestamps,
                 ref_time=ref_time,
-                max_acc=10000,
-                max_vel=10000,
+                max_vel=2.0
             )
 
             success, msg, _ = self._lease_manager.robot_command(robot_cmd)
