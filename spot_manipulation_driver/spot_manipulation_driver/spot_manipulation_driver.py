@@ -229,7 +229,6 @@ class SpotManipulationDriver(object):
                 joint_positions=window,
                 times=timestamps,
                 ref_time=ref_time,
-                # max_vel=2.0
             )
 
             success, msg, _ = self._lease_manager.robot_command(robot_cmd)
@@ -242,6 +241,7 @@ class SpotManipulationDriver(object):
                 time.sleep(sleep_time)
             else:
                 time.sleep(max(sleep_time - 0.2, 0))
+        return True
 
     def gripper_trajectory_executor(self, traj_point_positions, time_since_ref):
 

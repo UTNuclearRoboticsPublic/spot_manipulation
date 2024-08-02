@@ -239,7 +239,7 @@ class SpotManipulationDriverROS(Node):
             "D:Executing goal for the /spot_arm/arm_controller/follow_joint_trajectory action server"
         )
 
-        success = True
+        success = False
 
         # Translate message and execute trajectory while publishing feedback
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
@@ -253,7 +253,7 @@ class SpotManipulationDriverROS(Node):
         arm_feedback_thread.start()
 
         try:
-            self.manipulation_driver.arm_long_trajectory_executor(
+            success = self.manipulation_driver.arm_long_trajectory_executor(
                 traj_point_positions, traj_point_velocities, timepoints
             )
         except Exception as e:
