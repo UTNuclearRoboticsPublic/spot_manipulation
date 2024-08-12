@@ -9,8 +9,9 @@ The `spot_moveit_config` package provides the configuration settings for using t
   - Open and close gripper
 
 - **ROS Action Servers:**
-  - Execute long arm joint trajectories
-  - Execute joint trajectories while manipulating body pose
+  - Execute arm joint trajectories
+  - Execute arm joint trajectories while manipulating body pose
+  - Walk robot to a specified pose
 
 ## Spot Manipulation Driver
 
