@@ -1,11 +1,13 @@
 import numpy as np
 from typing import Tuple, List
-from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2
+from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2, image_pb2
 from bosdyn.client.math_helpers import SE3Pose, Quat
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist
 from google.protobuf import timestamp_pb2
 from spot_msgs.msg import ManipulatorState
+from sensor_msgs.msg import Image, CameraInfo
+from tf2_msgs.msg import TFMessage
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 import rclpy.time
@@ -224,3 +226,49 @@ def manipulator_state_to_msg(
     # manipulator_state_msg.velocity_of_hand_in_odom = manipulator_state.velocity_of_hand_in_odom
     manipulator_state_msg.carry_state = manipulator_state.carry_state
     return manipulator_state_msg
+
+def img_msg_to_proto(image_msg: Image, camera_info: CameraInfo, tf_msg: TFMessage, driver: SpotManipulationDriver) -> image_pb2.ImageResponse:
+    """Takes a ROS Image, CameraInfo, and TF tree representing important transforms for a camera, and populates the corresponding image proto message 
+
+    Assumptions:
+        image format is RAW and pixel format is RGB_U8
+    Args:
+        image_msg: ROS image message
+        camera_info: camera_info 
+        tf_msg: transforms representing the frame tree snapshot for the associated camera
+    Returns:
+        image_pb2.ImageResponse: Image proto message
+    """
+
+    # Basic image info
+    data = image_pb2.ImageResponse() 
+    data.shot.acquisition_time = drive._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(image_msg.header.stamp.seconds)
+    data.shot.frame_name_image_sensor = image_msg.header.frame_id
+    data.shot.image.rows = image_msg.height
+    data.shot.image.cols = image_msg.width
+    # Assuming that the encoding is rgb_u8
+    data.shot.image.format == image_pb2.Image.FORMAT_RAW
+    data.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_RGB_U8
+
+    # Image data
+    data.shot.image.data = image_msg.data
+
+    # Camera info
+    data.source.pinhole.intrinsics.focal_length.x = camera_info_msg.k[0] 
+    data.source.pinhole.intrinsics.principal_point.x = camera_info_msg.k[2] 
+    data.source.pinhole.intrinsics.focal_length.y = camera_info_msg.k[4] 
+    data.source.pinhole.intrinsics.principal_point.y = camera_info_msg.k[5] 
+
+    #  Transform tree info
+    for tf in tf_msg.transforms:
+        transform = data.shot.transforms_snapshot.child_to_parent_edge_map[tf.child_frame_id]
+        transform.parent_frame_name = tf.header.frame_id
+        transform.parent_tform_child.position.x = tf.transform.translation.x
+        transform.parent_tform_child.position.y = tf.transform.translation.y
+        transform.parent_tform_child.position.z = tf.transform.translation.z
+        transform.parent_tform_child.rotation.x = tf.transform.rotation.x
+        transform.parent_tform_child.rotation.y = tf.transform.rotation.y
+        transform.parent_tform_child.rotation.z = tf.transform.rotation.z
+        transform.parent_tform_child.rotation.w = tf.transform.rotation.w
+
+    return data
