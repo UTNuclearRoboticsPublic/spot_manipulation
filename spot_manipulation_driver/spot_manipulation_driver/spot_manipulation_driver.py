@@ -255,8 +255,10 @@ class SpotManipulationDriver(object):
         end_index = len(traj_point_positions) - 1
         position = traj_point_positions[end_index]
         robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(position)
-        self._lease_manager.robot_command(robot_cmd)
+        success, msg, _ = self._lease_manager.robot_command(robot_cmd)
         time.sleep(time_since_ref[end_index])
+
+        return success
 
     def body_manipulation_trajectory_executor(
             self, body_trajectory: List[SE3Pose], arm_trajectory: List[List[float]], timestamps: List[float]
