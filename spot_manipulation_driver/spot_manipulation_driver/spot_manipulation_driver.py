@@ -35,7 +35,7 @@ from typing import Text, Tuple, List
 
 from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
                         robot_command_pb2, robot_state_pb2, trajectory_pb2,
-                        synchronized_command_pb2, basic_command_pb2)
+                        synchronized_command_pb2, basic_command_pb2, geometry_pb2, manipulation_api_pb2)
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.api.spot.robot_command_pb2 import BodyControlParams
 from bosdyn.api.robot_command_pb2 import RobotCommandFeedbackResponse
@@ -54,6 +54,7 @@ from google.protobuf import duration_pb2, timestamp_pb2
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from .trajectory_manager import TrajectoryManager
+from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
@@ -434,6 +435,106 @@ class SpotManipulationDriver(object):
 
             time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
             traj_index = traj_index + 1
+
+    def image_to_grasp(self, image, pixel_coordinates):
+
+        # Filling out grasping request
+        pick_vec = geometry_pb2.Vec2(x=pixel_coordinates[0], y=pixel_coordinates[1])
+        grasp = manipulation_api_pb2.PickObjectInImage(
+            pixel_xy=pick_vec,
+            transforms_snapshot_for_camera=image.shot.transforms_snapshot,
+            frame_name_image_sensor=image.shot.frame_name_image_sensor,
+            camera_model=image.source.pinhole,
+        )
+        grasp.grasp_params.grasp_palm_to_fingertip = (
+            0.6
+        )  # might need to adjust for object size
+
+        # Specify top-down grasp
+
+        # Add a constraint that requests that the x-axis of the gripper is pointing in the
+        # negative-z direction in the vision frame.
+
+        # The axis on the gripper is the x-axis.
+        axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0)
+
+        # The axis in the vision frame is the negative z-axis
+        axis_to_align_with_ewrt_vision = geometry_pb2.Vec3(x=0, y=0, z=-1)
+
+        # Add the vector constraint to our proto.
+        constraint = grasp.grasp_params.allowable_orientation.add()
+        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
+            axis_on_gripper_ewrt_gripper
+        )
+        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
+            axis_to_align_with_ewrt_vision
+        )
+
+        # Tolerance for top-down grasp
+        constraint.vector_alignment_with_tolerance.threshold_radians = 1.22
+
+        # Specify the frame we're using.
+        grasp.grasp_params.grasp_params_frame_name = frame_helpers.VISION_FRAME_NAME
+
+        # Build the proto
+        grasp_request = manipulation_api_pb2.ManipulationApiRequest(
+            pick_object_in_image=grasp
+        )
+
+        # Send the request
+        self._lease_manager.robot.logger.info("Sending grasp request.")
+        cmd_response = self._manipulation_api_client.manipulation_api_command(
+            manipulation_api_request=grasp_request
+        )
+        # Wait for the grasp to finish
+        grasp_done = False
+        failed = False
+        time_start = time.time()
+        while not grasp_done:
+            feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
+                manipulation_cmd_id=cmd_response.manipulation_cmd_id
+            )
+
+            # Send a request for feedback
+            response = self._manipulation_api_client.manipulation_api_feedback_command(
+                manipulation_api_feedback_request=feedback_request
+            )
+
+            current_state = response.current_state
+            current_time = time.time() - time_start
+
+            self._lease_manager.robot.logger.info(
+                "Current state ({time:.1f} sec): {state}".format(
+                    time=current_time,
+                    state=ManipulationFeedbackState.Name(current_state),
+                )
+            )
+            failed_states = [
+                manipulation_api_pb2.MANIP_STATE_GRASP_FAILED,
+                manipulation_api_pb2.MANIP_STATE_GRASP_PLANNING_NO_SOLUTION,
+                manipulation_api_pb2.MANIP_STATE_GRASP_FAILED_TO_RAYCAST_INTO_MAP,
+                manipulation_api_pb2.MANIP_STATE_GRASP_PLANNING_WAITING_DATA_AT_EDGE,
+            ]
+
+            failed = current_state in failed_states
+            grasp_done = (
+                current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED
+                or failed
+            )
+
+            time.sleep(0.1)
+
+        holding_trash = not failed
+
+        # Move the arm to a carry position.
+        self._lease_manager.robot.logger.info("Grasp succeeded.")
+        self._lease_manager.robot.logger.info("Going to carry pose.")
+        carry_cmd = RobotCommandBuilder.arm_carry_command()
+        self._lease_manager.robot_command(carry_cmd)
+
+        time.sleep(0.75) # Wait for the carry command to finish
+        return holding_trash
+
 
     def ee_velocity_msg_executor(
         self, request: arm_command_pb2.ArmVelocityCommand.Request
