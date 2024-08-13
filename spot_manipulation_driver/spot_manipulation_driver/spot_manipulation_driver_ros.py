@@ -45,6 +45,7 @@ from sensor_msgs.msg import CameraInfo, Image, JointState
 from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
 from spot_msgs.srv import GripperAngleMove
+from spot_msgs.action import ImageToGrasp
 from control_msgs.action import FollowJointTrajectory
 
 import spot_manipulation_driver.ros_helpers as ros_helpers
@@ -118,6 +119,9 @@ class SpotManipulationDriverROS(Node):
         self.finger_feedback = FollowJointTrajectory.Feedback()
         self.finger_result = FollowJointTrajectory.Result()
         self.finger_feedback_publish_flag = False
+
+        # Image_to_grasp-related attributes
+        self.image_to_grasp_result = ImageToGrasp.Result()
 
     def connect(self, lease_manager: SpotLeaseManager) -> bool:
         self.get_logger().info("Connecting manipulation driver")
@@ -217,6 +221,14 @@ class SpotManipulationDriverROS(Node):
             callback_group=motion_callback_group
         )
 
+        self.image_to_grasp_action_server = ActionServer(
+            self,
+            ImageToGrasp,
+            "image_to_grasp",
+            self.image_to_grasp_goal_callback,
+            callback_group=motion_callback_group,
+        )
+
         # Create timers to update the async tasks for publishing
         update_group = rclpy.callback_groups.ReentrantCallbackGroup()
         self.create_timer(
@@ -265,6 +277,10 @@ class SpotManipulationDriverROS(Node):
         if success:
             goal_handle.succeed()
             self.get_logger().info("Successfully executed arm trajectory")
+        else:
+            goal_handle.abort()
+            self.get_logger().info("arm_controller/follow_joint_trajectory action server goal aborted")
+
         return self.arm_result
 
     def finger_goal_callback(self, goal_handle):
@@ -296,7 +312,7 @@ class SpotManipulationDriverROS(Node):
         )
         finger_feedback_thread.start()
 
-        SpotManipulationDriver.gripper_trajectory_executor(
+        success = self.manipulation_driver.gripper_trajectory_executor(
             self, traj_point_positions, time_since_ref
         )
 
@@ -306,6 +322,10 @@ class SpotManipulationDriverROS(Node):
         if success:
             goal_handle.succeed()
             self.get_logger().info("Successfully executed finger trajectory")
+        else:
+            goal_handle.abort()
+            self.get_logger().info("finger_controller/follow_joint_trajectory action server goal aborted")
+
         return self.finger_result
     
     def body_manipulation_callback(self, goal_handle: ServerGoalHandle) -> FollowJointTrajectory.Result:
@@ -346,6 +366,23 @@ class SpotManipulationDriverROS(Node):
             error_string = "Exception occured"
 
         return FollowJointTrajectory.Result(error_code=error_code, error_string=error_string)
+
+    def image_to_grasp_goal_callback(self, goal_handle):
+        """Callback for the /image_to_grasp action server """
+
+        self.get_logger().info(
+            "Executing goal for the /image_to_grasp action server"
+        )
+        success = False
+        success = self.manipulation_driver.image_to_grasp(goal_handle.request.image, goal_handle.request.camera_info, goal_handle.request.tf_msg, goal_handle.request.pixel_coordinates)
+        if success:
+            goal_handle.succeed()
+            self.get_logger().info("Successfully executed image_to_grasp goal")
+        else:
+            goal_handle.abort()
+            self.get_logger().info("image_to_grasp action server goal aborted")
+        return self.img2grasp_result
+
         
     def arm_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for arm action server"""
