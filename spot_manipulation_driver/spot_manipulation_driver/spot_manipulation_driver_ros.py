@@ -107,6 +107,16 @@ class SpotManipulationDriverROS(Node):
             ),
         )
 
+        self.declare_parameter(
+            "action_namespace",
+            "",
+            ParameterDescriptor(
+                description="Namespace for the action servers. Temporary fix until remppaing is added to action servers (https://github.com/ros2/rcl/pull/1170)",
+                type=ParameterType.PARAMETER_STRING,
+                read_only=True
+            )
+        )
+
         # --- Initialize action messages --- #
 
         # Arm-related attributes
@@ -192,11 +202,14 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/stand"          , self.stand_service_callback        , callback_group=motion_callback_group)
         self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
 
+        # Handle manual action namespace 
+        action_ns = self.get_parameter('action_namespace').value
+
         # Initialize action servers
         self.arm_action_server = ActionServer(
             self,
             FollowJointTrajectory,
-            "/arm_controller/follow_joint_trajectory",
+            f"{action_ns}/arm_controller/follow_joint_trajectory",
             self.arm_goal_callback,
             callback_group=motion_callback_group,
         )
@@ -204,7 +217,7 @@ class SpotManipulationDriverROS(Node):
         self.finger_action_server = ActionServer(
             self,
             FollowJointTrajectory,
-            "/finger_controller/follow_joint_trajectory",
+            f"{action_ns}/finger_controller/follow_joint_trajectory",
             self.finger_goal_callback,
             callback_group=gripper_callback_group,
         )
@@ -212,7 +225,7 @@ class SpotManipulationDriverROS(Node):
         self.body_manipulation_action_server = ActionServer(
             self,
             FollowJointTrajectory,
-            "/body_manipulation_controller/follow_joint_trajectory",
+            f"{action_ns}/body_manipulation_controller/follow_joint_trajectory",
             self.body_manipulation_callback,
             callback_group=motion_callback_group
         )
