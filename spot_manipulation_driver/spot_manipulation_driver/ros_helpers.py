@@ -2,8 +2,9 @@ import numpy as np
 from typing import Tuple, List
 from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2, image_pb2
 from bosdyn.client.math_helpers import SE3Pose, Quat
+from bosdyn.client.frame_helpers import ODOM_FRAME_NAME, HAND_FRAME_NAME, get_a_tform_b
 from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped, Vector3, WrenchStamped
 from google.protobuf import timestamp_pb2
 from spot_msgs.msg import ManipulatorState
 from sensor_msgs.msg import Image, CameraInfo
@@ -182,6 +183,53 @@ def get_joint_state_feedback(
         feedback.actual.effort.append(joint.load.value)
     return feedback
 
+def vec3_to_vector3(vector3_proto: geometry_pb2.Vec3) -> Vector3:
+    return Vector3(x=vector3_proto.x, y=vector3_proto.y, z=vector3_proto.z)
+
+def se3_velocity_to_twist(se3_velocity: geometry_pb2.SE3Velocity) -> Twist:
+    """Converts an SE3Velocity to a geometry_msgs Twist"""
+    return Twist(
+        linear=vec3_to_vector3(se3_velocity.linear),
+        angular=vec3_to_vector3(se3_velocity.angular)
+    )
+
+def manipulator_state_to_wrench(
+    manipulator_state: robot_state_pb2.ManipulatorState, driver: SpotManipulationDriver
+) -> WrenchStamped:
+    """Converts a manipultor state estimated force in hand to a WrenchStamped message
+
+    Args:
+        manipulator_state: ManipulatorState proto
+        driver: A SpotManipulationDriver object to access robot time and state
+    Returns:
+        geometry_msgs/msg/WrenchStamped ROS message
+    """
+    stamp = driver.lease_manager.robotToLocalTime(driver.robot_time)
+    wrench = WrenchStamped()
+    wrench.header.frame_id = HAND_FRAME_NAME
+    wrench.header.stamp = rclpy.time.Time(nanoseconds=stamp.ToNanoseconds()).to_msg()
+    wrench.wrench.force = vec3_to_vector3(manipulator_state.estimated_end_effector_force_in_hand)
+    return wrench
+
+def manipulator_state_to_twist(
+    manipulator_state: robot_state_pb2.ManipulatorState, driver: SpotManipulationDriver
+) -> TwistStamped:
+    """Converts a manipultor state velocity in odom to a TwistStamped message
+
+    Args:
+        manipulator_state: ManipulatorState proto
+        driver: A SpotManipulationDriver object to access robot time and state
+    Returns:
+        geometry_msgs/msg/TwistStamped ROS message
+    """
+    stamp = driver.lease_manager.robotToLocalTime(driver.robot_time)
+    twist = TwistStamped()
+    twist.header.frame_id = HAND_FRAME_NAME
+    twist.header.stamp = rclpy.time.Time(nanoseconds=stamp.ToNanoseconds()).to_msg()
+    hand_tform_odom = get_a_tform_b(driver.kinematic_state.transforms_snapshot, HAND_FRAME_NAME, ODOM_FRAME_NAME)
+    twist.twist.linear = vec3_to_vector3(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.linear))
+    twist.twist.angular = vec3_to_vector3(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.angular))
+    return twist
 
 def manipulator_state_to_msg(
     manipulator_state: robot_state_pb2.ManipulatorState, driver: SpotManipulationDriver
@@ -200,31 +248,23 @@ def manipulator_state_to_msg(
     if manipulator_state is None:
         return ManipulatorState()
     manipulator_state_msg = ManipulatorState()
-    manipulator_state_msg.gripper_open_percentage = (
-        manipulator_state.gripper_open_percentage
-    )
-    manipulator_state_msg.is_gripper_holding_item = (
-        manipulator_state.is_gripper_holding_item
-    )
-    manipulator_state_msg.estimated_end_effector_force_in_hand.header.frame_id = (
-        "arm0_hand"
-    )
-    manipulator_state_msg.estimated_end_effector_force_in_hand.header.stamp = (
-        ros_stamp.to_msg()
-    )
-    manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force.x = (
-        manipulator_state.estimated_end_effector_force_in_hand.x
-    )
-    manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force.y = (
-        manipulator_state.estimated_end_effector_force_in_hand.y
-    )
-    manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force.z = (
-        manipulator_state.estimated_end_effector_force_in_hand.z
-    )
-    manipulator_state_msg.stow_state = manipulator_state.stow_state
-    # manipulator_state_msg.velocity_of_hand_in_vision = manipulator_state.velocity_of_hand_in_vision
-    # manipulator_state_msg.velocity_of_hand_in_odom = manipulator_state.velocity_of_hand_in_odom
+    manipulator_state_msg.gripper_open_percentage = manipulator_state.gripper_open_percentage
+    manipulator_state_msg.is_gripper_holding_item = manipulator_state.is_gripper_holding_item
+
+    manipulator_state_msg.stow_state  = manipulator_state.stow_state
     manipulator_state_msg.carry_state = manipulator_state.carry_state
+    
+    manipulator_state_msg.estimated_end_effector_force_in_hand.header.frame_id = "arm0_hand"
+    manipulator_state_msg.estimated_end_effector_force_in_hand.header.stamp = ros_stamp.to_msg()
+    manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force = vec3_to_vector3(manipulator_state.estimated_end_effector_force_in_hand)
+
+    # manipulator_state_msg.velocity_of_hand_in_vision = manipulator_state.velocity_of_hand_in_vision
+    hand_tform_odom = get_a_tform_b(driver.kinematic_state.transforms_snapshot, HAND_FRAME_NAME, ODOM_FRAME_NAME)
+    manipulator_state_msg.velocity_of_hand_in_odom.twist.linear = vec3_to_vector3(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.linear))
+    manipulator_state_msg.velocity_of_hand_in_odom.twist.angular = vec3_to_vector3(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.angular))
+    manipulator_state_msg.velocity_of_hand_in_odom.header.frame_id = HAND_FRAME_NAME
+    manipulator_state_msg.velocity_of_hand_in_odom.header.stamp = ros_stamp.to_msg()
+    
     return manipulator_state_msg
 
 def img_msg_to_proto(image_msg: Image, camera_info: CameraInfo, tf_msg: TFMessage, driver: SpotManipulationDriver) -> image_pb2.ImageResponse:

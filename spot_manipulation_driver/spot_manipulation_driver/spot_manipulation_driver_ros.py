@@ -31,22 +31,26 @@
 ##############################################################################
 
 import time
+import math
 import threading
 
 import rclpy
 import rclpy.callback_groups
+from rclpy.time import Time, CONVERSION_CONSTANT
 from rclpy.node import Node
 from rclpy.action import ActionServer
 from rclpy.action.server import ServerGoalHandle
 from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, ParameterType
 
-from spot_msgs.msg import ManipulatorState
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
+from spot_msgs.msg import ManipulatorCarryState, ManipulatorStowState
 from spot_msgs.srv import GripperAngleMove
 from spot_msgs.action import ImageToGrasp
 from control_msgs.action import FollowJointTrajectory
+from std_msgs.msg import Float32, Bool, Header
+from geometry_msgs.msg import WrenchStamped, Vector3
 
 import spot_manipulation_driver.ros_helpers as ros_helpers
 from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg
@@ -60,6 +64,13 @@ class SpotManipulationDriverROS(Node):
         Node.__init__(self, "spot_manipulation_driver")
 
         self.manipulation_driver: SpotManipulationDriver = None
+        self._last_gripper_velocity = TwistStamped(
+            header=Header(
+                frame_id="hand", 
+                stamp=self.get_clock().now().to_msg()
+            )
+        )
+        self._recorded_collision_window = [False, False, False]
 
         # Declare ROS parameters
         self.declare_parameter(
@@ -164,7 +175,7 @@ class SpotManipulationDriverROS(Node):
         motion_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
         gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
 
-        # Create data publishers and subscribers
+        # Create image publishers
         self._hand_image_pub             = self.create_publisher(Image           , "~/rgb/tof/image"           , 10)
         self._hand_depth_map_pub         = self.create_publisher(Image           , "~/depth/tof/image"         , 10)
         self._hand_4k_image_pub          = self.create_publisher(Image           , "~/rgb/camera/image"        , 10)
@@ -173,12 +184,19 @@ class SpotManipulationDriverROS(Node):
         self._hand_depth_map_info_pub    = self.create_publisher(CameraInfo      , "~/depth/tof/camera_info"   , 10)
         self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/rgb/camera/camera_info"  , 10)
         self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/depth/camera/camera_info", 10)
-        self._manipulator_state_pub      = self.create_publisher(ManipulatorState, "~/manipulator_state"       , 10)
 
-        self._joint_state_pub = self.create_publisher(
-            JointState, "/joint_states", 10
-        )
+        # Create data publishers
+        self._arm_wrench_pub = self.create_publisher(WrenchStamped        , "~/manipulator_state/wrench"                  , 10)
+        self._arm_vel_pub    = self.create_publisher(TwistStamped         , "~/manipulator_state/velocity"                , 10)
+        self._carry_pub      = self.create_publisher(ManipulatorCarryState, "~/manipulator_state/carry_state"             , 10)
+        self._stow_pub       = self.create_publisher(ManipulatorStowState , "~/manipulator_state/stow_state"              , 10)
+        self._gripper_pub    = self.create_publisher(Float32              , "~/manipulator_state/gripper_open_percentage" , 10)
+        self._holding_pub    = self.create_publisher(Bool                 , "~/manipulator_state/is_gripper_carrying_item", 10)
+        self._collision_pub  = self.create_publisher(Bool                 , "~/manipulator_state/is_hand_in_collision"    , 10)
 
+        self._joint_state_pub = self.create_publisher(JointState, "/joint_states", 10)
+
+        # Command subscriptions
         self.ee_vel_sub = self.create_subscription(
             Twist,
             "~/cmd_vel",
@@ -438,10 +456,44 @@ class SpotManipulationDriverROS(Node):
         state = self.manipulation_driver.arm_state
         if state is None:
             return
-        state_msg = ros_helpers.manipulator_state_to_msg(
-            state, self.manipulation_driver
-        )
-        self._manipulator_state_pub.publish(state_msg)
+
+        arm_force: WrenchStamped = ros_helpers.manipulator_state_to_wrench(state, self.manipulation_driver)
+        arm_vel  : TwistStamped  = ros_helpers.manipulator_state_to_twist(state, self.manipulation_driver)
+
+        self._arm_wrench_pub.publish(arm_force)
+        self._arm_vel_pub.publish(arm_vel)
+        self._gripper_pub.publish(Float32(data=state.gripper_open_percentage))
+        self._carry_pub.publish(ManipulatorCarryState(state=state.carry_state))
+        self._stow_pub.publish(ManipulatorStowState(state=state.stow_state))
+        self._holding_pub.publish(Bool(data=state.is_gripper_holding_item))
+
+        # Calculate the collision state
+        dt_ros = self.get_clock().now() - Time.from_msg(self._last_gripper_velocity.header.stamp)
+        dt_sec = dt_ros.nanoseconds / CONVERSION_CONSTANT
+        arm_acc = Vector3()
+        arm_acc.x = (arm_vel.twist.linear.x - self._last_gripper_velocity.twist.linear.x)/dt_sec
+        arm_acc.y = (arm_vel.twist.linear.y - self._last_gripper_velocity.twist.linear.y)/dt_sec
+        arm_acc.z = (arm_vel.twist.linear.z - self._last_gripper_velocity.twist.linear.z)/dt_sec
+        self._last_gripper_velocity = arm_vel
+
+        force = state.estimated_end_effector_force_in_hand
+        arm_abs_acc = math.sqrt(arm_acc.x**2 + arm_acc.y**2 + arm_acc.z**2)
+        arm_abs_force = math.sqrt(force.x**2 + force.y**2 + force.z**2)
+
+        # These values were decided through trial and error. They're probably not great
+        if state.stow_state != ManipulatorStowState.STOWSTATE_DEPLOYED:
+            collision_state = False
+        elif arm_abs_acc < 1.0:
+            collision_state = arm_abs_force > 5
+        elif arm_abs_acc < 2.0:
+            collision_state = arm_abs_force > 15
+        else:
+            collision_state = arm_abs_force > 35
+        self._recorded_collision_window[1::] = self._recorded_collision_window[0:-1]
+        self._recorded_collision_window[0] = collision_state
+
+        self._collision_pub.publish(Bool(data=all(self._recorded_collision_window)))
+
 
     def claim_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.claim()
