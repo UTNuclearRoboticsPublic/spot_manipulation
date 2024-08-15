@@ -44,7 +44,7 @@ from bosdyn.api.mobility_command_pb2 import MobilityCommand
 from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand
 from bosdyn.client.image import ImageClient, build_image_request
 from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME,
-                                        GRAV_ALIGNED_BODY_FRAME_NAME, get_a_tform_b)
+                                        GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.math_helpers import SE3Pose
 from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
                                          RobotCommandBuilder, TimedOutError,
@@ -54,6 +54,7 @@ from bosdyn.util import seconds_to_timestamp, seconds_to_duration
 from google.protobuf import duration_pb2, timestamp_pb2
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
+from spot_driver.type_hint_helpers import *
 from .trajectory_manager import TrajectoryManager
 from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
@@ -140,13 +141,13 @@ class SpotManipulationDriver(object):
         return self._robot_state_task.proto
 
     @property
-    def kinematic_state(self) -> robot_state_pb2.KinematicState:
+    def kinematic_state(self) -> KinematicStateProto:
         if self._robot_state_task.proto is None:
             return None
         return self._robot_state_task.proto.kinematic_state
 
     @property
-    def arm_state(self) -> robot_state_pb2.ManipulatorState:
+    def arm_state(self) -> ManipulatorStateProto:
         if self._robot_state_task.proto is None:
             return None
         return self._robot_state_task.proto.manipulator_state
@@ -481,7 +482,7 @@ class SpotManipulationDriver(object):
         constraint.vector_alignment_with_tolerance.threshold_radians = 1.22
 
         # Specify the frame we're using.
-        grasp.grasp_params.grasp_params_frame_name = frame_helpers.VISION_FRAME_NAME
+        grasp.grasp_params.grasp_params_frame_name = VISION_FRAME_NAME
 
         # Build the proto
         grasp_request = manipulation_api_pb2.ManipulationApiRequest(
@@ -513,7 +514,7 @@ class SpotManipulationDriver(object):
             self._lease_manager.robot.logger.info(
                 "Current state ({time:.1f} sec): {state}".format(
                     time=current_time,
-                    state=ManipulationFeedbackState.Name(current_state),
+                    state=manipulation_api_pb2.ManipulationFeedbackState.Name(current_state),
                 )
             )
             failed_states = [
@@ -544,7 +545,7 @@ class SpotManipulationDriver(object):
 
 
     def ee_velocity_msg_executor(
-        self, request: arm_command_pb2.ArmVelocityCommand.Request
+        self, request: ArmVelocityCommandProto.Request
     ) -> Tuple[bool, Text]:
 
         arm_command = arm_command_pb2.ArmCommand.Request(arm_velocity_command=request)
@@ -559,7 +560,7 @@ class SpotManipulationDriver(object):
         return success, msg
     
     def arm_cartesian_command(
-        self, cartesian_command: arm_command_pb2.ArmCartesianCommand, timeout: float | None = None
+        self, cartesian_command: ArmCartesianCommandProto, timeout: float | None = None
     ) -> Tuple[bool, Text, int]:
         """Command the arm end effector to move a certain offset from its current position
         

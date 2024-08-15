@@ -19,6 +19,7 @@ import rclpy.time
 
 from .spot_manipulation_driver import SpotManipulationDriver
 from spot_driver import ros_helpers
+from spot_driver.type_hint_helpers import *
 
 joint_order_9DoF = [
     "body_height_joint",
@@ -33,14 +34,14 @@ joint_order_9DoF = [
     "arm0_wrist_roll",
 ]
 
-def MsgToWrench(wrench_msg: Wrench) -> geometry_pb2.Wrench:
+def MsgToWrench(wrench_msg: Wrench) -> WrenchProto:
     """Convert geometry_msgs.msg.Wrench to geometry_pb2.Wrench"""
     return geometry_pb2.Wrench(
         force=ros_helpers.MsgToVec3(wrench_msg.force),
         torque=ros_helpers.MsgToVec3(wrench_msg.torque)
     )
 
-def WrenchToMsg(wrench_proto: geometry_pb2.Wrench) -> Wrench:
+def WrenchToMsg(wrench_proto: WrenchProto) -> Wrench:
     """Convert geometry_pb2.Wrench to geometry_msgs.msg.Wrench"""
     return Wrench(
         force=ros_helpers.Vec3ToMsg(wrench_proto.force),
@@ -141,7 +142,7 @@ def twist_to_vel_request(
     linear_lims: "list[float]" = [-1e9, 1e9],
     angular_lims: "list[float]" = [-1e9, 1e9],
     robot_frame="body",
-) -> arm_command_pb2.ArmVelocityCommand.Request:
+) -> ArmVelocityCommandProto.Request:
 
     # Enforce velocity limits
     linear_vel = np.clip(
@@ -203,7 +204,7 @@ def get_joint_state_feedback(
     return feedback
 
 def manipulator_state_to_wrench(
-    manipulator_state: robot_state_pb2.ManipulatorState, driver: SpotManipulationDriver
+    manipulator_state: ManipulatorStateProto, driver: SpotManipulationDriver
 ) -> WrenchStamped:
     """Converts a manipultor state estimated force in hand to a WrenchStamped message
 
@@ -221,7 +222,7 @@ def manipulator_state_to_wrench(
     return wrench
 
 def manipulator_state_to_twist(
-    manipulator_state: robot_state_pb2.ManipulatorState, driver: SpotManipulationDriver
+    manipulator_state: ManipulatorStateProto, driver: SpotManipulationDriver
 ) -> TwistStamped:
     """Converts a manipultor state velocity in odom to a TwistStamped message
 
@@ -241,7 +242,7 @@ def manipulator_state_to_twist(
     return twist
 
 def manipulator_state_to_msg(
-    manipulator_state: robot_state_pb2.ManipulatorState, driver: SpotManipulationDriver
+    manipulator_state: ManipulatorStateProto, driver: SpotManipulationDriver
 ) -> ManipulatorState:
     """Maps manipulator state data from robot state proto to ROS ManipulatorState message
 
@@ -276,7 +277,7 @@ def manipulator_state_to_msg(
     
     return manipulator_state_msg
 
-def img_msg_to_proto(image_msg: Image, camera_info_msg: CameraInfo, tf_msg: TFMessage, driver: SpotManipulationDriver) -> image_pb2.ImageResponse:
+def img_msg_to_proto(image_msg: Image, camera_info_msg: CameraInfo, tf_msg: TFMessage, driver: SpotManipulationDriver) -> ImageResponseProto:
     """Takes a ROS Image, CameraInfo, and TF tree representing important transforms for a camera, and populates the corresponding image proto message 
 
     Assumptions:
@@ -291,7 +292,7 @@ def img_msg_to_proto(image_msg: Image, camera_info_msg: CameraInfo, tf_msg: TFMe
 
     # Basic image info
     data = image_pb2.ImageResponse() 
-    data.shot.acquisition_time = drive._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(image_msg.header.stamp.seconds)
+    data.shot.acquisition_time = driver._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(image_msg.header.stamp.seconds)
     data.shot.frame_name_image_sensor = image_msg.header.frame_id
     data.shot.image.rows = image_msg.height
     data.shot.image.cols = image_msg.width
@@ -322,7 +323,7 @@ def img_msg_to_proto(image_msg: Image, camera_info_msg: CameraInfo, tf_msg: TFMe
 
     return data
 
-def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffer) -> arm_command_pb2.ArmCartesianCommand:
+def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffer) -> ArmCartesianCommandProto:
 
     odom_tform_task = tf_buffer.lookup_transform(ODOM_FRAME_NAME, msg.header.frame_id, rclpy.time.Time.from_msg(msg.header.stamp), rclpy.time.Duration(seconds=1.0))
     ref_time = timestamp_pb2.Timestamp().GetCurrentTime()
