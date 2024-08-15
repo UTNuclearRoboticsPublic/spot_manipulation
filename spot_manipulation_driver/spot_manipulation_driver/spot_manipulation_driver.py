@@ -31,6 +31,7 @@
 ##############################################################################
 
 import time
+import threading
 from typing import Text, Tuple, List
 
 from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
@@ -200,8 +201,8 @@ class SpotManipulationDriver(object):
 
     # Execute long trajectories
     def arm_long_trajectory_executor(
-        self, traj_point_positions, traj_point_velocities, timepoints
-    ):
+        self, traj_point_positions, traj_point_velocities, timepoints, cancel_event: threading.Event
+    ) -> None:
 
         # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
         try:
@@ -224,6 +225,11 @@ class SpotManipulationDriver(object):
         )
 
         while not arm_trajectory_manager.done():
+            if cancel_event.is_set():
+                self._lease_manager.robot_command(RobotCommandBuilder.stop_command())
+                self._logger.info("Arm trajectory action cancelled early. Stopping robot")
+                return False
+            
             window, timestamps, sleep_time = arm_trajectory_manager.get_window(MAX_ARM_POINTS)
 
             robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
@@ -242,6 +248,7 @@ class SpotManipulationDriver(object):
                 time.sleep(sleep_time)
             else:
                 time.sleep(max(sleep_time - 0.2, 0))
+        self._logger.info("Successfully executed arm trajectory")
         return True
 
     def gripper_trajectory_executor(self, traj_point_positions, time_since_ref):

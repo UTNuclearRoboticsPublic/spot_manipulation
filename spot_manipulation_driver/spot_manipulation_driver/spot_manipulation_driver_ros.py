@@ -38,7 +38,7 @@ import rclpy
 import rclpy.callback_groups
 from rclpy.time import Time, CONVERSION_CONSTANT
 from rclpy.node import Node
-from rclpy.action import ActionServer
+from rclpy.action import ActionServer, CancelResponse
 from rclpy.action.server import ServerGoalHandle
 from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, ParameterType
 
@@ -71,6 +71,8 @@ class SpotManipulationDriverROS(Node):
             )
         )
         self._recorded_collision_window = [False, False, False]
+
+        self._arm_trajectory_cancel_event = threading.Event()
 
         # Declare ROS parameters
         self.declare_parameter(
@@ -134,7 +136,6 @@ class SpotManipulationDriverROS(Node):
         # Arm-related attributes
         self.arm_feedback = FollowJointTrajectory.Feedback()
         self.arm_result = FollowJointTrajectory.Result()
-        self.arm_feedback_publish_flag = False
 
         # Finger-related attributes
         self.finger_feedback = FollowJointTrajectory.Feedback()
@@ -234,6 +235,7 @@ class SpotManipulationDriverROS(Node):
             f"{action_ns}/arm_controller/follow_joint_trajectory",
             self.arm_goal_callback,
             callback_group=motion_callback_group,
+            cancel_callback=self.arm_goal_cancel_callback
         )
 
         self.finger_action_server = ActionServer(
@@ -274,43 +276,50 @@ class SpotManipulationDriverROS(Node):
         )
 
         return True
+    
+    def arm_goal_cancel_callback(self, cancel_request):
+        self._arm_trajectory_cancel_event.set()
+        return CancelResponse.ACCEPT
 
     def arm_goal_callback(self, goal_handle: ServerGoalHandle):
         """Callback for the /spot_arm/arm_controller/follow_joint_trajectory action server """
-
-        self.get_logger().info(
-            "D:Executing goal for the /spot_arm/arm_controller/follow_joint_trajectory action server"
-        )
-
-        success = False
 
         # Translate message and execute trajectory while publishing feedback
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
             goal_handle.request.trajectory
         )
 
-        self.arm_feedback_publish_flag = True
-        arm_feedback_thread = threading.Thread(
-            target=self.arm_follow_joint_trajectory_feedback, args=(goal_handle,)
-        )
-        arm_feedback_thread.start()
+        trajectory_success = False
 
-        try:
-            success = self.manipulation_driver.arm_long_trajectory_executor(
-                traj_point_positions, traj_point_velocities, timepoints
+        def execute_trajectory() -> None:
+            nonlocal trajectory_success
+            try:
+                trajectory_success = self.manipulation_driver.arm_long_trajectory_executor(
+                    traj_point_positions, traj_point_velocities, timepoints, self._arm_trajectory_cancel_event
+                ) 
+            except Exception as e:
+                self._logger.info(f"Error executing arm long trajectory: {e}")
+                return
+
+        arm_execution_thread = threading.Thread(target=execute_trajectory)
+        arm_execution_thread.start()
+        
+        rate = self.create_rate(10.0)
+        while arm_execution_thread.is_alive():
+            goal_handle.publish_feedback(
+                ros_helpers.get_joint_state_feedback(self.manipulation_driver)
             )
-        except Exception as e:
-            self._logger.info(f"Error executing arm long trajectory: {e}")
+            rate.sleep()
 
-        self.arm_feedback_publish_flag = False
-        arm_feedback_thread.join()
+        arm_execution_thread.join()
 
-        if success:
+        if self._arm_trajectory_cancel_event.is_set():
+            goal_handle.canceled()
+            self._arm_trajectory_cancel_event.clear()
+        elif trajectory_success:
             goal_handle.succeed()
-            self.get_logger().info("Successfully executed arm trajectory")
         else:
             goal_handle.abort()
-            self.get_logger().info("arm_controller/follow_joint_trajectory action server goal aborted")
 
         return self.arm_result
 
@@ -415,19 +424,6 @@ class SpotManipulationDriverROS(Node):
             self.get_logger().info("image_to_grasp action server goal aborted")
         return self.img2grasp_result
 
-        
-    def arm_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
-        """Feedback for arm action server"""
-        rate = self.create_rate(frequency=2.0, clock=self.get_clock())
-
-        # Publishes actual states of the joints
-        while self.arm_feedback_publish_flag:
-            self.arm_feedback = ros_helpers.get_joint_state_feedback(
-                self.manipulation_driver
-            )
-            goal_handle.publish_feedback(self.arm_feedback)
-            rate.sleep()
-
     def finger_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for finger action server"""
         # Publishes actual states of the joints
@@ -484,7 +480,7 @@ class SpotManipulationDriverROS(Node):
         if state.stow_state != ManipulatorStowState.STOWSTATE_DEPLOYED:
             collision_state = False
         elif arm_abs_acc < 1.0:
-            collision_state = arm_abs_force > 5
+            collision_state = arm_abs_force > 8
         elif arm_abs_acc < 2.0:
             collision_state = arm_abs_force > 15
         else:
