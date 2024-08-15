@@ -42,12 +42,15 @@ from rclpy.action import ActionServer, CancelResponse
 from rclpy.action.server import ServerGoalHandle
 from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, ParameterType
 
+import tf2_py
+from tf2_ros import Buffer, TransformListener
+
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
 from spot_msgs.msg import ManipulatorCarryState, ManipulatorStowState
 from spot_msgs.srv import GripperAngleMove
-from spot_msgs.action import ImageToGrasp
+from spot_msgs.action import ImageToGrasp, ArmCartesianCommand
 from control_msgs.action import FollowJointTrajectory
 from std_msgs.msg import Float32, Bool, Header
 from geometry_msgs.msg import WrenchStamped, Vector3
@@ -63,6 +66,9 @@ class SpotManipulationDriverROS(Node):
 
         Node.__init__(self, "spot_manipulation_driver")
 
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
         self.manipulation_driver: SpotManipulationDriver = None
         self._last_gripper_velocity = TwistStamped(
             header=Header(
@@ -73,6 +79,7 @@ class SpotManipulationDriverROS(Node):
         self._recorded_collision_window = [False, False, False]
 
         self._arm_trajectory_cancel_event = threading.Event()
+        self._arm_cartesian_command_cancel_event = threading.Event()
 
         # Declare ROS parameters
         self.declare_parameter(
@@ -262,6 +269,14 @@ class SpotManipulationDriverROS(Node):
             callback_group=motion_callback_group,
         )
 
+        self.hand_relative_move_action_server = ActionServer(
+            self,
+            ArmCartesianCommand,
+            "~/arm_cartesian_command",
+            self.arm_cartesian_command_callback,
+            callback_group=motion_callback_group
+        )
+
         # Create timers to update the async tasks for publishing
         update_group = rclpy.callback_groups.ReentrantCallbackGroup()
         self.create_timer(
@@ -406,6 +421,84 @@ class SpotManipulationDriverROS(Node):
             error_string = "Exception occured"
 
         return FollowJointTrajectory.Result(error_code=error_code, error_string=error_string)
+    
+    def arm_cartesian_command_cancel_callback(self, cancel_request):
+        self._arm_cartesian_command_cancel_event.set()
+        return CancelResponse.ACCEPT
+    
+    def arm_cartesian_command_callback(self, goal_handle: ServerGoalHandle) -> ArmCartesianCommand.Result:
+        """Callback for the spot_manipualtion_driver/arm_cartesian_command action server """
+
+        try:
+            robot_command = ros_helpers.cartesian_request_to_command(goal_handle.request, self.tf_buffer)
+            success, message, command_id = self.manipulation_driver.arm_cartesian_command(robot_command)
+            if not success:
+                self._logger.warn(f"Unable to execute arm cartesian command: {message}")
+                goal_handle.abort()
+                return ArmCartesianCommand.Result(success=False, message=message)
+        except tf2_py.LookupException as e:
+            self._logger.warn(f"Transform lookup error during arm cartesian command execution: {e}")
+            goal_handle.abort()
+            return ArmCartesianCommand.Result(success=False, message=str(e))
+        except Exception as e:
+            self._logger.info(f"Unknown error executing arm cartesian command: {e}")
+            goal_handle.abort()
+            return ArmCartesianCommand.Result(success=False, message=str(e))
+        
+        rate = self.create_rate(10.0)
+        response = ArmCartesianCommand.Result()
+        while True:
+            if self._arm_cartesian_command_cancel_event.is_set():
+                self.manipulation_driver.stop_robot()
+                response.success = False
+                response.message = "Cartesian command cancelled early, aborting movement"
+                goal_handle.canceled()
+                self._arm_cartesian_command_cancel_event.clear()
+                break
+
+            feedback = self.manipulation_driver.lease_manager.robot_command_feedback(command_id)
+            arm_feedback = feedback.feedback.synchronized_feedback.arm_command_feedback
+            if not arm_feedback.HasField("arm_cartesian_feedback"):
+                self.manipulation_driver.stop_robot()
+                response.success = False
+                response.message = "Feedback message was not filled out, presumably because the motion was preempted. Aborting movement"
+                goal_handle.abort()
+                break
+
+            elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_COMPLETE:
+                response.success = True
+                response.message = "Arm cartesian command completed successfully"
+                goal_handle.succeed()
+                break
+
+            elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_STALLED:
+                self.manipulation_driver.stop_robot()
+                response.success = False
+                response.message = "Unable to complete arm cartesian command, it has been stalled"
+                goal_handle.abort()
+                break
+
+            elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_CANCELLED:
+                self.manipulation_driver.stop_robot()
+                response.success = False
+                response.message = "Unable to complete arm cartesian command, it has been cancelled"
+                goal_handle.abort()
+                break
+
+            else:
+                ros_feedback = ArmCartesianCommand.Feedback()
+                ros_feedback.status = arm_feedback.arm_cartesian_feedback.status
+                ros_feedback.measured_pos_distance_to_goal = arm_feedback.arm_cartesian_feedback.measured_pos_distance_to_goal
+                ros_feedback.measured_rot_distance_to_goal = arm_feedback.arm_cartesian_feedback.measured_rot_distance_to_goal
+                ros_feedback.measured_pos_tracking_error   = arm_feedback.arm_cartesian_feedback.measured_pos_tracking_error  
+                ros_feedback.measured_rot_tracking_error   = arm_feedback.arm_cartesian_feedback.measured_rot_tracking_error  
+                goal_handle.publish_feedback(ros_feedback)
+
+            rate.sleep()
+
+        if not response.success:
+            self._logger.warn(response.message)
+        return response
 
     def image_to_grasp_goal_callback(self, goal_handle):
         """Callback for the /image_to_grasp action server """

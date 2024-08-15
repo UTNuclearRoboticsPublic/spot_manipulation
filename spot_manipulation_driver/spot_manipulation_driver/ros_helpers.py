@@ -1,12 +1,16 @@
 import numpy as np
+import rclpy.duration
+from tf2_ros import Buffer
 from typing import Tuple, List
-from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2, image_pb2
+from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2, image_pb2, trajectory_pb2
+from bosdyn.util import seconds_to_duration
 from bosdyn.client.math_helpers import SE3Pose, Quat
 from bosdyn.client.frame_helpers import ODOM_FRAME_NAME, HAND_FRAME_NAME, get_a_tform_b
 from control_msgs.action import FollowJointTrajectory
-from geometry_msgs.msg import Twist, TwistStamped, Vector3, WrenchStamped
+from geometry_msgs.msg import Twist, TwistStamped, WrenchStamped, Wrench
 from google.protobuf import timestamp_pb2
 from spot_msgs.msg import ManipulatorState
+from spot_msgs.action import ArmCartesianCommand
 from sensor_msgs.msg import Image, CameraInfo
 from tf2_msgs.msg import TFMessage
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -14,6 +18,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import rclpy.time
 
 from .spot_manipulation_driver import SpotManipulationDriver
+from spot_driver import ros_helpers
 
 joint_order_9DoF = [
     "body_height_joint",
@@ -27,6 +32,20 @@ joint_order_9DoF = [
     "arm0_wrist_pitch",
     "arm0_wrist_roll",
 ]
+
+def MsgToWrench(wrench_msg: Wrench) -> geometry_pb2.Wrench:
+    """Convert geometry_msgs.msg.Wrench to geometry_pb2.Wrench"""
+    return geometry_pb2.Wrench(
+        force=ros_helpers.MsgToVec3(wrench_msg.force),
+        torque=ros_helpers.MsgToVec3(wrench_msg.torque)
+    )
+
+def WrenchToMsg(wrench_proto: geometry_pb2.Wrench) -> Wrench:
+    """Convert geometry_pb2.Wrench to geometry_msgs.msg.Wrench"""
+    return Wrench(
+        force=ros_helpers.Vec3ToMsg(wrench_proto.force),
+        torque=ros_helpers.Vec3ToMsg(wrench_proto.torque)
+    )
 
 def joint_trajectory_to_lists(msg: JointTrajectory):
     traj_point_positions = []
@@ -183,16 +202,6 @@ def get_joint_state_feedback(
         feedback.actual.effort.append(joint.load.value)
     return feedback
 
-def vec3_to_vector3(vector3_proto: geometry_pb2.Vec3) -> Vector3:
-    return Vector3(x=vector3_proto.x, y=vector3_proto.y, z=vector3_proto.z)
-
-def se3_velocity_to_twist(se3_velocity: geometry_pb2.SE3Velocity) -> Twist:
-    """Converts an SE3Velocity to a geometry_msgs Twist"""
-    return Twist(
-        linear=vec3_to_vector3(se3_velocity.linear),
-        angular=vec3_to_vector3(se3_velocity.angular)
-    )
-
 def manipulator_state_to_wrench(
     manipulator_state: robot_state_pb2.ManipulatorState, driver: SpotManipulationDriver
 ) -> WrenchStamped:
@@ -208,7 +217,7 @@ def manipulator_state_to_wrench(
     wrench = WrenchStamped()
     wrench.header.frame_id = HAND_FRAME_NAME
     wrench.header.stamp = rclpy.time.Time(nanoseconds=stamp.ToNanoseconds()).to_msg()
-    wrench.wrench.force = vec3_to_vector3(manipulator_state.estimated_end_effector_force_in_hand)
+    wrench.wrench.force = ros_helpers.Vec3ToMsg(manipulator_state.estimated_end_effector_force_in_hand)
     return wrench
 
 def manipulator_state_to_twist(
@@ -227,8 +236,8 @@ def manipulator_state_to_twist(
     twist.header.frame_id = HAND_FRAME_NAME
     twist.header.stamp = rclpy.time.Time(nanoseconds=stamp.ToNanoseconds()).to_msg()
     hand_tform_odom = get_a_tform_b(driver.kinematic_state.transforms_snapshot, HAND_FRAME_NAME, ODOM_FRAME_NAME)
-    twist.twist.linear = vec3_to_vector3(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.linear))
-    twist.twist.angular = vec3_to_vector3(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.angular))
+    twist.twist.linear = ros_helpers.Vec3ToMsg(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.linear))
+    twist.twist.angular = ros_helpers.Vec3ToMsg(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.angular))
     return twist
 
 def manipulator_state_to_msg(
@@ -256,18 +265,18 @@ def manipulator_state_to_msg(
     
     manipulator_state_msg.estimated_end_effector_force_in_hand.header.frame_id = "arm0_hand"
     manipulator_state_msg.estimated_end_effector_force_in_hand.header.stamp = ros_stamp.to_msg()
-    manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force = vec3_to_vector3(manipulator_state.estimated_end_effector_force_in_hand)
+    manipulator_state_msg.estimated_end_effector_force_in_hand.wrench.force = ros_helpers.Vec3ToMsg(manipulator_state.estimated_end_effector_force_in_hand)
 
     # manipulator_state_msg.velocity_of_hand_in_vision = manipulator_state.velocity_of_hand_in_vision
     hand_tform_odom = get_a_tform_b(driver.kinematic_state.transforms_snapshot, HAND_FRAME_NAME, ODOM_FRAME_NAME)
-    manipulator_state_msg.velocity_of_hand_in_odom.twist.linear = vec3_to_vector3(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.linear))
-    manipulator_state_msg.velocity_of_hand_in_odom.twist.angular = vec3_to_vector3(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.angular))
+    manipulator_state_msg.velocity_of_hand_in_odom.twist.linear = ros_helpers.Vec3ToMsg(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.linear))
+    manipulator_state_msg.velocity_of_hand_in_odom.twist.angular = ros_helpers.Vec3ToMsg(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.angular))
     manipulator_state_msg.velocity_of_hand_in_odom.header.frame_id = HAND_FRAME_NAME
     manipulator_state_msg.velocity_of_hand_in_odom.header.stamp = ros_stamp.to_msg()
     
     return manipulator_state_msg
 
-def img_msg_to_proto(image_msg: Image, camera_info: CameraInfo, tf_msg: TFMessage, driver: SpotManipulationDriver) -> image_pb2.ImageResponse:
+def img_msg_to_proto(image_msg: Image, camera_info_msg: CameraInfo, tf_msg: TFMessage, driver: SpotManipulationDriver) -> image_pb2.ImageResponse:
     """Takes a ROS Image, CameraInfo, and TF tree representing important transforms for a camera, and populates the corresponding image proto message 
 
     Assumptions:
@@ -312,3 +321,59 @@ def img_msg_to_proto(image_msg: Image, camera_info: CameraInfo, tf_msg: TFMessag
         transform.parent_tform_child.rotation.w = tf.transform.rotation.w
 
     return data
+
+def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffer) -> arm_command_pb2.ArmCartesianCommand:
+
+    odom_tform_task = tf_buffer.lookup_transform(ODOM_FRAME_NAME, msg.header.frame_id, rclpy.time.Time.from_msg(msg.header.stamp), rclpy.time.Duration(seconds=1.0))
+    ref_time = timestamp_pb2.Timestamp().GetCurrentTime()
+
+    # Form the position trajectory
+    pose_trajectory = trajectory_pb2.SE3Trajectory(
+        points=[
+            trajectory_pb2.SE3TrajectoryPoint(
+                pose = ros_helpers.MsgToPose(ros_pose).to_proto(),
+                time_since_reference = seconds_to_duration(time_offset)
+            )
+            for (ros_pose, time_offset) in zip(msg.waypoints, msg.timestamps)
+        ],
+        reference_time = ref_time,
+        pos_interpolation = trajectory_pb2.POS_INTERP_CUBIC,
+        ang_interpolation = trajectory_pb2.ANG_INTERP_CUBIC_EULER
+    )
+
+    # Form the wrench trajectory
+    wrench_trajectory = trajectory_pb2.WrenchTrajectory(
+        points = [
+            trajectory_pb2.WrenchTrajectoryPoint(
+                wrench = MsgToWrench(ros_wrench),
+                time_since_reference = seconds_to_duration(time_offset)
+            )
+            for (ros_wrench, time_offset) in zip(msg.wrench_trajectory, msg.timestamps)
+        ],
+        reference_time = ref_time,
+    )
+
+    arm_cartesian_request = arm_command_pb2.ArmCartesianCommand.Request()
+    arm_cartesian_request.root_frame_name = ODOM_FRAME_NAME
+    arm_cartesian_request.root_tform_task.CopyFrom(ros_helpers.MsgToTransform(odom_tform_task.transform).to_proto())
+    arm_cartesian_request.pose_trajectory_in_task.CopyFrom(pose_trajectory)
+    if msg.max_acceleration != 0:
+        arm_cartesian_request.maximum_acceleration.value = msg.max_acceleration
+    if msg.max_linear_velocity != 0:
+        arm_cartesian_request.max_linear_velocity.value  = msg.max_linear_velocity
+    if msg.max_angular_velocity != 0:
+        arm_cartesian_request.max_angular_velocity.value = msg.max_angular_velocity
+    if msg.max_pos_tracking_error != 0:
+        arm_cartesian_request.max_pos_tracking_error.value = msg.max_pos_tracking_error
+    if msg.max_rot_tracking_error != 0:
+        arm_cartesian_request.max_rot_tracking_error.value = msg.max_rot_tracking_error
+    arm_cartesian_request.force_remain_near_current_joint_configuration = msg.force_remain_near_current_joint_configuration
+    arm_cartesian_request.x_axis = msg.x_axis_mode
+    arm_cartesian_request.y_axis = msg.y_axis_mode
+    arm_cartesian_request.z_axis = msg.z_axis_mode
+    arm_cartesian_request.rx_axis = msg.rx_axis_mode
+    arm_cartesian_request.ry_axis = msg.ry_axis_mode
+    arm_cartesian_request.rz_axis = msg.rz_axis_mode
+    arm_cartesian_request.wrench_trajectory_in_task.CopyFrom(wrench_trajectory)
+
+    return arm_cartesian_request

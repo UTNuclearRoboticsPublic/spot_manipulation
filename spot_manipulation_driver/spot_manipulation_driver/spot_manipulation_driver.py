@@ -43,7 +43,7 @@ from bosdyn.api.robot_command_pb2 import RobotCommandFeedbackResponse
 from bosdyn.api.mobility_command_pb2 import MobilityCommand
 from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand
 from bosdyn.client.image import ImageClient, build_image_request
-from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, 
+from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME,
                                         GRAV_ALIGNED_BODY_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.math_helpers import SE3Pose
 from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
@@ -226,7 +226,7 @@ class SpotManipulationDriver(object):
 
         while not arm_trajectory_manager.done():
             if cancel_event.is_set():
-                self._lease_manager.robot_command(RobotCommandBuilder.stop_command())
+                self.stop_robot()
                 self._logger.info("Arm trajectory action cancelled early. Stopping robot")
                 return False
             
@@ -557,6 +557,26 @@ class SpotManipulationDriver(object):
 
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
+    
+    def arm_cartesian_command(
+        self, cartesian_command: arm_command_pb2.ArmCartesianCommand, timeout: float | None = None
+    ) -> Tuple[bool, Text, int]:
+        """Command the arm end effector to move a certain offset from its current position
+        
+        Args:
+            command - The arm cartesian command to pass to the robot 
+            timeout - Float seconds after which the movement is cancelled
+
+        Returns:
+            success - Whether the command was accepted by the robot
+            message - Message returned from the robot command
+            command_id - Integer id used to monitor the command progress
+        """
+
+        robot_command = robot_command_pb2.RobotCommand()
+        robot_command.synchronized_command.arm_command.arm_cartesian_command.CopyFrom(cartesian_command)
+        end_time = time.time() + timeout if timeout is not None else None
+        return self.lease_manager.robot_command(robot_command, end_time)
 
     def stand_robot(self) -> Tuple[bool, Text]:
         self._lease_manager.robot.logger.info("Commanding robot to stand...")
@@ -606,6 +626,10 @@ class SpotManipulationDriver(object):
         ) = robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(angle)
         self._lease_manager.robot_command(robot_cmd)
         return success, msg
+    
+    def stop_robot(self) -> Tuple[bool, Text]:
+        success, message, _ = self._lease_manager.robot_command(RobotCommandBuilder.stop_command())
+        return success, message
 
     def claim(self) -> Tuple[bool, Text]:
         """Get a lease for the robot, a handle on the estop endpoint, and the ID of the robot."""
