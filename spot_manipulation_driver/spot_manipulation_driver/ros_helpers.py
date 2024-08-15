@@ -142,7 +142,7 @@ def twist_to_vel_request(
     linear_lims: "list[float]" = [-1e9, 1e9],
     angular_lims: "list[float]" = [-1e9, 1e9],
     robot_frame="body",
-) -> ArmVelocityCommandProto.Request:
+) -> ArmVelocityCommandProto:
 
     # Enforce velocity limits
     linear_vel = np.clip(

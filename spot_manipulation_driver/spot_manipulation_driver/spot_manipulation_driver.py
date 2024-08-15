@@ -545,7 +545,7 @@ class SpotManipulationDriver(object):
 
 
     def ee_velocity_msg_executor(
-        self, request: ArmVelocityCommandProto.Request
+        self, request: ArmVelocityCommandProto
     ) -> Tuple[bool, Text]:
 
         arm_command = arm_command_pb2.ArmCommand.Request(arm_velocity_command=request)
