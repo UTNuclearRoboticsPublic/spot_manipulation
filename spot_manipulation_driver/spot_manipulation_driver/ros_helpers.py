@@ -292,7 +292,11 @@ def img_msg_to_proto(image_msg: Image, camera_info_msg: CameraInfo, tf_msg: TFMe
 
     # Basic image info
     data = image_pb2.ImageResponse() 
-    data.shot.acquisition_time = driver._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(image_msg.header.stamp.seconds)
+    # timestamp_sec = image_msg.header.stamp.sec + image_msg.header.stamp.nanosec * 1e-9
+    # data.shot.acquisition_time = driver._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(timestamp_sec)
+    timestamp_sec = image_msg.header.stamp.sec + image_msg.header.stamp.nanosec * 1e-9
+    data.shot.acquisition_time.CopyFrom(driver._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(timestamp_sec))
+
     data.shot.frame_name_image_sensor = image_msg.header.frame_id
     data.shot.image.rows = image_msg.height
     data.shot.image.cols = image_msg.width
@@ -301,7 +305,7 @@ def img_msg_to_proto(image_msg: Image, camera_info_msg: CameraInfo, tf_msg: TFMe
     data.shot.image.pixel_format == image_pb2.Image.PIXEL_FORMAT_RGB_U8
 
     # Image data
-    data.shot.image.data = image_msg.data
+    data.shot.image.data = image_msg.data.tobytes()
 
     # Camera info
     data.source.pinhole.intrinsics.focal_length.x = camera_info_msg.k[0] 

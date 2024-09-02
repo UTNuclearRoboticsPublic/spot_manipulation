@@ -74,6 +74,7 @@ class SpotManipulationDriver(object):
         self._robot_state_client = None
         self._lease_manager = None
         self._image_client = None
+        self._manipulation_api_client = None
 
         # Tasks
         self._hand_image_task = None
@@ -114,6 +115,9 @@ class SpotManipulationDriver(object):
         try:
             self._image_client = self._lease_manager.robot.ensure_client(
                 ImageClient.default_service_name
+            )
+            self._manipulation_api_client = self._lease_manager.robot.ensure_client(
+            ManipulationApiClient.default_service_name
             )
         except Exception as e:
             self._logger.error(f"Unable to create client service: {e}")
