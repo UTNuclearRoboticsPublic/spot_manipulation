@@ -549,7 +549,7 @@ class SpotManipulationDriver(object):
     #####################################################################
     ##DetGPT-related Stuff##
     #####################################################################
-    def image_to_grasp(self, center_px_x, center_px_y, camera_name):
+    def image_to_grasp(self, center_px_x, center_px_y, camera_name, logger):
         _, image, _ = self.capture_image(camera_name)
 
         # # capturing an image
@@ -559,6 +559,12 @@ class SpotManipulationDriver(object):
         # image = image_response[0]
         # image = image_responses[0]
 
+        logger.info("IMAGE PROTO TRANSFORM SNAPSHOT:")
+        logger.info(f"{image.shot.transforms_snapshot}")
+        logger.info("IMAGE PROTO IMAGE SENSOR FRAME NAME:")
+        logger.info(f"{image.shot.frame_name_image_sensor}")
+        logger.info("IMAGE PROTO CAMERA MODEL:")
+        logger.info(f"{image.source.pinhole}")
         # Filling out grasping request
         pick_vec = geometry_pb2.Vec2(x=center_px_x, y=center_px_y)
         grasp = manipulation_api_pb2.PickObjectInImage(
