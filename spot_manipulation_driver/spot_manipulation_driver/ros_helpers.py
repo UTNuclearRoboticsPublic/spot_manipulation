@@ -292,8 +292,6 @@ def img_msg_to_proto(image_msg: Image, camera_info_msg: CameraInfo, tf_msg: TFMe
 
     # Basic image info
     data = image_pb2.ImageResponse() 
-    # timestamp_sec = image_msg.header.stamp.sec + image_msg.header.stamp.nanosec * 1e-9
-    # data.shot.acquisition_time = driver._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(timestamp_sec)
     timestamp_sec = image_msg.header.stamp.sec + image_msg.header.stamp.nanosec * 1e-9
     data.shot.acquisition_time.CopyFrom(driver._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(timestamp_sec))
 

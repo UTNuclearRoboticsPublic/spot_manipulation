@@ -509,15 +509,6 @@ class SpotManipulationDriverROS(Node):
         success = False
         image_proto = ros_helpers.img_msg_to_proto(goal_handle.request.image, goal_handle.request.camera_info, goal_handle.request.tf_msg, self.manipulation_driver)
 
-        self.get_logger().info("Here are the translated ROS messages:")
-        self.get_logger().info("IMAGE PROTO TRANSFORM SNAPSHOT:")
-        self.get_logger().info(f"{image_proto.shot.transforms_snapshot}")
-        self.get_logger().info("IMAGE PROTO IMAGE SENSOR FRAME NAME:")
-        self.get_logger().info(f"{image_proto.shot.frame_name_image_sensor}")
-        self.get_logger().info("IMAGE PROTO CAMERA MODEL:")
-        self.get_logger().info(f"{image_proto.source.pinhole}")
-        self.get_logger().info("PIXEL COORDINATES:")
-        self.get_logger().info(f"{goal_handle.request.pixel_coordinates}")
         success = self.manipulation_driver.image_to_grasp(image_proto, goal_handle.request.pixel_coordinates)
         if success:
             goal_handle.succeed()
