@@ -443,10 +443,11 @@ class SpotManipulationDriver(object):
             positions = traj_point_positions[traj_index]
 
             robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(positions)
-            self._lease_manager.robot_command(robot_cmd)
+            success, msg, _ = self._lease_manager.robot_command(robot_cmd)
 
             time.sleep(time_since_ref[traj_index] - time_since_ref[traj_index - 1])
             traj_index = traj_index + 1
+        return success
 
     def image_to_grasp(self, image, pixel_coordinates):
 
