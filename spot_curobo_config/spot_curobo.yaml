@@ -1,0 +1,90 @@
+robot_cfg:
+    kinematics:
+        usd_path: "usd/spot.usd"
+        usd_robot_root: "/robot"
+        isaac_usd_path: ""
+        usd_flip_joints: {}
+        usd_flip_joint_limits: []
+
+        urdf_path: "urdf/spot.urdf"
+        asset_root_path: "meshes"
+
+        base_link: "arm0_base_link"
+        ee_link: "arm0_hand"
+        link_names: null
+        lock_joints: null
+        extra_links: null
+
+        use_global_cumul: True
+        mesh_link_names: null # List[str]
+
+        collision_link_names: [
+            arm0_shoulder_yaw,
+            arm0_shoulder_pitch,
+            arm0_elbow_pitch,
+            arm0_elbow_roll,
+            arm0_wrist_pitch,
+            arm0_wrist_roll
+        ]
+        collision_spheres: 
+            arm0_shoulder_yaw:
+                - {center: [-0.01, -0.05, 0.0], radius: 0.07}
+                - {center: [-0.01, 0.05, 0.0] , radius: 0.07}
+            arm0_shoulder_pitch: 
+                - {center: [0.1, 0.0, 0.0] , radius: 0.04}
+                - {center: [0.05, 0.0, 0.0], radius: 0.04}
+                - {center: [0.15, 0.0, 0.0], radius: 0.04}
+                - {center: [0.2, 0.0, 0.0] , radius: 0.05}
+                - {center: [0.25, 0.0, 0.0], radius: 0.05}
+                - {center: [0.3, 0.0, 0.0] , radius: 0.05}
+            arm0_elbow_pitch: 
+                - {center: [0.0, 0.0, 0.0]  , radius: 0.05}
+                - {center: [0.05, 0.0, 0.05], radius: 0.07}
+                - {center: [0.1, 0.0, 0.08] , radius: 0.05}
+            arm0_elbow_roll: 
+                - {center: [-0.25, 0.0, 0.0], radius: 0.05}
+                - {center: [-0.2, 0.0, 0.0] , radius: 0.05}
+                - {center: [-0.15, 0.0, 0.0], radius: 0.05}
+                - {center: [-0.1, 0.0, 0.0] , radius: 0.05}
+                - {center: [-0.05, 0.0, 0.0], radius: 0.05}
+            arm0_wrist_pitch: 
+                - {center: [0.012, -0.009, 0.003], radius: 0.0597}
+                - {center: [0.0, -0.05, 0.0]     , radius: 0.05}
+            arm0_wrist_roll: 
+                - {center: [0.1, 0.0, 0.0] , radius: 0.07}
+                - {center: [0.18, 0.0, 0.0], radius: 0.05}
+
+        collision_sphere_buffer: 0.005
+        extra_collision_spheres: {}
+        self_collision_ignore: {
+            "arm0_base_link": ["arm0_shoulder_yaw"],
+            "arm0_shoulder_yaw": ["arm0_shoulder_pitch"],
+            "arm0_shoulder_pitch": ["arm0_elbow_pitch"],
+            "arm0_elbow_pitch": ["arm0_elbow_roll"],
+            "arm0_elbow_roll": ["arm0_wrist_pitch"],
+            "arm0_wrist_pitch": ["arm0_wrist_roll"]
+        }
+        self_collision_buffer: {
+            "arm0_base_link": 0.0,
+            "arm0_shoulder_yaw": 0.0,
+            "arm0_shoulder_pitch": 0.0,
+            "arm0_elbow_pitch": 0.0,
+            "arm0_elbow_roll": 0.0,
+            "arm0_wrist_pitch": 0.0,
+            "arm0_wrist_roll": 0.0
+        }
+
+        cspace:
+            joint_names: [
+                "arm0_shoulder_yaw",
+                arm0_shoulder_pitch,
+                arm0_elbow_pitch,
+                arm0_elbow_roll,
+                arm0_wrist_pitch,
+                arm0_wrist_roll
+            ]
+            retract_config: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            null_space_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+            cspace_distance_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+            max_jerk: 500.0
+            max_acceleration: 15.0

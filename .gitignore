@@ -5,3 +5,5 @@ __pycache__/
 *.swp
 # Ignore vscode config files
 */.vscode
+# Ignore the linked meshes directory for cuRobo
+spot_curobo_config/meshes

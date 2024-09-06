@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>spot_curobo_config</name>
+  <version>0.3.0</version>
+  <description>
+     A package with all the configuration and launch files for using the spot with the CuRobo Motion Planning Framework
+  </description>
+  <maintainer email="alexnavtt@utexas.edu">Alex Navarro</maintainer>
+
+  <license>BSD</license>
+
+  <url type="website">https://curobo.org/index.html/</url>
+
+  <author email="alexnavtt@utexas.edu">Alex Navarro</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+      <build_type>ament_cmake</build_type>
+  </export>
+</package>
