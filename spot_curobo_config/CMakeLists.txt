@@ -10,5 +10,13 @@ install(
     meshes
     urdf
     usd
+    config
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(
+  FILES
+    spot_curobo.yaml
+  DESTINATION
+    share/${PROJECT_NAME}
 )
