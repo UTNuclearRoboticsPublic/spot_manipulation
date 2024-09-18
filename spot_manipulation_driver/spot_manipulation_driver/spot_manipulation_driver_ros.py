@@ -585,6 +585,7 @@ class SpotManipulationDriverROS(Node):
         image_proto = ros_helpers.img_msg_to_proto(goal_handle.request.image, goal_handle.request.camera_info, goal_handle.request.tf_msg, self.manipulation_driver)
 
         success = self.manipulation_driver.image_to_grasp(image_proto, goal_handle.request.pixel_coordinates)
+        self.image_to_grasp_result.success = success
         if success:
             goal_handle.succeed()
             self.get_logger().info("Successfully executed image_to_grasp goal")
