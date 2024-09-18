@@ -46,9 +46,7 @@ from bosdyn.client.image import ImageClient, build_image_request
 from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME,
                                         GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.math_helpers import SE3Pose
-from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
-                                         RobotCommandBuilder, TimedOutError,
-                                         blocking_stand, blocking_command)
+from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command)
 from bosdyn.client.exceptions import RpcError
 from bosdyn.util import seconds_to_timestamp, seconds_to_duration
 from google.protobuf import duration_pb2, timestamp_pb2
@@ -785,16 +783,6 @@ class SpotManipulationDriver(object):
         robot_command.synchronized_command.arm_command.arm_cartesian_command.CopyFrom(cartesian_command)
         end_time = time.time() + timeout if timeout is not None else None
         return self.lease_manager.robot_command(robot_command, end_time)
-
-    def stand_robot(self) -> Tuple[bool, Text]:
-        self._lease_manager.robot.logger.info("Commanding robot to stand...")
-        try:
-            blocking_stand(self._lease_manager.command_client, timeout_sec=10)
-        except CommandFailedErrorWithFeedback as error:
-            return False, error.message
-        except TimedOutError as error:
-            return False, error.error_message
-        return True, "Robot standing"
 
     def stow_arm(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.arm_stow_command()

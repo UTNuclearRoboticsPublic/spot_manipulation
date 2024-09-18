@@ -246,7 +246,6 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/stow_arm"       , self.stow_service_callback         , callback_group=motion_callback_group)
         self.create_service(Trigger, "~/close_gripper"  , self.gripper_close_service_callback, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/open_gripper"   , self.gripper_open_service_callback , callback_group=gripper_callback_group)
-        self.create_service(Trigger, "~/stand"          , self.stand_service_callback        , callback_group=motion_callback_group)
         self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
 
         # Handle manual action namespace 
@@ -712,12 +711,6 @@ class SpotManipulationDriverROS(Node):
         resp.success = success
         resp.message = msg
         time.sleep(0.5) # sleep to ensure end config is reached
-        return resp
-
-    def stand_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
-        (success, msg) = self.manipulation_driver.stand_robot()
-        resp.success = success
-        resp.message = msg
         return resp
 
     def gripper_angle_service_callback(self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response):
