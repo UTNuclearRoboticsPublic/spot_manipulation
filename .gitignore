@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 # Ignore swap files created by vim
 *.swp
+# Ignore vscode config files
+*/.vscode
