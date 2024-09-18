@@ -299,18 +299,22 @@ class SpotManipulationDriver(object):
         # Get to the start configuration of the trajectory before we execute it
         start_time = time.time()
         ref_time = seconds_to_timestamp(start_time)
-        TRAJ_APPROACH_TIME = 1.0
+        TRAJ_APPROACH_TIME = 0.1
 
         arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=[traj_point_positions[0]],
             times=[TRAJ_APPROACH_TIME],
             ref_time=ref_time,
+            max_acc=10000,
+            max_vel=10000,
         )
 
         gripper_cmd = RobotCommandBuilder.claw_gripper_command_helper(
             gripper_positions=gripper_traj_point_positions[0],
             times=[TRAJ_APPROACH_TIME],
-            ref_time=ref_time
+            ref_time=ref_time,
+            max_acc=10000,
+            max_vel=10000,
         )
 
         robot_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd, gripper_cmd)
@@ -352,13 +356,17 @@ class SpotManipulationDriver(object):
                 # joint_velocities=velocities,
                 times=times,
                 ref_time=ref_time,
+                max_acc=10000,
+                max_vel=10000,
             )
 
             # Build gripper command
             gripper_cmd = RobotCommandBuilder.claw_gripper_command_helper(
                 gripper_positions=gripper_positions,
                 times=times,
-                ref_time=ref_time
+                ref_time=ref_time,
+                max_acc=10000,
+                max_vel=10000,
             )
 
             # Combine the two commands
@@ -735,11 +743,11 @@ class SpotManipulationDriver(object):
 
         # Move the arm to a carry position.
         self._lease_manager.robot.logger.info("Grasp succeeded.")
-        self._lease_manager.robot.logger.info("Going to carry pose.")
-        carry_cmd = RobotCommandBuilder.arm_carry_command()
-        self._lease_manager.robot_command(carry_cmd)
+        self._lease_manager.robot.logger.info("Going to ready pose.")
+        ready_cmd = RobotCommandBuilder.arm_ready_command()
+        self._lease_manager.robot_command(ready_cmd)
 
-        time.sleep(0.75) # Wait for the carry command to finish
+        time.sleep(0.75) # Wait for the ready command to finish
         return holding_trash
 
 
