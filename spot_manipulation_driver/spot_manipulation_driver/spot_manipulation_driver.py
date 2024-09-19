@@ -33,6 +33,7 @@
 import time
 import threading
 from typing import Text, Tuple, List
+from enum import Enum
 
 from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
                         robot_command_pb2, robot_state_pb2, trajectory_pb2,
@@ -58,6 +59,10 @@ from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
+
+class GraspStrategy(Enum):
+    TOP_DOWN_GRASP = 1
+    HORIZONTAL_GRASP = 2
 
 class SpotManipulationDriver(object):
 
@@ -649,7 +654,37 @@ class SpotManipulationDriver(object):
             traj_index = traj_index + 1
         return success
 
-    def image_to_grasp(self, image, pixel_coordinates):
+    def add_grasp_constraints(self, grasp, grasp_strategy: GraspStrategy) -> None:
+
+        grasp.grasp_params.grasp_params_frame_name = VISION_FRAME_NAME
+
+        if grasp_strategy == GraspStrategy.TOP_DOWN_GRASP or grasp_strategy == GraspStrategy.TOP_DOWN_GRASP.value:
+
+            # Constrain to align the x-axis of the gripper with the -z-axis of the vision frame
+            axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0) # of the gripper
+            axis_to_align_with_ewrt_vo = geometry_pb2.Vec3(x=0, y=0, z=-1) # of the vision frame
+
+        elif grasp_strategy == GraspStrategy.HORIZONTAL_GRASP or grasp_strategy == GraspStrategy.HORIZONTAL_GRASP.value:
+
+
+            # Constrain to align the y-axis of the gripper with the z-axis of the vision frame
+            axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=0, y=1, z=0)
+            axis_to_align_with_ewrt_vo = geometry_pb2.Vec3(x=0, y=0, z=1)
+        
+        else:
+            raise ValueError(f"Unknown grasp strategy: {grasp_strategy}")
+
+        # Add the constraints to the proto message
+        constraint = grasp.grasp_params.allowable_orientation.add()
+        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
+            axis_on_gripper_ewrt_gripper)
+        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
+            axis_to_align_with_ewrt_vo)
+
+        # Add tolerance to the constraints, about 30 degrees
+        constraint.vector_alignment_with_tolerance.threshold_radians = 1.047/2.0
+
+    def image_to_grasp(self, image, pixel_coordinates: List, grasp_strategy: GraspStrategy):
 
         # Filling out grasping request
         pick_vec = geometry_pb2.Vec2(x=pixel_coordinates[0], y=pixel_coordinates[1])
@@ -663,31 +698,10 @@ class SpotManipulationDriver(object):
             0.6
         )  # might need to adjust for object size
 
-        # Specify top-down grasp
-
-        # Add a constraint that requests that the x-axis of the gripper is pointing in the
-        # negative-z direction in the vision frame.
-
-        # The axis on the gripper is the x-axis.
-        axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0)
-
-        # The axis in the vision frame is the negative z-axis
-        axis_to_align_with_ewrt_vision = geometry_pb2.Vec3(x=0, y=0, z=-1)
-
-        # Add the vector constraint to our proto.
-        constraint = grasp.grasp_params.allowable_orientation.add()
-        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
-            axis_on_gripper_ewrt_gripper
-        )
-        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
-            axis_to_align_with_ewrt_vision
-        )
-
-        # Tolerance for top-down grasp
-        constraint.vector_alignment_with_tolerance.threshold_radians = 1.22
-
-        # Specify the frame we're using.
-        grasp.grasp_params.grasp_params_frame_name = VISION_FRAME_NAME
+        # Add grasp constraint
+        # self.add_grasp_constraints(grasp, GraspStrategy.HORIZONTAL_GRASP)
+        self._lease_manager.robot.logger.info("Grasp succeeded.")
+        self.add_grasp_constraints(grasp, grasp_strategy)
 
         # Build the proto
         grasp_request = manipulation_api_pb2.ManipulationApiRequest(
@@ -745,7 +759,7 @@ class SpotManipulationDriver(object):
         ready_cmd = RobotCommandBuilder.arm_ready_command()
         self._lease_manager.robot_command(ready_cmd)
 
-        time.sleep(0.75) # Wait for the ready command to finish
+        time.sleep(0.25) # Wait for the ready command to finish
         return holding_trash
 
 
