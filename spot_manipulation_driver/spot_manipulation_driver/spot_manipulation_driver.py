@@ -657,6 +657,7 @@ class SpotManipulationDriver(object):
     def add_grasp_constraints(self, grasp, grasp_strategy: GraspStrategy) -> None:
 
         grasp.grasp_params.grasp_params_frame_name = VISION_FRAME_NAME
+        constraint = grasp.grasp_params.allowable_orientation.add()
 
         if grasp_strategy == GraspStrategy.TOP_DOWN_GRASP or grasp_strategy == GraspStrategy.TOP_DOWN_GRASP.value:
 
@@ -664,25 +665,28 @@ class SpotManipulationDriver(object):
             axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0) # of the gripper
             axis_to_align_with_ewrt_vo = geometry_pb2.Vec3(x=0, y=0, z=-1) # of the vision frame
 
+            # Add tolerance to the constraints, about 30 degrees
+            constraint.vector_alignment_with_tolerance.threshold_radians = 0.2618
+
         elif grasp_strategy == GraspStrategy.HORIZONTAL_GRASP or grasp_strategy == GraspStrategy.HORIZONTAL_GRASP.value:
 
 
             # Constrain to align the y-axis of the gripper with the z-axis of the vision frame
             axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=0, y=1, z=0)
             axis_to_align_with_ewrt_vo = geometry_pb2.Vec3(x=0, y=0, z=1)
+
+            # Add tolerance to the constraints, about 30 degrees
+            constraint.vector_alignment_with_tolerance.threshold_radians = 0.0873
         
         else:
             raise ValueError(f"Unknown grasp strategy: {grasp_strategy}")
 
         # Add the constraints to the proto message
-        constraint = grasp.grasp_params.allowable_orientation.add()
         constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
             axis_on_gripper_ewrt_gripper)
         constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
             axis_to_align_with_ewrt_vo)
 
-        # Add tolerance to the constraints, about 30 degrees
-        constraint.vector_alignment_with_tolerance.threshold_radians = 1.047/2.0
 
     def image_to_grasp(self, image, pixel_coordinates: List, grasp_strategy: GraspStrategy):
 
@@ -701,7 +705,8 @@ class SpotManipulationDriver(object):
         # Add grasp constraint
         # self.add_grasp_constraints(grasp, GraspStrategy.HORIZONTAL_GRASP)
         self._lease_manager.robot.logger.info("Grasp succeeded.")
-        self.add_grasp_constraints(grasp, grasp_strategy)
+        # self.add_grasp_constraints(grasp, grasp_strategy)
+        self.add_grasp_constraints(grasp, GraspStrategy.TOP_DOWN_GRASP)
 
         # Build the proto
         grasp_request = manipulation_api_pb2.ManipulationApiRequest(
@@ -716,6 +721,8 @@ class SpotManipulationDriver(object):
         # Wait for the grasp to finish
         grasp_done = False
         failed = False
+        timeout = False
+        timeout_duration = 20
         time_start = time.time()
         while not grasp_done:
             feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
@@ -744,22 +751,29 @@ class SpotManipulationDriver(object):
             ]
 
             failed = current_state in failed_states
+
+            # Check if the operation has exceeded the timeout duration
+            if current_time > timeout_duration:
+                self._lease_manager.robot.logger.error("Operation timed out after {time:.1f} seconds.".format(time=current_time))
+                timeout = True  # Exit the loop
+
             grasp_done = (
                 current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED
-                or failed
+                or failed or timeout
             )
 
             time.sleep(0.1)
 
-        holding_trash = not failed
+        holding_trash = not (failed or timeout)
 
-        # Move the arm to a carry position.
-        self._lease_manager.robot.logger.info("Grasp succeeded.")
-        self._lease_manager.robot.logger.info("Going to ready pose.")
-        ready_cmd = RobotCommandBuilder.arm_ready_command()
-        self._lease_manager.robot_command(ready_cmd)
+        if holding_trash: 
+            # Move the arm to the ready position.
+            self._lease_manager.robot.logger.info("Grasp succeeded.")
+            self._lease_manager.robot.logger.info("Going to ready pose.")
+            ready_cmd = RobotCommandBuilder.arm_ready_command()
+            self._lease_manager.robot_command(ready_cmd)
 
-        time.sleep(0.25) # Wait for the ready command to finish
+            time.sleep(0.25) # Wait for the ready command to finish
         return holding_trash
 
 
