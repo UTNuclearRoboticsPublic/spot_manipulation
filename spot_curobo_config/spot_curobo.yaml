@@ -76,7 +76,7 @@ robot_cfg:
 
         cspace:
             joint_names: [
-                "arm0_shoulder_yaw",
+                arm0_shoulder_yaw,
                 arm0_shoulder_pitch,
                 arm0_elbow_pitch,
                 arm0_elbow_roll,
