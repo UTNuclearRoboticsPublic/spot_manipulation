@@ -24,7 +24,9 @@ robot_cfg:
             arm0_elbow_pitch,
             arm0_elbow_roll,
             arm0_wrist_pitch,
-            arm0_wrist_roll
+            arm0_wrist_roll,
+            body,
+            velodyne
         ]
         collision_spheres: 
             arm0_shoulder_yaw:
@@ -53,16 +55,38 @@ robot_cfg:
             arm0_wrist_roll: 
                 - {center: [0.1, 0.0, 0.0] , radius: 0.07}
                 - {center: [0.18, 0.0, 0.0], radius: 0.05}
+            body:
+                - {center: [ 0.30,  0.10, -0.06], radius: 0.2}
+                - {center: [ 0.30, -0.10, -0.06], radius: 0.2}
+                - {center: [ 0.10,  0.10, -0.06], radius: 0.2}
+                - {center: [ 0.10, -0.10, -0.06], radius: 0.2}
+                - {center: [-0.10,  0.10, -0.06], radius: 0.2}
+                - {center: [-0.10, -0.10, -0.06], radius: 0.2}
+                - {center: [-0.30,  0.10, -0.06], radius: 0.2}
+                - {center: [-0.30, -0.10, -0.06], radius: 0.2}
+                - {center: [ 0.30,  0.10, -0.38], radius: 0.2}
+                - {center: [ 0.30, -0.10, -0.38], radius: 0.2}
+                - {center: [ 0.10,  0.10, -0.38], radius: 0.2}
+                - {center: [ 0.10, -0.10, -0.38], radius: 0.2}
+                - {center: [-0.10,  0.10, -0.38], radius: 0.2}
+                - {center: [-0.10, -0.10, -0.38], radius: 0.2}
+                - {center: [-0.30,  0.10, -0.38], radius: 0.2}
+                - {center: [-0.30, -0.10, -0.38], radius: 0.2}
+                - {center: [-0.46, -0.18, -0.21], radius: 0.1}
+                - {center: [-0.46,  0.18, -0.21], radius: 0.1}
+            velodyne:
+                - {center: [0, 0, 0], radius: 0.1}
 
         collision_sphere_buffer: 0.005
         extra_collision_spheres: {}
         self_collision_ignore: {
-            "arm0_base_link": ["arm0_shoulder_yaw"],
-            "arm0_shoulder_yaw": ["arm0_shoulder_pitch"],
+            "arm0_base_link": ["arm0_shoulder_yaw", "body"],
+            "arm0_shoulder_yaw": ["arm0_shoulder_pitch", "body"],
             "arm0_shoulder_pitch": ["arm0_elbow_pitch"],
             "arm0_elbow_pitch": ["arm0_elbow_roll"],
             "arm0_elbow_roll": ["arm0_wrist_pitch"],
-            "arm0_wrist_pitch": ["arm0_wrist_roll"]
+            "arm0_wrist_pitch": ["arm0_wrist_roll"],
+            "velodyne": ["body"]
         }
         self_collision_buffer: {
             "arm0_base_link": 0.0,
