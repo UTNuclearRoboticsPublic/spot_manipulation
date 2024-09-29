@@ -1,13 +1,13 @@
 robot_cfg:
     kinematics:
-        usd_path: "usd/spot.usd"
-        usd_robot_root: "/robot"
-        isaac_usd_path: ""
+        usd_path: null
+        usd_robot_root: null
+        isaac_usd_path: null
         usd_flip_joints: {}
         usd_flip_joint_limits: []
 
-        urdf_path: "urdf/spot.urdf"
-        asset_root_path: "meshes"
+        urdf_path: null
+        asset_root_path: null
 
         base_link: "arm0_base_link"
         ee_link: "arm0_hand"
@@ -77,25 +77,24 @@ robot_cfg:
             velodyne:
                 - {center: [0, 0, 0], radius: 0.1}
 
-        collision_sphere_buffer: 0.005
+        collision_sphere_buffer: 0.004
         extra_collision_spheres: {}
-        self_collision_ignore: {
-            "arm0_base_link": ["arm0_shoulder_yaw", "body"],
-            "arm0_shoulder_yaw": ["arm0_shoulder_pitch", "body"],
-            "arm0_shoulder_pitch": ["arm0_elbow_pitch"],
-            "arm0_elbow_pitch": ["arm0_elbow_roll"],
-            "arm0_elbow_roll": ["arm0_wrist_pitch"],
-            "arm0_wrist_pitch": ["arm0_wrist_roll"],
-            "velodyne": ["body"]
-        }
+        self_collision_ignore:
+            "arm0_base_link"     : ["arm0_shoulder_yaw"]
+            "arm0_shoulder_yaw"  : ["arm0_shoulder_pitch"]
+            "arm0_shoulder_pitch": ["arm0_elbow_pitch"]
+            "arm0_elbow_pitch"   : ["arm0_elbow_roll"]
+            "arm0_elbow_roll"    : ["arm0_wrist_pitch", "arm0_wrist_roll"]
+            "arm0_wrist_pitch"   : ["arm0_wrist_roll"]
+            "body"               : ["velodyne", "arm0_base_link", "arm0_shoulder_yaw"]
         self_collision_buffer: {
-            "arm0_base_link": 0.0,
-            "arm0_shoulder_yaw": 0.0,
-            "arm0_shoulder_pitch": 0.0,
-            "arm0_elbow_pitch": 0.0,
-            "arm0_elbow_roll": 0.0,
-            "arm0_wrist_pitch": 0.0,
-            "arm0_wrist_roll": 0.0
+            "arm0_base_link": 0.004,
+            "arm0_shoulder_yaw": 0.004,
+            "arm0_shoulder_pitch": 0.004,
+            "arm0_elbow_pitch": 0.004,
+            "arm0_elbow_roll": 0.004,
+            "arm0_wrist_pitch": 0.004,
+            "arm0_wrist_roll": 0.004
         }
 
         cspace:

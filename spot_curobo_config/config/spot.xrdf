@@ -2,7 +2,7 @@ format: xrdf
 format_version: 1.0
 
 modifiers:
-    - set_base_frame: "base_footprint"
+    - set_base_frame: "arm0_base_link"
 
 default_joint_positions:
     arm0_shoulder_yaw : 0.0
@@ -64,6 +64,7 @@ self_collision:
         "arm0_elbow_pitch"   : ["arm0_elbow_roll"]
         "arm0_elbow_roll"    : ["arm0_wrist_pitch", "arm0_wrist_roll"]
         "arm0_wrist_pitch"   : ["arm0_wrist_roll"]
+        "body"               : ["velodyne", "arm0_base_link", "arm0_shoulder_yaw"]
     buffer_distance:
         arm0_shoulder_yaw: 0.004
         arm0_shoulder_pitch: 0.004
@@ -101,3 +102,24 @@ geometry:
             arm0_wrist_roll: 
                 - {center: [0.1, 0.0, 0.0] , radius: 0.07}
                 - {center: [0.18, 0.0, 0.0], radius: 0.05}
+            body:
+                - {center: [ 0.30,  0.10, -0.06], radius: 0.2}
+                - {center: [ 0.30, -0.10, -0.06], radius: 0.2}
+                - {center: [ 0.10,  0.10, -0.06], radius: 0.2}
+                - {center: [ 0.10, -0.10, -0.06], radius: 0.2}
+                - {center: [-0.10,  0.10, -0.06], radius: 0.2}
+                - {center: [-0.10, -0.10, -0.06], radius: 0.2}
+                - {center: [-0.30,  0.10, -0.06], radius: 0.2}
+                - {center: [-0.30, -0.10, -0.06], radius: 0.2}
+                - {center: [ 0.30,  0.10, -0.38], radius: 0.2}
+                - {center: [ 0.30, -0.10, -0.38], radius: 0.2}
+                - {center: [ 0.10,  0.10, -0.38], radius: 0.2}
+                - {center: [ 0.10, -0.10, -0.38], radius: 0.2}
+                - {center: [-0.10,  0.10, -0.38], radius: 0.2}
+                - {center: [-0.10, -0.10, -0.38], radius: 0.2}
+                - {center: [-0.30,  0.10, -0.38], radius: 0.2}
+                - {center: [-0.30, -0.10, -0.38], radius: 0.2}
+                - {center: [-0.46, -0.18, -0.21], radius: 0.1}
+                - {center: [-0.46,  0.18, -0.21], radius: 0.1}
+            velodyne:
+                - {center: [0, 0, 0], radius: 0.1}
