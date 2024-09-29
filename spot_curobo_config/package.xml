@@ -14,6 +14,11 @@
 
   <author email="alexnavtt@utexas.edu">Alex Navarro</author>
 
+  <build_depend>yaml-cpp</build_depend>
+  <build_depend>tf2_ros</build_depend>
+  <build_depend>tf2_geometry_msgs</build_depend>
+  <build_depend>visualization_msgs</build_depend>
+
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <export>
