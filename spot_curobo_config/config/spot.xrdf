@@ -48,12 +48,14 @@ tool_frames: ["arm0_hand"]
 collision:
     geometry: "spot_collision_spheres"
     buffer_distance:
-        arm0_shoulder_yaw: 0.004
-        arm0_shoulder_pitch: 0.004
-        arm0_elbow_pitch: 0.004
-        arm0_elbow_roll: 0.004
-        arm0_wrist_pitch: 0.004
-        arm0_wrist_roll: 0.004
+        arm0_shoulder_yaw: 0.05
+        arm0_shoulder_pitch: 0.05
+        arm0_elbow_pitch: 0.05
+        arm0_elbow_roll: 0.025
+        arm0_wrist_pitch: 0.005
+        arm0_wrist_roll: 0.005
+        velodyne: 0.05
+        body: 0.10 # Body has larger requirements due to BD collision avoidance
 
 self_collision:
     geometry: "spot_collision_spheres"
