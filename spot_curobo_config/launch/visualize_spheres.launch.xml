@@ -1,0 +1,14 @@
+<launch>
+
+    <arg name="offline" default="true"/>
+
+    <include file="$(find-pkg-share spot_description)/launch/offline_state_publisher.launch.py" if="$(var offline)">
+        <arg name="has_eap" value="True"/>
+        <arg name="has_arm" value="True"/>
+    </include>
+
+    <node pkg="spot_curobo_config" exec="visualize_spheres"/>
+
+    <node pkg="rviz2" exec="rviz2" name="rviz_sphere_visualization" args="-d $(find-pkg-share spot_curobo_config)/rviz/sphere_visualization.rviz"/>
+
+</launch>
