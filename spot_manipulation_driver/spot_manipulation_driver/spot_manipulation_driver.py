@@ -667,6 +667,9 @@ class SpotManipulationDriver(object):
 
             # Add tolerance to the constraints, about 30 degrees
             constraint.vector_alignment_with_tolerance.threshold_radians = 0.2618
+            grasp.grasp_params.grasp_palm_to_fingertip = (
+                0.6
+            )  # might need to adjust for object size
 
         elif grasp_strategy == GraspStrategy.HORIZONTAL_GRASP or grasp_strategy == GraspStrategy.HORIZONTAL_GRASP.value:
 
@@ -677,6 +680,9 @@ class SpotManipulationDriver(object):
 
             # Add tolerance to the constraints, about 30 degrees
             constraint.vector_alignment_with_tolerance.threshold_radians = 0.0873
+            grasp.grasp_params.grasp_palm_to_fingertip = (
+                0.3
+            )  # might need to adjust for object size
         
         else:
             raise ValueError(f"Unknown grasp strategy: {grasp_strategy}")
@@ -698,15 +704,9 @@ class SpotManipulationDriver(object):
             frame_name_image_sensor=image.shot.frame_name_image_sensor,
             camera_model=image.source.pinhole,
         )
-        grasp.grasp_params.grasp_palm_to_fingertip = (
-            0.6
-        )  # might need to adjust for object size
 
         # Add grasp constraint
-        # self.add_grasp_constraints(grasp, GraspStrategy.HORIZONTAL_GRASP)
-        self._lease_manager.robot.logger.info("Grasp succeeded.")
-        # self.add_grasp_constraints(grasp, grasp_strategy)
-        self.add_grasp_constraints(grasp, GraspStrategy.TOP_DOWN_GRASP)
+        self.add_grasp_constraints(grasp, grasp_strategy)
 
         # Build the proto
         grasp_request = manipulation_api_pb2.ManipulationApiRequest(
