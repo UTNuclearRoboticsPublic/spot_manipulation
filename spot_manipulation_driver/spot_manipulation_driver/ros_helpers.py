@@ -46,8 +46,8 @@ def wbc_joint_trajectory_to_lists(msg: JointTrajectory, T_o2f, yaw_o2f):
         )
 
         # Transform the body joints from body to odom frame
-        [x,y,theta] = traj_point_positions[-1][:3]
-        traj_point_positions[-1][:3] = transform_planar_point_and_or(x, y, theta, T_o2f, yaw_o2f)
+        # [x,y,theta] = traj_point_positions[-1][:3]
+        # traj_point_positions[-1][:3] = transform_planar_point_and_or(x, y, theta, T_o2f, yaw_o2f)
 
         # traj_point_velocities.append(
         #     list(map(lambda joint_name: vel_dict[joint_name], joint_order))

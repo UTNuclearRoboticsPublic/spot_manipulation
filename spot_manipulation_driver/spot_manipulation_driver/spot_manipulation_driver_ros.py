@@ -311,20 +311,21 @@ class SpotManipulationDriverROS(Node):
 
         # Get base_footprint to odom transform
         rosT_o2f = self.read_transform("base_footprint", "odom") # Transformation in the form of ROS transformstamped representing the pose of the base_footprint frame in odom frame
-        self.get_logger().info(f"Rotation x: {rosT_o2f.transform.rotation.x}")
-        self.get_logger().info(f"Rotation y: {rosT_o2f.transform.rotation.y}")
-        self.get_logger().info(f"Rotation z: {rosT_o2f.transform.rotation.z}")
-        self.get_logger().info(f"Rotation w: {rosT_o2f.transform.rotation.w}")
-        self.get_logger().info(f"Translation x: {rosT_o2f.transform.translation.x}")
-        self.get_logger().info(f"Translation y: {rosT_o2f.transform.translation.y}")
-        self.get_logger().info(f"Translation z: {rosT_o2f.transform.translation.z}")
+        # self.get_logger().info(f"Rotation x: {rosT_o2f.transform.rotation.x}")
+        # self.get_logger().info(f"Rotation y: {rosT_o2f.transform.rotation.y}")
+        # self.get_logger().info(f"Rotation z: {rosT_o2f.transform.rotation.z}")
+        # self.get_logger().info(f"Rotation w: {rosT_o2f.transform.rotation.w}")
+        # self.get_logger().info(f"Translation x: {rosT_o2f.transform.translation.x}")
+        # self.get_logger().info(f"Translation y: {rosT_o2f.transform.translation.y}")
+        # self.get_logger().info(f"Translation z: {rosT_o2f.transform.translation.z}")
 
         # Convert from ros-type transform to a numpy matrix
         T_o2f, yaw_o2f = ros_helpers.convert_transformstamped_to_matrix(rosT_o2f)
-        self.get_logger().info(f"Transform as np matrix: {T_o2f}")
-        self.get_logger().info(f"Yaw_o2f: {yaw_o2f}")
+        # self.get_logger().info(f"Transform as np matrix: {T_o2f}")
+        # self.get_logger().info(f"Yaw_o2f: {yaw_o2f}")
 
-        self.get_logger().info("Here is the trajectory before conversion:")
+        # self.get_logger().info("Here is the trajectory before conversion:")
+        self.get_logger().info("Here is the trajectory on ROS side:")
         self.get_logger().info(f"Joint Names: {goal_handle.request.trajectory.joint_names}")
         for point in goal_handle.request.trajectory.points:
             positions = point.positions
@@ -336,7 +337,7 @@ class SpotManipulationDriverROS(Node):
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.wbc_joint_trajectory_to_lists(
             goal_handle.request.trajectory, T_o2f, yaw_o2f
         )
-        self.get_logger().info(f"Here is the trajectory after conversion: {traj_point_positions}")
+        self.get_logger().info(f"Here is the trajectory after conversion to list: {traj_point_positions}")
 
         # self.arm_feedback_publish_flag = True
         # arm_feedback_thread = threading.Thread(

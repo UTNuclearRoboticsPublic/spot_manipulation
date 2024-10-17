@@ -47,6 +47,7 @@ from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from spot_driver.async_queries import AsyncImageService, AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from bosdyn.api.geometry_pb2 import SE2Velocity, SE2VelocityLimit, Vec2
+from bosdyn.client.frame_helpers import VISION_FRAME_NAME, get_vision_tform_body
 
 
 class SpotManipulationDriver(object):
@@ -188,30 +189,108 @@ class SpotManipulationDriver(object):
 
         self.verify_estop()
 
-    def generate_se2trajectory(self, ros_logger, wbc_points, frame_name, times, wbc_cmd):
+    # def generate_se2trajectory(self, ros_logger, wbc_points, frame_name, times, wbc_cmd):
 
-        # body_cmd = robot_command_pb2.RobotCommand()
+    #     # body_cmd = robot_command_pb2.RobotCommand()
+    #     for point, traj_time in zip(wbc_points, times):
+    #        wbc_cmd_point = wbc_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points.add()
+    #        # Assign spatial parameters
+    #        wbc_cmd_point.pose.position.x = point[0]
+    #        wbc_cmd_point.pose.position.y = point[1]
+    #        wbc_cmd_point.pose.angle = point[2]
+    #        # Assign time
+    #        duration = seconds_to_duration(traj_time)
+    #        wbc_cmd_point.time_since_reference.CopyFrom(duration)
+    #     # Specify frame name
+    #     wbc_cmd.synchronized_command.mobility_command.se2_trajectory_request.se2_frame_name = frame_name
+    #     # Apply mobility constraints
+    #     speed_limit = SE2VelocityLimit(max_vel=SE2Velocity(linear=Vec2(x=2, y=2), angular=2),
+    #                                    min_vel=SE2Velocity(linear=Vec2(x=-2, y=-2), angular=-2))
+    #     mobility_params = spot_command_pb2.MobilityParams(vel_limit=speed_limit)
+
+    #     wbc_cmd.synchronized_command.mobility_command.params.CopyFrom(
+    #         RobotCommandBuilder._to_any(mobility_params))
+    #     return wbc_cmd
+
+    def generate_se2trajectory(self, ros_logger, wbc_points, frame_name, times, wbc_cmd):
+        # Loop through the points and times to add them to the trajectory
         for point, traj_time in zip(wbc_points, times):
-           wbc_cmd_point = wbc_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points.add()
-           # Assign spatial parameters
-           wbc_cmd_point.pose.position.x = point[0]
-           wbc_cmd_point.pose.position.y = point[1]
-           wbc_cmd_point.pose.angle = point[2]
-           # Assign time
-           duration = seconds_to_duration(traj_time)
-           wbc_cmd_point.time_since_reference.CopyFrom(duration)
+            wbc_cmd_point = wbc_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points.add()
+
+            # Assign spatial parameters
+            wbc_cmd_point.pose.position.x = point[0]
+            wbc_cmd_point.pose.position.y = point[1]
+            wbc_cmd_point.pose.angle = point[2]
+
+            # Assign time
+            duration = seconds_to_duration(traj_time)
+            wbc_cmd_point.time_since_reference.CopyFrom(duration)
+
         # Specify frame name
         wbc_cmd.synchronized_command.mobility_command.se2_trajectory_request.se2_frame_name = frame_name
-        # Apply mobility constraints
-        speed_limit = SE2VelocityLimit(max_vel=SE2Velocity(linear=Vec2(x=2, y=2), angular=2),
-                                       min_vel=SE2Velocity(linear=Vec2(x=-2, y=-2), angular=-2))
+
+        # Apply mobility constraints with reasonable values
+        speed_limit = SE2VelocityLimit(
+            max_vel=SE2Velocity(linear=Vec2(x=0.5, y=0.5), angular=0.5),
+            min_vel=SE2Velocity(linear=Vec2(x=-0.5, y=-0.5), angular=-0.5)
+        )
         mobility_params = spot_command_pb2.MobilityParams(vel_limit=speed_limit)
 
         wbc_cmd.synchronized_command.mobility_command.params.CopyFrom(
-            RobotCommandBuilder._to_any(mobility_params))
+            RobotCommandBuilder._to_any(mobility_params)
+        )
+
         return wbc_cmd
 
+    def create_arm_and_mobility_command(self, arm_positions, body_points, times, vision_T_body, ref_time):
+        # Assumes that the body points are in the body frame
 
+        arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
+            joint_positions=arm_positions,
+            times=times,
+            ref_time=ref_time,
+            max_acc=10000,
+            max_vel=10000,
+        )
+
+        mobility_cmd = mobility_command_pb2.MobilityCommand()
+
+        for ii in range(body_points):
+                    # Pull the point in the square relative to the robot and scale according to param
+                    x = body_points[ii][0]
+                    y = body_points[ii][1]
+                    yaw = body_points[ii][2]
+
+                    # Transform desired position into vision frame
+                    x_ewrt_vision, y_ewrt_vision, z_ewrt_vision = vision_T_body.transform_point(x, y, 0)
+
+                    # Add a new point to the robot command's arm cartesian command se3 trajectory
+                    # This will be an se2 trajectory point
+                    point = mobility_command.se2_trajectory_request.trajectory.points.add(
+                    )
+
+                    # Populate this point with the desired position, angle, and duration information
+                    point.pose.position.x = x_ewrt_vision
+                    point.pose.position.y = y_ewrt_vision
+
+                    point.pose.angle = vision_T_body.rot.to_yaw(yaw)
+
+                    traj_time = times[ii]
+                    duration = seconds_to_duration(traj_time)
+                    point.time_since_reference.CopyFrom(duration)
+
+        # set the frame for the body trajectory
+        mobility_command.se2_trajectory_request.se2_frame_name = VISION_FRAME_NAME
+
+        # Enforce speed limit
+        speed_limit = SE2VelocityLimit(max_vel=SE2Velocity(linear=Vec2(x=2, y=2), angular=1),
+                                       min_vel=SE2Velocity(linear=Vec2(x=-2, y=-2), angular=1))
+        mobility_params = spot_command_pb2.MobilityParams(vel_limit=speed_limit)
+
+        mobility_command.params.CopyFrom(
+            RobotCommandBuilder._to_any(mobility_params))
+
+        return RobotCommandBuilder.build_synchro_command(arm_cmd, mobility_cmd)
 
     # Execute long trajectories
     def wbc_long_trajectory_executor(
@@ -229,33 +308,22 @@ class SpotManipulationDriver(object):
         TRAJ_APPROACH_TIME = 1.0
         # END_TIME = 1.0
 
-        # ros_logger.info(f"Traj point positions [0]: \n {traj_point_positions[0]}")
-        body_positions = traj_point_positions[0][:3] # first 3 are body
-        arm_positions = traj_point_positions[0][-6:] #last six elements are arm
-        # ros_logger.info(f"Here are body positions: \n {body_positions}")
-        # ros_logger.info(f"Here are arm positions: \n {arm_positions}")
-        arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
-            joint_positions=[arm_positions],
-            # joint_velocities=[traj_point_velocities[0]],
-            times=[TRAJ_APPROACH_TIME],
-            ref_time=ref_time,
-            max_acc=10000,
-            max_vel=10000,
-        )
+        robot_state = self._lease_manager._robot_state_client.get_robot_state()
+        vision_T_body = get_vision_tform_body(robot_state.kinematic_state.transforms_snapshot)
+        body_points = [traj_point_positions[0][:3]] # first 3 are body
+        arm_positions = [traj_point_positions[0][-6:]] #last six elements are arm
+        times = [TRAJ_APPROACH_TIME]
+        robot_cmd = self.create_arm_and_mobility_command(arm_positions, body_points, times, vision_T_body, ref_time)
 
-        ros_logger.info(f"arm cmd before wbc: \n {arm_cmd}")
-        # synchro_arm_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd)
-        wbc_cmd = self.generate_se2trajectory(ros_logger, wbc_points=[body_positions],frame_name="odom", times = [TRAJ_APPROACH_TIME], wbc_cmd=arm_cmd)
-        # robot_cmd = RobotCommandBuilder.build_synchro_command(body_cmd, arm_cmd)
-        robot_cmd = wbc_cmd
-        ros_logger.info(f"arm cmd: \n {arm_cmd}")
-        ros_logger.info(f"WBC cmd: \n {wbc_cmd}")
-        # ros_logger.info(f"WBC cmd: \n {robot_cmd}")
-        # ros_logger.info(f"WBC cmd id: \n {robot_cmd}")
+        ros_logger.info(f"Here are body positions: \n {body_points}")
+        ros_logger.info(f"Here are arm positions: \n {arm_positions}")
+        ros_logger.info(f"robot cmd outside loop: \n {robot_cmd}")
 
         # Send command to the robot
-        # self._lease_manager.robot_command(robot_cmd)
-        # self._lease_manager.robot_command(robot_cmd, time.time()+TRAJ_APPROACH_TIME)
+        # self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+times[-1]-times[0])
+        ros_logger.info(f"Before sending commmand outside loop")
+        self._lease_manager.robot_command(robot_cmd, time.time()+TRAJ_APPROACH_TIME)
+        ros_logger.info(f"After sending commmand outside loop")
 
         traj_index = [0, 9]
         end_index = len(traj_point_positions)
@@ -266,6 +334,7 @@ class SpotManipulationDriver(object):
 
         # while traj_index[0] < end_index:
         while traj_index[0] < 2:
+            ros_logger.info(f"INSIDE LOOP")
             times = []
             positions = []
             velocities = []
@@ -278,49 +347,24 @@ class SpotManipulationDriver(object):
             times = timepoints[traj_index[0] : traj_index[1]]
             positions = traj_point_positions[traj_index[0] : traj_index[1]]# need to extract arm portion
             # velocities = traj_point_velocities[traj_index[0] : traj_index[1]]
-            body_positions = [sublist[:3] for sublist in positions] # first 3 are body
+            body_points = [sublist[:3] for sublist in positions] # first 3 are body
             arm_positions = [sublist[-6:] for sublist in positions] #last six elements are arm
-            # ros_logger.info(f"Here are body positions: \n {body_positions}")
-            # ros_logger.info(f"Here are arm positions: \n {arm_positions}")
 
             # Increment indices for the next short trajectory
             traj_index = list(map(lambda x: x + 9, traj_index))
 
-            # Generate arm command
-            arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
-                joint_positions=arm_positions,
-                # joint_velocities=velocities,
-                times=times,
-                ref_time=ref_time,
-                max_acc=10000,
-                max_vel=10000,
-            )
-
-            # Generate body command
-            # body_cmd = self.generate_se2trajectory(ros_logger, wbc_points=body_positions,frame_name="odom", times = times, body_cmd=synchro_cmd_temp)
-            # self._lease_manager.robot.logger.info("Here is the body command: \n", body_cmd)
-            # self._lease_manager.robot.logger.info("Here is the arm command: \n", arm_cmd)
-
-            # Build synchro command
-            # robot_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd, body_cmd)
-            # robot_cmd = RobotCommandBuilder.build_synchro_command(mobility_request=body_cmd, arm_request=arm_cmd)
-            # synchro_arm_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd)
-            wbc_cmd = self.generate_se2trajectory(ros_logger, wbc_points=body_positions,frame_name="odom", times = times, wbc_cmd=arm_cmd)
-            robot_cmd = wbc_cmd
-            # robot_cmd = RobotCommandBuilder.build_synchro_command(body_cmd, arm_cmd)
-            # ros_logger.info(f"arm cmd: \n {arm_cmd}")
-            # ros_logger.info(f"WBC cmd: \n {wbc_cmd}")
-            # ros_logger.info(f"End time: \n {times[-1]}")
-
-            # break
+            robot_cmd = self.create_arm_and_mobility_command(arm_positions, body_points, times, vision_T_body, ref_time)
+            ros_logger.info(f"Here are body positions: \n {body_points}")
+            ros_logger.info(f"Here are arm positions: \n {arm_positions}")
+            ros_logger.info(f"robot cmd inside loop: \n {robot_cmd}")
 
             # Compute sleep time and sleep before executing next trajectory
             if traj_index[0] > 9:
                 time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
 
-            # success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd)
-            # success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, time.time()+times[-1])
-            # ros_logger.info(f"Command success: {success}")
+            ros_logger.info(f"Before sending commmand inside loop")
+            # success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, time.time()+times[-1]-times[0])
+            ros_logger.info(f"After sending command inside loop")
 
             time_index = time.time()
             feedback_resp = self._lease_manager.robot_command_feedback(cmd_id)
