@@ -1,7 +1,5 @@
 # NRG Spot Manipulation
-This repository contains all of the packages required to operate the Spot Arm through ROS, including jogging and MoveIt congfiguration. The `spot_manipulation_driver` package provides a python wrapper and ROS node to send commands to the Spot arm and finger, as well as twist command subscribers for the end-effector.
-
-The `spot_moveit_config` package provides the configuration settings for using the Spot Arm with MoveIt. This requires that the manipulation driver also be running.
+This repository contains the `spot_manipulation_driver` package required to operate the Spot Arm through ROS with the notable features listed below. Additionally, the `spot_moveit_config` package provides the configuration settings for using the Spot Arm with MoveIt. This requires that the manipulation driver also be running.
 
 ## Notable Features
 - **ROS Services:**
@@ -10,17 +8,21 @@ The `spot_moveit_config` package provides the configuration settings for using t
 
 - **ROS Action Servers:**
   - Execute arm joint trajectories
-  - Execute arm joint trajectories while manipulating body pose
-  - Walk robot to a specified pose
+  - Execute gripper trajectories
+  - Execute arm and gripper trajectories as a single synced trajectory
+  - Execute cartesian position/force trajectory for the EE
+  - Given pixel coordinates, camera info, and a transform snapshot have the robot go and grasp the pixel-specified object in an image.
+
+- **ROS Subscriptions:**
+  - Jog arm with twist messages
 
 ## Spot Manipulation Driver
+The recommended way to run this driver is to run it combined with the body driver. For that, detailed information is available [here](https://github.com/UTNuclearRobotics/spot_ros)
 
-To run the robot arm without command of the robot body, execute the command
+If there is a need to run just the manipulation driver, execute the following command from the command line:
 ```bash
 ros2 run spot_manipulation_driver manipulation_driver_node --ros-args -p hostname:=192.168.50.3 -p publish_joint_states:=True
 ```
-
-Running both the body driver and the manipulation driver together can be achieved by running the `combined_driver_node` executable, however the easier way would be to follow the bringup instructions in the `spot_ros` package [here](https://github.com/UTNuclearRobotics/spot_ros).
 
 ## Spot MoveIt Config
 The `spot_moveit_config` package can be used to bring up MoveIt servers with the correct settings to operate with the Spot Robot. The main launch files of interest are:

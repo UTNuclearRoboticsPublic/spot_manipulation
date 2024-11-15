@@ -48,20 +48,10 @@ def WrenchToMsg(wrench_proto: WrenchProto) -> Wrench:
         torque=ros_helpers.Vec3ToMsg(wrench_proto.torque)
     )
 
-def joint_trajectory_to_lists(msg: JointTrajectory):
+def joint_trajectory_to_lists(msg: JointTrajectory, joint_order: list):
     traj_point_positions = []
     traj_point_velocities = []
     timepoints = []
-
-    # Order of joints
-    joint_order = [
-        "arm0_shoulder_yaw",
-        "arm0_shoulder_pitch",
-        "arm0_elbow_pitch",
-        "arm0_elbow_roll",
-        "arm0_wrist_pitch",
-        "arm0_wrist_roll",
-    ]
 
     # Reorder joint commands based on joint_order and put them into long lists of lists
     point: JointTrajectoryPoint
@@ -69,7 +59,7 @@ def joint_trajectory_to_lists(msg: JointTrajectory):
         pos_dict = {}
         # vel_dict = {}
 
-        for j in range(0, 6):
+        for j in range(0, len(msg.joint_names)):
             name = msg.joint_names[j]
             pos_dict[name] = point.positions[j]
             # vel_dict[name] = point.velocities[j]

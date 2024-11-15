@@ -61,6 +61,19 @@ from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
 
+ARM_JOINT_ORDER = [
+    "arm0_shoulder_yaw",
+    "arm0_shoulder_pitch",
+    "arm0_elbow_pitch",
+    "arm0_elbow_roll",
+    "arm0_wrist_pitch",
+    "arm0_wrist_roll",
+]
+
+GRIPPER_JOINT_ORDER = [
+    "arm0_fingers"]
+
+
 class SpotManipulationDriverROS(Node):
     def __init__(self):
 
@@ -79,6 +92,7 @@ class SpotManipulationDriverROS(Node):
         self._recorded_collision_window = [False, False, False]
 
         self._arm_trajectory_cancel_event = threading.Event()
+        self._arm_and_finger_trajectory_cancel_event = threading.Event()
         self._arm_cartesian_command_cancel_event = threading.Event()
 
         # Declare ROS parameters
@@ -148,6 +162,9 @@ class SpotManipulationDriverROS(Node):
         self.finger_feedback = FollowJointTrajectory.Feedback()
         self.finger_result = FollowJointTrajectory.Result()
         self.finger_feedback_publish_flag = False
+
+        # Arm-and-finger-related attributes
+        self.arm_and_finger_result = FollowJointTrajectory.Result()
 
         # Image_to_grasp-related attributes
         self.image_to_grasp_result = ImageToGrasp.Result()
@@ -229,7 +246,6 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/stow_arm"       , self.stow_service_callback         , callback_group=motion_callback_group)
         self.create_service(Trigger, "~/close_gripper"  , self.gripper_close_service_callback, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/open_gripper"   , self.gripper_open_service_callback , callback_group=gripper_callback_group)
-        self.create_service(Trigger, "~/stand"          , self.stand_service_callback        , callback_group=motion_callback_group)
         self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
 
         # Handle manual action namespace 
@@ -251,6 +267,15 @@ class SpotManipulationDriverROS(Node):
             f"{action_ns}/finger_controller/follow_joint_trajectory",
             self.finger_goal_callback,
             callback_group=gripper_callback_group,
+        )
+
+        self.arm_and_finger_action_server = ActionServer(
+            self,
+            FollowJointTrajectory,
+            f"{action_ns}/arm_and_finger_controller/follow_joint_trajectory",
+            self.arm_and_finger_goal_callback,
+            callback_group=motion_callback_group,
+            cancel_callback=self.arm_and_finger_goal_cancel_callback
         )
 
         self.body_manipulation_action_server = ActionServer(
@@ -301,7 +326,7 @@ class SpotManipulationDriverROS(Node):
 
         # Translate message and execute trajectory while publishing feedback
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
-            goal_handle.request.trajectory
+            goal_handle.request.trajectory, ARM_JOINT_ORDER
         )
 
         trajectory_success = False
@@ -381,6 +406,56 @@ class SpotManipulationDriverROS(Node):
             self.get_logger().info("finger_controller/follow_joint_trajectory action server goal aborted")
 
         return self.finger_result
+
+    def arm_and_finger_goal_cancel_callback(self, cancel_request):
+        self._arm_and_finger_trajectory_cancel_event.set()
+        return CancelResponse.ACCEPT
+
+    def arm_and_finger_goal_callback(self, goal_handle: ServerGoalHandle):
+        """Callback for the /spot_arm/arm_and_finger_controller/follow_joint_trajectory action server """
+
+        # Translate message and execute trajectory while publishing feedback
+        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
+            goal_handle.request.trajectory, ARM_JOINT_ORDER
+        )
+
+        gripper_traj_point_positions, _ , _= ros_helpers.joint_trajectory_to_lists(
+            goal_handle.request.trajectory, GRIPPER_JOINT_ORDER
+        )
+
+        trajectory_success = False
+
+        def execute_trajectory() -> None:
+            nonlocal trajectory_success
+            try:
+                trajectory_success = self.manipulation_driver.arm_and_gripper_long_trajectory_executor(
+                    traj_point_positions, traj_point_velocities, timepoints, gripper_traj_point_positions, self._arm_and_finger_trajectory_cancel_event
+                ) 
+            except Exception as e:
+                self._logger.info(f"Error executing arm and finger long trajectory: {e}")
+                return
+
+        arm_and_finger_execution_thread = threading.Thread(target=execute_trajectory)
+        arm_and_finger_execution_thread.start()
+        
+        rate = self.create_rate(10.0)
+        while arm_and_finger_execution_thread.is_alive():
+            goal_handle.publish_feedback(
+                ros_helpers.get_joint_state_feedback(self.manipulation_driver)
+            )
+            rate.sleep()
+
+        arm_and_finger_execution_thread.join()
+
+        if self._arm_and_finger_trajectory_cancel_event.is_set():
+            goal_handle.canceled()
+            self._arm_and_finger_trajectory_cancel_event.clear()
+        elif trajectory_success:
+            goal_handle.succeed()
+        else:
+            goal_handle.abort()
+
+        return self.arm_and_finger_result
     
     def body_manipulation_callback(self, goal_handle: ServerGoalHandle) -> FollowJointTrajectory.Result:
         """Callback for manipulation requests with body assist"""
@@ -505,11 +580,11 @@ class SpotManipulationDriverROS(Node):
         self.get_logger().info(
             "Executing goal for the /image_to_grasp action server"
         )
-        success = False
+        self.image_to_grasp_result.success = False
         image_proto = ros_helpers.img_msg_to_proto(goal_handle.request.image, goal_handle.request.camera_info, goal_handle.request.tf_msg, self.manipulation_driver)
 
-        success = self.manipulation_driver.image_to_grasp(image_proto, goal_handle.request.pixel_coordinates)
-        if success:
+        self.image_to_grasp_result.success = self.manipulation_driver.image_to_grasp(image_proto, goal_handle.request.pixel_coordinates, goal_handle.request.grasp_strategy)
+        if self.image_to_grasp_result.success:
             goal_handle.succeed()
             self.get_logger().info("Successfully executed image_to_grasp goal")
         else:
@@ -635,12 +710,6 @@ class SpotManipulationDriverROS(Node):
         resp.success = success
         resp.message = msg
         time.sleep(0.5) # sleep to ensure end config is reached
-        return resp
-
-    def stand_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
-        (success, msg) = self.manipulation_driver.stand_robot()
-        resp.success = success
-        resp.message = msg
         return resp
 
     def gripper_angle_service_callback(self, req: GripperAngleMove.Request, resp: GripperAngleMove.Response):

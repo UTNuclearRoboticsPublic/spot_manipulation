@@ -33,6 +33,7 @@
 import time
 import threading
 from typing import Text, Tuple, List
+from enum import Enum
 
 from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
                         robot_command_pb2, robot_state_pb2, trajectory_pb2,
@@ -46,9 +47,7 @@ from bosdyn.client.image import ImageClient, build_image_request
 from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME,
                                         GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.math_helpers import SE3Pose
-from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
-                                         RobotCommandBuilder, TimedOutError,
-                                         blocking_stand, blocking_command)
+from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command)
 from bosdyn.client.exceptions import RpcError
 from bosdyn.util import seconds_to_timestamp, seconds_to_duration
 from google.protobuf import duration_pb2, timestamp_pb2
@@ -60,6 +59,10 @@ from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
+
+class GraspStrategy(Enum):
+    TOP_DOWN_GRASP = 1
+    HORIZONTAL_GRASP = 2
 
 class SpotManipulationDriver(object):
 
@@ -275,6 +278,208 @@ class SpotManipulationDriver(object):
 
         return success
 
+    def arm_and_gripper_long_trajectory_executor(
+        self,
+        traj_point_positions,
+        traj_point_velocities,
+        timepoints,
+        gripper_traj_point_positions,
+        cancel_event: threading.Event
+    ) -> bool:  
+        # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
+        try:
+            if self._lease_manager.robot.is_powered_on(5):
+                self._logger.info("Arm is about to move.")
+            else:
+                self._logger.warn("Cannot execute arm and gripper long trajectory, robot is not powered on")
+                return False
+        except RpcError as e:
+            self._logger.warn(f"Cannot execute arm and gripper long trajectory, unable to communicate with robot\n\tMsg: {e}")
+            return False
+
+        self._lease_manager.robot.time_sync.wait_for_sync()
+        self.verify_power_and_estop()
+        self._lease_manager.robot.logger.info("Arm is about to move.")
+
+        # Get to the start configuration of the trajectory before we execute it
+        start_time = time.time()
+        ref_time = seconds_to_timestamp(start_time)
+        TRAJ_APPROACH_TIME = 0.1
+
+        arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
+            joint_positions=[traj_point_positions[0]],
+            times=[TRAJ_APPROACH_TIME],
+            ref_time=ref_time,
+            max_acc=10000,
+            max_vel=10000,
+        )
+
+        gripper_cmd = RobotCommandBuilder.claw_gripper_command_helper(
+            gripper_positions=gripper_traj_point_positions[0],
+            times=[TRAJ_APPROACH_TIME],
+            ref_time=ref_time,
+            max_acc=10000,
+            max_vel=10000,
+        )
+
+        robot_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd, gripper_cmd)
+
+        self._lease_manager.robot_command(robot_cmd)
+
+        traj_index = [0, 9]
+        end_index = len(traj_point_positions)
+
+        # Compute reference time for the entire long trajectory
+        start_time = time.time() + TRAJ_APPROACH_TIME
+        ref_time = seconds_to_timestamp(start_time)
+
+        while traj_index[0] < end_index:
+            if cancel_event.is_set():
+                self.stop_robot()
+                self._logger.info("Arm and gripper trajectory action cancelled early. Stopping robot")
+                return False
+            times = []
+            positions = []
+            gripper_positions = []
+            velocities = []
+
+            # Don't let the extracted index range go beyond the end of the trajectory
+            if traj_index[1] > end_index:
+                traj_index[1] = end_index
+
+            # Extract a short trajectory from the long list
+            times = timepoints[traj_index[0] : traj_index[1]]
+            positions = traj_point_positions[traj_index[0] : traj_index[1]]
+            gripper_positions_list = gripper_traj_point_positions[traj_index[0] : traj_index[1]]
+            gripper_positions = [elem for sublist in gripper_positions_list for elem in sublist] # flatten the list
+
+            # Increment indices for the next short trajectory
+            traj_index = list(map(lambda x: x + 9, traj_index))
+
+            arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
+                joint_positions=positions,
+                # joint_velocities=velocities,
+                times=times,
+                ref_time=ref_time,
+                max_acc=10000,
+                max_vel=10000,
+            )
+
+            # Build gripper command
+            gripper_cmd = RobotCommandBuilder.claw_gripper_command_helper(
+                gripper_positions=gripper_positions,
+                times=times,
+                ref_time=ref_time,
+                max_acc=10000,
+                max_vel=10000,
+            )
+
+            # Combine the two commands
+            robot_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd, gripper_cmd)
+
+            # Compute sleep time and sleep before executing next trajectory
+            if traj_index[0] > 9:
+                time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
+
+            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd)
+
+            if not success:
+                self._logger.warn(f"arm_and_gripper_long_trajectory_executor: Error executing robot command: {msg}")
+                return False
+
+            time_index = time.time()
+            feedback_resp = self._lease_manager.robot_command_feedback(cmd_id)
+            joint_move_feedback = (
+                feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_joint_move_feedback
+            )
+            time_to_goal: duration_pb2.Duration = joint_move_feedback.time_to_goal
+            time_to_goal_in_seconds: float = time_to_goal.seconds + (
+                float(time_to_goal.nanos) / float(10 ** 9)
+            )
+
+        self._logger.info("Successfully executed arm and gripper trajectory")
+        return True
+
+    # def arm_and_gripper_long_trajectory_executor(
+    #     self,
+    #     traj_point_positions,
+    #     traj_point_velocities,
+    #     timepoints,
+    #     gripper_traj_point_positions,
+    #     cancel_event: threading.Event
+    # ) -> bool:  
+
+    #     # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
+    #     try:
+    #         if self._lease_manager.robot.is_powered_on(5):
+    #             self._logger.info("Arm is about to move.")
+    #         else:
+    #             self._logger.warn("Cannot execute arm and gripper long trajectory, robot is not powered on")
+    #             return False
+    #     except RpcError as e:
+    #         self._logger.warn(f"Cannot execute arm and gripper long trajectory, unable to communicate with robot\n\tMsg: {e}")
+    #         return False
+
+    #     self._lease_manager.robot.time_sync.wait_for_sync()
+    #     start_time = time.time()
+    #     ref_time = seconds_to_timestamp(start_time)
+
+    #     arm_trajectory_manager = TrajectoryManager(
+    #         points=traj_point_positions,
+    #         times_since_ref=timepoints,
+    #         ref_time=start_time
+    #     )
+
+    #     gripper_trajectory_manager = TrajectoryManager(
+    #         points=gripper_traj_point_positions,
+    #         times_since_ref=timepoints,
+    #         ref_time=start_time
+    #     )
+
+    #     while not arm_trajectory_manager.done():
+    #         if cancel_event.is_set():
+    #             self.stop_robot()
+    #             self._logger.info("Arm and gripper trajectory action cancelled early. Stopping robot")
+    #             return False
+
+    #         arm_window, timestamps, sleep_time = arm_trajectory_manager.get_window(MAX_ARM_POINTS)
+    #         self._logger.info(f"Arm window: {arm_window}")
+    #         gripper_list_window, _, _ = gripper_trajectory_manager.get_window(MAX_ARM_POINTS)
+    #         gripper_window = [elem for sublist in gripper_list_window for elem in sublist]
+    #         self._logger.info(f"Gripper window: {gripper_window}")
+
+    #         # Build arm command
+    #         arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
+    #             joint_positions=arm_window,
+    #             times=timestamps,
+    #             ref_time=ref_time
+    #         )
+
+    #         # Build gripper command
+    #         gripper_cmd = RobotCommandBuilder.claw_gripper_command_helper(
+    #             gripper_positions=gripper_window,
+    #             times=timestamps,
+    #             ref_time=ref_time
+    #         )
+
+    #         # Combine the two commands
+    #         robot_cmd = RobotCommandBuilder.build_synchro_command(arm_cmd, gripper_cmd)
+
+    #         success, msg, _ = self._lease_manager.robot_command(robot_cmd)
+
+    #         if not success:
+    #             self._logger.warn(f"arm_and_gripper_long_trajectory_executor: Error executing robot command: {msg}")
+    #             return False
+
+    #         if arm_trajectory_manager.last():
+    #             time.sleep(sleep_time)
+    #         else:
+    #             time.sleep(max(sleep_time - 0.2, 0))
+
+    #     self._logger.info("Successfully executed arm and gripper trajectory")
+    #     return True
+
+
     def body_manipulation_trajectory_executor(
             self, body_trajectory: List[SE3Pose], arm_trajectory: List[List[float]], timestamps: List[float]
         ) -> bool:
@@ -451,7 +656,47 @@ class SpotManipulationDriver(object):
             traj_index = traj_index + 1
         return success
 
-    def image_to_grasp(self, image, pixel_coordinates):
+    def add_grasp_constraints(self, grasp, grasp_strategy: GraspStrategy) -> None:
+
+        grasp.grasp_params.grasp_params_frame_name = VISION_FRAME_NAME
+        constraint = grasp.grasp_params.allowable_orientation.add()
+
+        if grasp_strategy == GraspStrategy.TOP_DOWN_GRASP or grasp_strategy == GraspStrategy.TOP_DOWN_GRASP.value:
+
+            # Constrain to align the x-axis of the gripper with the -z-axis of the vision frame
+            axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0) # of the gripper
+            axis_to_align_with_ewrt_vo = geometry_pb2.Vec3(x=0, y=0, z=-1) # of the vision frame
+
+            # Add tolerance to the constraints, about 30 degrees
+            constraint.vector_alignment_with_tolerance.threshold_radians = 0.2618
+            grasp.grasp_params.grasp_palm_to_fingertip = (
+                0.6
+            )  # might need to adjust for object size
+
+        elif grasp_strategy == GraspStrategy.HORIZONTAL_GRASP or grasp_strategy == GraspStrategy.HORIZONTAL_GRASP.value:
+
+
+            # Constrain to align the y-axis of the gripper with the z-axis of the vision frame
+            axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=0, y=1, z=0)
+            axis_to_align_with_ewrt_vo = geometry_pb2.Vec3(x=0, y=0, z=1)
+
+            # Add tolerance to the constraints, about 30 degrees
+            constraint.vector_alignment_with_tolerance.threshold_radians = 0.0873
+            grasp.grasp_params.grasp_palm_to_fingertip = (
+                0.3
+            )  # might need to adjust for object size
+        
+        else:
+            raise ValueError(f"Unknown grasp strategy: {grasp_strategy}")
+
+        # Add the constraints to the proto message
+        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
+            axis_on_gripper_ewrt_gripper)
+        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
+            axis_to_align_with_ewrt_vo)
+
+
+    def image_to_grasp(self, image, pixel_coordinates: List, grasp_strategy: GraspStrategy):
 
         # Filling out grasping request
         pick_vec = geometry_pb2.Vec2(x=pixel_coordinates[0], y=pixel_coordinates[1])
@@ -461,35 +706,9 @@ class SpotManipulationDriver(object):
             frame_name_image_sensor=image.shot.frame_name_image_sensor,
             camera_model=image.source.pinhole,
         )
-        grasp.grasp_params.grasp_palm_to_fingertip = (
-            0.6
-        )  # might need to adjust for object size
 
-        # Specify top-down grasp
-
-        # Add a constraint that requests that the x-axis of the gripper is pointing in the
-        # negative-z direction in the vision frame.
-
-        # The axis on the gripper is the x-axis.
-        axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0)
-
-        # The axis in the vision frame is the negative z-axis
-        axis_to_align_with_ewrt_vision = geometry_pb2.Vec3(x=0, y=0, z=-1)
-
-        # Add the vector constraint to our proto.
-        constraint = grasp.grasp_params.allowable_orientation.add()
-        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
-            axis_on_gripper_ewrt_gripper
-        )
-        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
-            axis_to_align_with_ewrt_vision
-        )
-
-        # Tolerance for top-down grasp
-        constraint.vector_alignment_with_tolerance.threshold_radians = 1.22
-
-        # Specify the frame we're using.
-        grasp.grasp_params.grasp_params_frame_name = VISION_FRAME_NAME
+        # Add grasp constraint
+        self.add_grasp_constraints(grasp, grasp_strategy)
 
         # Build the proto
         grasp_request = manipulation_api_pb2.ManipulationApiRequest(
@@ -504,6 +723,8 @@ class SpotManipulationDriver(object):
         # Wait for the grasp to finish
         grasp_done = False
         failed = False
+        timeout = False
+        timeout_duration = 20
         time_start = time.time()
         while not grasp_done:
             feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
@@ -532,22 +753,29 @@ class SpotManipulationDriver(object):
             ]
 
             failed = current_state in failed_states
+
+            # Check if the operation has exceeded the timeout duration
+            if current_time > timeout_duration:
+                self._lease_manager.robot.logger.error("Operation timed out after {time:.1f} seconds.".format(time=current_time))
+                timeout = True  # Exit the loop
+
             grasp_done = (
                 current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED
-                or failed
+                or failed or timeout
             )
 
             time.sleep(0.1)
 
-        holding_trash = not failed
+        holding_trash = not (failed or timeout)
 
-        # Move the arm to a carry position.
-        self._lease_manager.robot.logger.info("Grasp succeeded.")
-        self._lease_manager.robot.logger.info("Going to carry pose.")
-        carry_cmd = RobotCommandBuilder.arm_carry_command()
-        self._lease_manager.robot_command(carry_cmd)
+        if holding_trash: 
+            # Move the arm to the ready position.
+            self._lease_manager.robot.logger.info("Grasp succeeded.")
+            self._lease_manager.robot.logger.info("Going to ready pose.")
+            ready_cmd = RobotCommandBuilder.arm_ready_command()
+            self._lease_manager.robot_command(ready_cmd)
 
-        time.sleep(0.75) # Wait for the carry command to finish
+            time.sleep(0.25) # Wait for the ready command to finish
         return holding_trash
 
 
@@ -585,16 +813,6 @@ class SpotManipulationDriver(object):
         robot_command.synchronized_command.arm_command.arm_cartesian_command.CopyFrom(cartesian_command)
         end_time = time.time() + timeout if timeout is not None else None
         return self.lease_manager.robot_command(robot_command, end_time)
-
-    def stand_robot(self) -> Tuple[bool, Text]:
-        self._lease_manager.robot.logger.info("Commanding robot to stand...")
-        try:
-            blocking_stand(self._lease_manager.command_client, timeout_sec=10)
-        except CommandFailedErrorWithFeedback as error:
-            return False, error.message
-        except TimedOutError as error:
-            return False, error.error_message
-        return True, "Robot standing"
 
     def stow_arm(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.arm_stow_command()
