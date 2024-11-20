@@ -69,6 +69,12 @@
     <parent link="body"/>
     <child link="rear_rail"/>
   </joint>
+  <link name="payload_mount_reference_frame"/>
+  <joint name="payload_mount_reference_frame_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="payload_mount_reference_frame"/>
+    <origin xyz="0.2075 0.0 0.0805"/>
+  </joint>
   <!-- Front Left -->
   <link name="front_left_hip">
     <visual>
@@ -599,7 +605,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/arm/arm0.link_sh0.obj"/>
+        <mesh filename="meshes/arm/arm0.link_sh0.dae"/>
       </geometry>
       <material name="arm0.link_sh0">
         <color rgba="0.2 0.2 0.2 1"/>
@@ -653,7 +659,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/arm/arm0.link_hr0.obj"/>
+        <mesh filename="meshes/arm/arm0.link_hr0.dae"/>
       </geometry>
       <material name="arm0.link_hr0">
         <color rgba="0.2 0.2 0.2 1"/>
@@ -680,7 +686,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/arm/arm0.link_el0.obj"/>
+        <mesh filename="meshes/arm/arm0.link_el0.dae"/>
       </geometry>
       <material name="arm0.link_el0">
         <color rgba="0.2 0.2 0.2 1"/>
@@ -707,7 +713,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/arm/arm0.link_el1.obj"/>
+        <mesh filename="meshes/arm/arm0.link_el1.dae"/>
       </geometry>
       <material name="arm0.link_el1">
         <color rgba="0.2 0.2 0.2 1"/>
@@ -734,7 +740,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/arm/arm0.link_wr0.obj"/>
+        <mesh filename="meshes/arm/arm0.link_wr0.dae"/>
       </geometry>
       <material name="arm0.link_wr0">
         <color rgba="0.2 0.2 0.2 1"/>
@@ -761,7 +767,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/arm/arm0.link_wr1.obj"/>
+        <mesh filename="meshes/arm/arm0.link_wr1.dae"/>
       </geometry>
       <material name="arm0.link_wr1">
         <color rgba="0.2 0.2 0.2 1"/>
@@ -795,7 +801,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/arm/arm0.link_fngr.obj"/>
+        <mesh filename="meshes/arm/arm0.link_fngr.dae"/>
       </geometry>
       <material name="arm0.link_fngr">
         <color rgba="0.2 0.2 0.2 1"/>
@@ -847,26 +853,97 @@
     <parent link="base_link"/>
     <child link="arm0_base_link"/>
   </joint>
-  <link name="lidar_assembly">
+  <link name="rl_kit_reference_frame"/>
+  <joint name="rl_kit_base_mount_to_body" type="fixed">
+    <parent link="payload_mount_reference_frame"/>
+    <child link="rl_kit_reference_frame"/>
+    <origin xyz="-0.292 0.0 0.056"/>
+  </joint>
+  <link name="rl_kit_wire_housing_box">
     <visual>
       <geometry>
-        <mesh filename="meshes/accessories/eap_lidar.stl"/>
+        <box size="0.152 0.206 0.066"/>
+      </geometry>
+      <material name="black_color">
+        <color rgba="0.1 0.1 0.1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.152 0.206 0.066"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="rl_kit_wire_housing_box_joint" type="fixed">
+    <parent link="rl_kit_reference_frame"/>
+    <child link="rl_kit_wire_housing_box"/>
+    <origin xyz="0.076 0.0 -0.023"/>
+  </joint>
+  <link name="rl_kit_jetson_housing_box">
+    <visual>
+      <geometry>
+        <box size="0.156 0.206 0.112"/>
+      </geometry>
+      <material name="black_color">
+        <color rgba="0.1 0.1 0.1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.156 0.206 0.112"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="rl_kit_jetson_housing_box_joint" type="fixed">
+    <parent link="rl_kit_reference_frame"/>
+    <child link="rl_kit_jetson_housing_box"/>
+    <origin xyz="-0.078 0.0 0.0"/>
+  </joint>
+  <link name="rl_kit_gxp_interface">
+    <visual>
+      <geometry>
+        <mesh filename="meshes/accessories/gxp.dae"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="rl_kit_gxp_joint" type="fixed">
+    <parent link="rl_kit_reference_frame"/>
+    <child link="rl_kit_gxp_interface"/>
+    <origin xyz="0.13 0.0 -0.056"/>
+  </joint>
+  <link name="rl_kit_velodyne_mounting_plate">
+    <visual>
+      <geometry>
+        <mesh filename="meshes/accessories/rl_kit_velodyne_mount.dae"/>
       </geometry>
     </visual>
     <collision>
       <geometry>
-        <mesh filename="meshes/accessories/eap_lidar.stl"/>
+        <box size="0.19 0.18 0.013"/>
       </geometry>
     </collision>
   </link>
-  <joint name="lidar_mount" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.03 0.0 0.0"/>
-    <parent link="rear_rail"/>
-    <child link="lidar_assembly"/>
+  <link name="velodyne_cage">
+    <visual>
+      <geometry>
+        <mesh filename="meshes/accessories/velodyne_cage.dae"/>
+      </geometry>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.08" radius="0.08"/>
+      </geometry>
+      <origin xyz="0 0 0.04"/>
+    </collision>
+  </link>
+  <joint name="velodyne_cage_link" type="fixed">
+    <parent link="rl_kit_velodyne_mounting_plate"/>
+    <child link="velodyne_cage"/>
+    <origin xyz="0 0 0.0065"/>
   </joint>
   <joint name="velodyne_base_mount_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.0 0 0.08"/>
-    <parent link="lidar_assembly"/>
+    <origin rpy="0 0 0" xyz="0 0 0.008"/>
+    <parent link="rl_kit_velodyne_mounting_plate"/>
     <child link="velodyne_base_link"/>
   </joint>
   <link name="velodyne_base_link">
@@ -961,8 +1038,21 @@
       </plugin>
     </sensor>
   </gazebo>
-  <!-- This file is a placeholder which is included by default from
-       spot.urdf.xacro. If a robot is being customized and requires
-       additional URDF, set the SPOT_URDF_EXTRAS environment variable
-       to the full path of the file you would like included. -->
+  <joint name="rl_kit_velodyne_mount_joint" type="fixed">
+    <parent link="rl_kit_jetson_housing_box"/>
+    <child link="rl_kit_velodyne_mounting_plate"/>
+    <origin xyz="-0.045 0.0 0.056"/>
+  </joint>
+  <link name="alpha_detector_face"/>
+  <link name="alpha_detector_sensing_frame"/>
+  <joint name="alpha_detector_joint" type="fixed">
+    <parent link="arm0_hand"/>
+    <child link="alpha_detector_face"/>
+    <origin xyz="0.04 0.0 -0.03"/>
+  </joint>
+  <joint name="alpha_detector_sensor_joint" type="fixed">
+    <parent link="alpha_detector_face"/>
+    <child link="alpha_detector_sensing_frame"/>
+    <origin rpy="0.0 1.5707963267948966 0.0"/>
+  </joint>
 </robot>

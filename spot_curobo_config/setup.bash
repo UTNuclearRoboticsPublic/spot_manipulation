@@ -4,7 +4,7 @@
 ln -sf $(ros2 pkg prefix --share spot_description)/meshes .
 
 # Create the urdf file from the configured xacro file
-xacro $(ros2 pkg prefix --share spot_description)/urdf/spot.urdf.xacro -o urdf/spot.urdf has_arm:=True has_eap:=True
+xacro $(ros2 pkg prefix --share spot_description)/urdf/spot.urdf.xacro -o urdf/spot.urdf has_arm:=True has_rl_kit:=True
 
 # Update mesh paths
 sed -i "s|package://spot_description/||" urdf/spot.urdf

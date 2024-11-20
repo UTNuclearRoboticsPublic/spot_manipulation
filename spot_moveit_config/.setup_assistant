@@ -2,7 +2,7 @@ moveit_setup_assistant_config:
   urdf:
     package: spot_description
     relative_path: urdf/spot.urdf.xacro
-    xacro_args: has_arm:=true has_eap:=true
+    xacro_args: has_arm:=true has_rl_kit:=true
   srdf:
     relative_path: config/spot.srdf
   package_settings:
