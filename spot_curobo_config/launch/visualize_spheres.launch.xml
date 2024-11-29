@@ -3,7 +3,7 @@
     <arg name="offline" default="true"/>
 
     <include file="$(find-pkg-share spot_description)/launch/offline_state_publisher.launch.py" if="$(var offline)">
-        <arg name="has_eap" value="True"/>
+        <arg name="has_rl_kit" value="True"/>
         <arg name="has_arm" value="True"/>
     </include>
 
