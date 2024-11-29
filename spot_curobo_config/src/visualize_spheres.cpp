@@ -46,25 +46,30 @@ int main(int argc, char* argv[]) {
         for (const auto& item : collision_spheres) {
             const std::string child_link = item.first.as<std::string>();
 
-            geometry_msgs::msg::TransformStamped base_link_tform_child_link = tf_buffer.lookupTransform(
-                base_link,
-                child_link,
-                now, 
-                std::chrono::milliseconds(500)
-            );
+            try{
+                geometry_msgs::msg::TransformStamped base_link_tform_child_link = tf_buffer.lookupTransform(
+                    base_link,
+                    child_link,
+                    now, 
+                    std::chrono::milliseconds(500)
+                );
 
-            for (const auto& sphere : item.second) {
-                visualization_msgs::msg::Marker& new_marker = m_array.markers.emplace_back() = marker;
-                geometry_msgs::msg::Pose& sphere_pose = new_marker.pose;
-                sphere_pose.position.x = sphere["center"][0].as<double>();
-                sphere_pose.position.y = sphere["center"][1].as<double>();
-                sphere_pose.position.z = sphere["center"][2].as<double>();
-                new_marker.scale.x =
-                new_marker.scale.y = 
-                new_marker.scale.z = 2*sphere["radius"].as<double>();
-                new_marker.id = idx++;
+                for (const auto& sphere : item.second) {
+                    visualization_msgs::msg::Marker& new_marker = m_array.markers.emplace_back() = marker;
+                    geometry_msgs::msg::Pose& sphere_pose = new_marker.pose;
+                    sphere_pose.position.x = sphere["center"][0].as<double>();
+                    sphere_pose.position.y = sphere["center"][1].as<double>();
+                    sphere_pose.position.z = sphere["center"][2].as<double>();
+                    new_marker.scale.x =
+                    new_marker.scale.y = 
+                    new_marker.scale.z = 2*sphere["radius"].as<double>();
+                    new_marker.id = idx++;
 
-                tf2::doTransform(sphere_pose, sphere_pose, base_link_tform_child_link);
+                    tf2::doTransform(sphere_pose, sphere_pose, base_link_tform_child_link);
+                }
+            } catch (tf2::LookupException& e) {
+                RCLCPP_WARN(node->get_logger(), "%s", e.what());
+                continue;
             }
         }
 
