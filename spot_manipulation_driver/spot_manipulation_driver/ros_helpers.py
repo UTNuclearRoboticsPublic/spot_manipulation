@@ -22,10 +22,10 @@ from spot_driver import ros_helpers
 from spot_driver.type_hint_helpers import *
 
 joint_order_9DoF = [
-    "body_height_joint",
-    "body_yaw_joint",
-    "body_pitch_joint",
-    "body_roll_joint",
+    # "body_height_joint",
+    # "body_yaw_joint",
+    # "body_pitch_joint",
+    # "body_roll_joint",
     "arm0_shoulder_yaw",
     "arm0_shoulder_pitch",
     "arm0_elbow_pitch",
@@ -108,9 +108,9 @@ def get_body_manipulation_trajectories(msg: JointTrajectory) -> Tuple[List[SE3Po
         for joint_idx, joint_name in enumerate(joint_order_9DoF):
             msg_idx = msg.joint_names.index(joint_name)
             if joint_name.startswith("arm0"): 
-                arm_point[joint_idx-4] = point.positions[msg_idx]
-            else:
-                body_point[joint_idx] = point.positions[msg_idx]
+                arm_point[joint_idx] = point.positions[msg_idx]
+            # else:
+            #     body_point[joint_idx] = point.positions[msg_idx]
 
         arm_points.append(arm_point)
         body_points.append(body_point)

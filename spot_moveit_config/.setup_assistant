@@ -7,7 +7,7 @@ moveit_setup_assistant_config:
   package_settings:
     author_name: steven swanbeck
     author_email: stevenswanbeck@utexas.edu
-    generated_timestamp: 1733199086
+    generated_timestamp: 1733245820
   control_xacro:
     command:
       - position
