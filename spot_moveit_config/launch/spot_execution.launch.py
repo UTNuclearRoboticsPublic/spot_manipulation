@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.actions import Node
 
 from moveit_configs_utils import MoveItConfigsBuilder
 
@@ -25,5 +26,13 @@ def generate_launch_description():
             ),
         )
     )
+    
+    # ld.add_action(
+    #     Node(
+    #         package='tf2_ros',
+    #         executable='static_transform_publisher',
+    #         arguments= '0.0 0.0 0.0 0.0 0.0 0.0 base_link base_footprint'.split(' '),
+    #     )
+    # )
 
     return ld
