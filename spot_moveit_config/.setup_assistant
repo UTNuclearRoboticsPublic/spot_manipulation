@@ -1,17 +1,16 @@
 moveit_setup_assistant_config:
   urdf:
     package: spot_description
-    relative_path: urdf/spot.urdf.xacro
-    xacro_args: has_arm:=true has_rl_kit:=true
+    relative_path: urdf/spot_with_arm.urdf.xacro
   srdf:
     relative_path: config/spot.srdf
   package_settings:
-    author_name: Alex Navarro
-    author_email: alexnavtt@utexas.edu
-    generated_timestamp: 1713404819
+    author_name: steven swanbeck
+    author_email: stevenswanbeck@utexas.edu
+    generated_timestamp: 1733199086
   control_xacro:
     command:
-      []
+      - position
     state:
       - position
       - velocity
@@ -20,7 +19,7 @@ moveit_setup_assistant_config:
       - control_xacro
   control_xacro:
     command:
-      []
+      - position
     state:
       - position
       - velocity

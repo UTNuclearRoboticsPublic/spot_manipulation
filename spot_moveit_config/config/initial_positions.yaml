@@ -7,7 +7,3 @@ initial_positions:
   arm0_shoulder_yaw: 0
   arm0_wrist_pitch: 0
   arm0_wrist_roll: 0
-  body_height_joint: 0
-  body_pitch_joint: 0
-  body_roll_joint: 0
-  body_yaw_joint: 0

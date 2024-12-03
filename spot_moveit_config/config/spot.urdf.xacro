@@ -3,7 +3,7 @@
     <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
 
     <!-- Import spot urdf file -->
-    <xacro:include filename="$(find spot_description)/urdf/spot.urdf.xacro" />
+    <xacro:include filename="$(find spot_description)/urdf/spot_with_arm.urdf.xacro" />
 
     <!-- Import control_xacro -->
     <xacro:include filename="spot.ros2_control.xacro" />

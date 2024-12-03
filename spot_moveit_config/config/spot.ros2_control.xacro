@@ -8,61 +8,43 @@
                 <!-- By default, set up controllers for simulation. This won't work on real hardware -->
                 <plugin>mock_components/GenericSystem</plugin>
             </hardware>
-            <joint name="body_height_joint">
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['body_height_joint']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
-            <joint name="body_yaw_joint">
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['body_yaw_joint']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
-            <joint name="body_pitch_joint">
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['body_pitch_joint']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
-            <joint name="body_roll_joint">
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['body_roll_joint']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
             <joint name="arm0_shoulder_yaw">
+                <command_interface name="position"/>
                 <state_interface name="position">
                   <param name="initial_value">${initial_positions['arm0_shoulder_yaw']}</param>
                 </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="arm0_shoulder_pitch">
+                <command_interface name="position"/>
                 <state_interface name="position">
                   <param name="initial_value">${initial_positions['arm0_shoulder_pitch']}</param>
                 </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="arm0_elbow_pitch">
+                <command_interface name="position"/>
                 <state_interface name="position">
                   <param name="initial_value">${initial_positions['arm0_elbow_pitch']}</param>
                 </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="arm0_elbow_roll">
+                <command_interface name="position"/>
                 <state_interface name="position">
                   <param name="initial_value">${initial_positions['arm0_elbow_roll']}</param>
                 </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="arm0_wrist_pitch">
+                <command_interface name="position"/>
                 <state_interface name="position">
                   <param name="initial_value">${initial_positions['arm0_wrist_pitch']}</param>
                 </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="arm0_wrist_roll">
+                <command_interface name="position"/>
                 <state_interface name="position">
                   <param name="initial_value">${initial_positions['arm0_wrist_roll']}</param>
                 </state_interface>
