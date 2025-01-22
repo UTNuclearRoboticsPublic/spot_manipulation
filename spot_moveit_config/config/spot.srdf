@@ -19,7 +19,7 @@
     <end_effector name="arm0_hand" parent_link="arm0_wrist_roll" group="arm_with_body"/>
     <end_effector name="arm0_hand" parent_link="arm0_wrist_roll" group="arm"/>
     <!-- VIRTUAL JOINTS -->
-    <virtual_joint name="spot_mobility_joint" child_link="base_footprint" parent_frame="map" type="planar"/>
+    <virtual_joint name="spot_mobility_joint" child_link="base_footprint" parent_frame="spot_nav/map" type="planar"/>
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_elbow_roll" reason="Adjacent"/>
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_fingers" reason="Never"/>
@@ -204,4 +204,7 @@
     <disable_collisions link1="body" link2="eap_2_assembly" reason="Adjacent"/>
     <disable_collisions link1="arm0_base_link" link2="arm0_shoulder_yaw" reason="Adjacent"/>
     <disable_collisions link1="arm0_base_link" link2="body" reason="Adjacent"/>
+    <disable_collisions link1="alpha_detector" link2="arm0_wrist_roll" reason="Adjacent"/>
+    <disable_collisions link1="alpha_detector" link2="arm0_wrist_pitch" reason="Adjacent"/>
+    <disable_collisions link1="alpha_detector" link2="arm0_fingers" reason="Adjacent"/>
 </robot>

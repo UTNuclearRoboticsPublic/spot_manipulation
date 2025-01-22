@@ -33,7 +33,7 @@ class TrajectoryManager:
         # Get the index of the point after the one that was most recently executed
         active_index = self.size
         for idx, time_since_ref in enumerate(self.times_since_ref):
-            if (time_since_ref > current_time_since_ref):
+            if (time_since_ref - current_time_since_ref > 0.15): # Add a cushion of a small fraction of a second to account for transmission times
                 active_index = idx
                 break
 
