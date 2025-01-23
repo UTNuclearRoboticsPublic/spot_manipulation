@@ -695,7 +695,7 @@ class SpotManipulationDriverROS(Node):
     def mini_unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response :
         arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, Twist())
         resp.success, resp.message = self.manipulation_driver.ee_velocity_msg_executor(arm_vel_request)
-        time.sleep(1) # sleep to ensure end config is reached
+        time.sleep(3) # sleep to ensure end config is reached
         return resp
 
     def gripper_close_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
