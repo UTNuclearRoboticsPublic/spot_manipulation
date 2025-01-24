@@ -6,7 +6,7 @@ from moveit_configs_utils.launches import generate_move_group_launch
 
 def generate_launch_description():
     moveit_config_builder = MoveItConfigsBuilder("spot", package_name="spot_moveit_config")
-    moveit_config_builder.planning_pipelines("ompl", ["ompl", "isaac_ros_cumotion"])
+    moveit_config_builder.planning_pipelines("ompl", ["ompl"])
     moveit_config = moveit_config_builder.to_moveit_configs()
     moveit_config.move_group_capabilities["capabilities"] = ""
     return LaunchDescription([
