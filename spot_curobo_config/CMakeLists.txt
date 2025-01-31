@@ -17,7 +17,6 @@ target_link_libraries(visualize_spheres ${YAML_CPP_LIBRARIES})
 
 install(
   DIRECTORY 
-    meshes
     urdf
     usd
     config
