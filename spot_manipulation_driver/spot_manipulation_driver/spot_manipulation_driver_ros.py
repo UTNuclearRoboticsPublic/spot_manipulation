@@ -54,6 +54,7 @@ from spot_msgs.action import ImageToGrasp, ArmCartesianCommand
 from control_msgs.action import FollowJointTrajectory
 from std_msgs.msg import Float32, Bool, Header
 from geometry_msgs.msg import WrenchStamped, Vector3
+from trajectory_msgs.msg import JointTrajectory
 
 import spot_manipulation_driver.ros_helpers as ros_helpers
 from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg
@@ -152,6 +153,16 @@ class SpotManipulationDriverROS(Node):
             )
         )
 
+        self.declare_parameter(
+            "data_capture_mode",
+            False,
+            ParameterDescriptor(
+                description="Whether or not to publish received action server goals on goal topics",
+                type=ParameterType.PARAMETER_BOOL,
+                read_only=True,
+            ),
+        )
+
         # --- Initialize action messages --- #
 
         # Arm-related attributes
@@ -168,6 +179,9 @@ class SpotManipulationDriverROS(Node):
 
         # Image_to_grasp-related attributes
         self.image_to_grasp_result = ImageToGrasp.Result()
+
+        # Check if we need to capture data
+        self.data_capture_mode = self.get_parameter('data_capture_mode').value
 
     def connect(self, lease_manager: SpotLeaseManager) -> bool:
         self.get_logger().info("Connecting manipulation driver")
@@ -220,6 +234,7 @@ class SpotManipulationDriverROS(Node):
         self._collision_pub  = self.create_publisher(Bool                 , "~/manipulator_state/is_hand_in_collision"    , 10)
 
         self._joint_state_pub = self.create_publisher(JointState, "/joint_states", 10)
+        self._arm_goal_pub = self.create_publisher(JointTrajectory, "/arm_controller/follow_joint_trajectory/goal", 10)
 
         # Command subscriptions
         self.ee_vel_sub = self.create_subscription(
@@ -329,6 +344,23 @@ class SpotManipulationDriverROS(Node):
             goal_handle.request.trajectory, ARM_JOINT_ORDER
         )
 
+        # Publish the received trajectory (only once) before executing for data-capture purposes
+        if self.data_capture_mode:
+            def arm_goal_publisher() -> None:
+                timeout = 3.0
+                start_time = time.time()  
+
+                while self._arm_goal_pub.get_subscription_count() < 1:
+                    if time.time() - start_time > timeout:
+                        self.get_logger().info("Timed out waiting for an arm_controller/follow_joint_trajectory/goal subscriber to be available")
+                        return  
+                    time.sleep(0.1)  # sleep to avoid busy-waiting
+                self.get_logger().info("Publishing received joint trajectory on the arm_controller/follow_joint_trajectory/goal topic")
+                self._arm_goal_pub.publish(goal_handle.request.trajectory)
+
+            arm_goal_publisher_thread = threading.Thread(target=arm_goal_publisher)
+            arm_goal_publisher_thread.start()
+
         trajectory_success = False
 
         def execute_trajectory() -> None:
@@ -351,7 +383,10 @@ class SpotManipulationDriverROS(Node):
             )
             rate.sleep()
 
+        # Join threads
         arm_execution_thread.join()
+        if self.data_capture_mode:
+            arm_goal_publisher_thread.join()
 
         if self._arm_trajectory_cancel_event.is_set():
             goal_handle.canceled()
