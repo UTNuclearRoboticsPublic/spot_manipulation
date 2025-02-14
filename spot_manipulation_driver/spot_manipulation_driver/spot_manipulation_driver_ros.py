@@ -107,7 +107,7 @@ class SpotManipulationDriverROS(Node):
             ),
         )
 
-        self.declare_parameter(
+        self.publish_joint_states_flag = self.declare_parameter(
             "publish_joint_states",
             False,
             ParameterDescriptor(
@@ -115,7 +115,7 @@ class SpotManipulationDriverROS(Node):
                 type=ParameterType.PARAMETER_BOOL,
                 read_only=True,
             ),
-        )
+        ).value
 
         self.declare_parameter(
             "rates.robot_state",
@@ -783,6 +783,7 @@ class SpotManipulationDriverROS(Node):
                 pub_info.publish(info_msg)
 
     def publish_joint_states(self, _):
-        state = self.manipulation_driver.kinematic_state
-        joint_states = JointStatesToMsg(state, self.manipulation_driver.lease_manager)
-        self._joint_state_pub.publish(joint_states)
+        if self.publish_joint_states_flag:
+            state = self.manipulation_driver.kinematic_state
+            joint_states = JointStatesToMsg(state, self.manipulation_driver.lease_manager)
+            self._joint_state_pub.publish(joint_states)
