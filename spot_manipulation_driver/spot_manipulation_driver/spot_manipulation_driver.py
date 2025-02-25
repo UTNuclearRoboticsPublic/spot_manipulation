@@ -35,15 +35,14 @@ import threading
 from typing import Text, Tuple, List
 from enum import Enum
 
-from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
+from bosdyn.api import (arm_command_pb2, estop_pb2, manipulation_api_pb2,
                         robot_command_pb2, robot_state_pb2, trajectory_pb2,
-                        synchronized_command_pb2, basic_command_pb2, geometry_pb2, manipulation_api_pb2)
+                        synchronized_command_pb2, basic_command_pb2, geometry_pb2)
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.api.spot.robot_command_pb2 import BodyControlParams
 from bosdyn.api.robot_command_pb2 import RobotCommandFeedbackResponse
 from bosdyn.api.mobility_command_pb2 import MobilityCommand
 from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand
-from bosdyn.client.image import ImageClient, build_image_request
 from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME,
                                         GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.math_helpers import SE3Pose
@@ -51,7 +50,7 @@ from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command)
 from bosdyn.client.exceptions import RpcError
 from bosdyn.util import seconds_to_timestamp, seconds_to_duration
 from google.protobuf import duration_pb2, timestamp_pb2
-from spot_driver.async_queries import AsyncImageService, AsyncRobotState
+from spot_driver.async_queries import AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_driver.type_hint_helpers import *
 from .trajectory_manager import TrajectoryManager
@@ -76,11 +75,9 @@ class SpotManipulationDriver(object):
         # Clients
         self._robot_state_client = None
         self._lease_manager = None
-        self._image_client = None
         self._manipulation_api_client = None
 
         # Tasks
-        self._hand_image_task = None
         self._robot_state_task = None
 
     def connect(self, lease_manager: SpotLeaseManager, rates={}, callbacks={}) -> bool:
@@ -101,24 +98,8 @@ class SpotManipulationDriver(object):
             self._logger.fatal("Robot requires arm to use SpotManipulationDriver")
             return False
 
-        # Configure the hand to publish its depth and color images
-        hand_image_sources = {
-            "hand_image",
-            "hand_depth",
-            "hand_color_image",
-            "hand_depth_in_hand_color_frame",
-        }
-        hand_image_requests = []
-        for source in hand_image_sources:
-            hand_image_requests.append(
-                build_image_request(source, image_format=image_pb2.Image.FORMAT_RAW)
-            )
-
         # Start the service clients
         try:
-            self._image_client = self._lease_manager.robot.ensure_client(
-                ImageClient.default_service_name
-            )
             self._manipulation_api_client = self._lease_manager.robot.ensure_client(
             ManipulationApiClient.default_service_name
             )
@@ -127,13 +108,6 @@ class SpotManipulationDriver(object):
             return False
 
         # Create asynchronous tasks whose state can be queried
-        self._hand_image_task = AsyncImageService(
-            self._image_client,
-            self._logger,
-            rates.get("hand_image", 1.0),
-            callbacks.get("hand_image", lambda: None),
-            hand_image_requests,
-        )
         self._robot_state_task = AsyncRobotState(
             self._lease_manager._robot_state_client,
             self._logger,
@@ -172,10 +146,6 @@ class SpotManipulationDriver(object):
         return self._lease_manager.robot.time_sync.robot_timestamp_from_local_secs(
             time.time()
         )
-
-    @property
-    def latest_hand_images(self):
-        return self._hand_image_task.proto
 
     @property
     def lease_manager(self):
