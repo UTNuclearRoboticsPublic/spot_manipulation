@@ -36,6 +36,7 @@ import threading
 
 import rclpy
 import rclpy.callback_groups
+import rclpy.duration
 from rclpy.time import Time, CONVERSION_CONSTANT
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse
@@ -45,11 +46,14 @@ from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, Paramete
 import tf2_py
 from tf2_ros import Buffer, TransformListener
 
+# These imports are not unused; they allow us to call tf_buffer.transform() on these types
+from tf2_geometry_msgs import PoseStamped, PointStamped
+
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
 from spot_msgs.msg import ManipulatorCarryState, ManipulatorStowState
-from spot_msgs.srv import GripperAngleMove
+from spot_msgs.srv import GripperAngleMove, InverseKinematics
 from spot_msgs.action import ImageToGrasp, ArmCartesianCommand
 from control_msgs.action import FollowJointTrajectory
 from std_msgs.msg import Float32, Bool, Header
@@ -57,7 +61,7 @@ from geometry_msgs.msg import WrenchStamped, Vector3
 from trajectory_msgs.msg import JointTrajectory
 
 import spot_manipulation_driver.ros_helpers as ros_helpers
-from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg
+from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg, MsgToPose, MsgToVec3, MsgToTransform, PoseToMsg
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
@@ -262,6 +266,9 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/close_gripper"  , self.gripper_close_service_callback, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/open_gripper"   , self.gripper_open_service_callback , callback_group=gripper_callback_group)
         self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
+
+        # Planning services
+        self.create_service(InverseKinematics, '~/solve_ik', self.inverse_kinematics_callback)
 
         # Handle manual action namespace 
         action_ns = self.get_parameter('action_namespace').value
@@ -754,6 +761,63 @@ class SpotManipulationDriverROS(Node):
         resp.success = success
         resp.message = msg
         time.sleep(0.5) # sleep to ensure end config is reached
+        return resp
+        
+    def inverse_kinematics_callback(self, req: InverseKinematics.Request, resp: InverseKinematics.Response) -> InverseKinematics.Response:
+        """ROS service handler for solving an inverse kinematics request for a tool pose or tool gaze pose"""
+
+        source_frame_id: str = req.gaze_target.header.frame_id if req.use_gaze_target else req.target_pose.header.frame_id
+        target_frame_id: str = 'odom'
+        resp.solution_found = False
+
+        # Transform the tool frame into the odom frame
+        if not self.tf_buffer.can_transform(target_frame_id, source_frame_id, Time(), rclpy.duration.Duration(seconds=1.0)):
+            self.get_logger().warn(f'Unable to solve IK problem: cannot lookup transform from odom to {source_frame_id}')
+            return resp
+        
+        target_pose_ros = self.tf_buffer.transform(req.target_pose, target_frame_id) if not req.use_gaze_target else None
+        gaze_target_ros = self.tf_buffer.transform(req.gaze_target, target_frame_id) if req.gaze_target else None
+
+        # Convert the data to BD API types
+        if req.use_gaze_target:
+            target_pose_proto = None
+            gaze_target_proto = MsgToVec3(gaze_target_ros)
+        else:
+            target_pose_proto = MsgToPose(target_pose_ros.pose)
+            gaze_target_proto = None
+
+        # Load the nominal joint state from the request
+        if len(req.joint_names) != len(req.joint_nominal_positions):
+            self.get_logger().warn(f'Error solving for IK: {len(req.joint_names)} starting position joint labels were provided, while {len(req.joint_nominal_positions)} joint positions were provided')
+            return resp
+        
+        nominal_joint_state=dict(zip(req.joint_names, req.joint_nominal_positions))
+
+        # Determine if we're using a tool attached to the wrist
+        if req.tool_frame != 'arm0_hand':
+            try:
+                wrist_tform_tool_ros = self.tf_buffer.lookup_transform('arm0_hand', req.tool_frame, Time(), rclpy.duration.Duration(seconds=1.0))
+            except tf2_py.LookupException as e:
+                self.get_logger().warn(f'Unable to find tool tranform with respect to robot wrist: {e}')
+                return resp
+            
+            wrist_tform_tool = MsgToTransform(wrist_tform_tool_ros.transform)
+        else:
+            wrist_tform_tool = None
+
+        # Pass the request on to the main driver
+        success, arm_joint_state, odom_tform_body = self.manipulation_driver.solve_ik(target_pose=target_pose_proto, gaze_target=gaze_target_proto, joint_state=nominal_joint_state, wrist_tform_tool=wrist_tform_tool)
+
+        # Populate the response
+        resp.body_pose.pose = PoseToMsg(odom_tform_body)
+        resp.body_pose.header.frame_id = 'odom'
+        resp.body_pose.header.stamp = self.get_clock().now().to_msg()
+        
+        resp.arm_joint_state.name = list(arm_joint_state.keys())
+        resp.arm_joint_state.position = list(arm_joint_state.values())
+
+        resp.solution_found = success
+
         return resp
 
     def publish_hand_images(self, _):
