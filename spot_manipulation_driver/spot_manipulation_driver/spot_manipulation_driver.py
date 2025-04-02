@@ -840,6 +840,8 @@ class SpotManipulationDriver(object):
 
         if wrist_tform_tool is not None:
             wrist_mounted_tool = InverseKinematicsRequest.WristMountedTool(wrist_tform_tool=wrist_tform_tool.to_proto())
+        else:
+            wrist_mounted_tool = InverseKinematicsRequest.WristMountedTool()
 
         ik_request = InverseKinematicsRequest(
             root_frame_name=ODOM_FRAME_NAME,
@@ -859,6 +861,7 @@ class SpotManipulationDriver(object):
 
         response: InverseKinematicsResponseProto = self._ik_client.inverse_kinematics(ik_request)
         if response.status != InverseKinematicsResponse.Status.STATUS_OK:
+            self._logger.warn('Inverse kinematics request failed, target is unreachable')
             return False, {}, SE3Pose(0, 0, 0, 0)
 
         arm_joint_state = {joint.name: joint.position for joint in response.robot_configuration.joint_states}
