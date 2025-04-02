@@ -13,7 +13,7 @@ velodyne:
   sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
 
 arm_cam:
-  point_cloud_topic: /hand_points_texture_mux
+  point_cloud_topic: /spot_pointclouds/hand_tof_points_mux
   max_range: 2.0
   max_update_rate: 1.0
   padding_offset: 0.1

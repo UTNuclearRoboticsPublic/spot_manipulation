@@ -45,7 +45,7 @@ from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, Paramete
 import tf2_py
 from tf2_ros import Buffer, TransformListener
 
-from sensor_msgs.msg import CameraInfo, Image, JointState
+from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
 from spot_msgs.msg import ManipulatorCarryState, ManipulatorStowState
@@ -57,7 +57,7 @@ from geometry_msgs.msg import WrenchStamped, Vector3
 from trajectory_msgs.msg import JointTrajectory
 
 import spot_manipulation_driver.ros_helpers as ros_helpers
-from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg
+from spot_driver.ros_helpers import JointStatesToMsg
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
@@ -131,19 +131,6 @@ class SpotManipulationDriverROS(Node):
         )
 
         self.declare_parameter(
-            "rates.sensors.hand_image",
-            1.0,
-            ParameterDescriptor(
-                description="Publish rate for hand images",
-                type=ParameterType.PARAMETER_DOUBLE,
-                floating_point_range=[
-                    FloatingPointRange(from_value=0.0, to_value=1000.0, step=0.0)
-                ],
-                read_only=True,
-            ),
-        )
-
-        self.declare_parameter(
             "action_namespace",
             "",
             ParameterDescriptor(
@@ -192,11 +179,9 @@ class SpotManipulationDriverROS(Node):
         self.get_logger().info("Setting arm state callbacks")
         callbacks = {
             "robot_state": self.arm_state_callback,
-            "hand_image": self.publish_hand_images,
         }
         rates = {
             "robot_state": self.get_parameter("rates.robot_state").value,
-            "hand_image": self.get_parameter("rates.sensors.hand_image").value,
         }
 
         callbacks["robot_state"] = lambda t: (
@@ -213,16 +198,6 @@ class SpotManipulationDriverROS(Node):
         # Create a control group to prevent multiple callbacks from commanding motion simultaneously
         motion_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
         gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
-
-        # Create image publishers
-        self._hand_image_pub             = self.create_publisher(Image           , "~/rgb/tof/image"           , 10)
-        self._hand_depth_map_pub         = self.create_publisher(Image           , "~/depth/tof/image"         , 10)
-        self._hand_4k_image_pub          = self.create_publisher(Image           , "~/rgb/camera/image"        , 10)
-        self._hand_4k_depth_map_pub      = self.create_publisher(Image           , "~/depth/camera/image"      , 10)
-        self._hand_image_info_pub        = self.create_publisher(CameraInfo      , "~/rgb/tof/camera_info"     , 10)
-        self._hand_depth_map_info_pub    = self.create_publisher(CameraInfo      , "~/depth/tof/camera_info"   , 10)
-        self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/rgb/camera/camera_info"  , 10)
-        self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/depth/camera/camera_info", 10)
 
         # Create data publishers
         self._arm_wrench_pub = self.create_publisher(WrenchStamped        , "~/manipulator_state/wrench"                  , 10)
@@ -319,11 +294,6 @@ class SpotManipulationDriverROS(Node):
 
         # Create timers to update the async tasks for publishing
         update_group = rclpy.callback_groups.ReentrantCallbackGroup()
-        self.create_timer(
-            0.5 / rates["hand_image"],
-            lambda: self.manipulation_driver._hand_image_task.update(),
-            callback_group=update_group
-        )
         self.create_timer(
             0.5 / rates["robot_state"],
             lambda: self.manipulation_driver._robot_state_task.update(),
@@ -755,32 +725,6 @@ class SpotManipulationDriverROS(Node):
         resp.message = msg
         time.sleep(0.5) # sleep to ensure end config is reached
         return resp
-
-    def publish_hand_images(self, _):
-        images = self.manipulation_driver.latest_hand_images
-        if images is None:
-            return
-
-        for image in images:
-            if image.source.name == "hand_image":
-                pub_img = self._hand_image_pub
-                pub_info = self._hand_image_info_pub
-            elif image.source.name == "hand_depth":
-                pub_img = self._hand_depth_map_pub
-                pub_info = self._hand_depth_map_info_pub
-            elif image.source.name == "hand_color_image":
-                pub_img = self._hand_4k_image_pub
-                pub_info = self._hand_4k_image_info_pub
-            elif image.source.name == "hand_depth_in_hand_color_frame":
-                pub_img = self._hand_4k_depth_map_pub
-                pub_info = self._hand_4k_depth_map_info_pub
-
-            if pub_img.get_subscription_count() > 0:
-                img_msg, info_msg, _ = getImageMsg(
-                    image, self.manipulation_driver.lease_manager
-                )
-                pub_img.publish(img_msg)
-                pub_info.publish(info_msg)
 
     def publish_joint_states(self, _):
         if self.publish_joint_states_flag:
