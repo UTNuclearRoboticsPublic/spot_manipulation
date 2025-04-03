@@ -811,10 +811,16 @@ class SpotManipulationDriverROS(Node):
         # Pass the request on to the main driver
         success, arm_joint_state, odom_tform_body = self.manipulation_driver.solve_ik(target_pose=target_pose_proto, gaze_target=gaze_target_proto, joint_state=nominal_joint_state, wrist_tform_tool=wrist_tform_tool)
 
+        # Transform the body pose into the base footprint frame
+        try:
+            base_footprint_tform_odom = self.tf_buffer.lookup_transform("base_footprint", "odom", Time(seconds=0), rclpy.duration.Duration(seconds=1))
+        except tf2_py.LookupException as e:
+            self.get_logger().warn(f'Unable to transform body pose into base_footprint frame: {e}')
+            return resp
+        base_footprint_tform_body = MsgToTransform(base_footprint_tform_odom) * odom_tform_body
+            
         # Populate the response
-        resp.body_pose.pose = PoseToMsg(odom_tform_body)
-        resp.body_pose.header.frame_id = 'odom'
-        resp.body_pose.header.stamp = self.get_clock().now().to_msg()
+        resp.body_pose = PoseToMsg(base_footprint_tform_body)
         
         # Convert joints back to ROS versions
         resp.arm_joint_state.name = [joint_name_map_BD_to_ROS[name] for name in arm_joint_state.keys()]
