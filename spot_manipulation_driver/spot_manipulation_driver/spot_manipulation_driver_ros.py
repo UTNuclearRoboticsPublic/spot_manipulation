@@ -61,7 +61,8 @@ from geometry_msgs.msg import WrenchStamped, Vector3
 from trajectory_msgs.msg import JointTrajectory
 
 import spot_manipulation_driver.ros_helpers as ros_helpers
-from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg, MsgToPose, MsgToVec3, MsgToTransform, PoseToMsg
+from spot_driver.ros_helpers import (JointStatesToMsg, getImageMsg, MsgToPose, MsgToVec3, 
+                                    MsgToTransform, PoseToMsg, joint_name_map_BD_to_ROS, joint_name_map_ROS_to_BD)
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
@@ -791,7 +792,9 @@ class SpotManipulationDriverROS(Node):
             self.get_logger().warn(f'Error solving for IK: {len(req.joint_names)} starting position joint labels were provided, while {len(req.joint_nominal_positions)} joint positions were provided')
             return resp
         
-        nominal_joint_state=dict(zip(req.joint_names, req.joint_nominal_positions))
+        # Convert the joint names to the BD versions
+        bd_joint_names = [joint_name_map_ROS_to_BD[name] for name in req.joint_names]
+        nominal_joint_state=dict(zip(bd_joint_names, req.joint_nominal_positions))
 
         # Determine if we're using a tool attached to the wrist
         if req.tool_frame != 'arm0_hand':
@@ -813,7 +816,8 @@ class SpotManipulationDriverROS(Node):
         resp.body_pose.header.frame_id = 'odom'
         resp.body_pose.header.stamp = self.get_clock().now().to_msg()
         
-        resp.arm_joint_state.name = list(arm_joint_state.keys())
+        # Convert joints back to ROS versions
+        resp.arm_joint_state.name = [joint_name_map_BD_to_ROS[name] for name in arm_joint_state.keys()]
         resp.arm_joint_state.position = list(arm_joint_state.values())
 
         resp.solution_found = success
