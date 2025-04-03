@@ -823,6 +823,8 @@ class SpotManipulationDriverROS(Node):
         resp.body_pose = PoseToMsg(base_footprint_tform_body)
         
         # Convert joints back to ROS versions
+        resp.arm_joint_state.header.frame_id = "base_footprint"
+        resp.arm_joint_state.header.stamp = self.get_clock().now()
         resp.arm_joint_state.name = [joint_name_map_BD_to_ROS[name] for name in arm_joint_state.keys()]
         resp.arm_joint_state.position = list(arm_joint_state.values())
 
