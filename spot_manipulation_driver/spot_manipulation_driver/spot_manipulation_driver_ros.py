@@ -62,7 +62,7 @@ from trajectory_msgs.msg import JointTrajectory
 
 import spot_manipulation_driver.ros_helpers as ros_helpers
 from spot_driver.ros_helpers import (JointStatesToMsg, MsgToPose, MsgToVec3, 
-                                    MsgToTransform, PoseToMsg, joint_name_map_BD_to_ROS, joint_name_map_ROS_to_BD)
+                                    MsgToTransform, PoseToMsg, joint_name_map_BD_to_ROS, joint_name_map_ROS_to_BD, arm_joint_names)
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
@@ -737,25 +737,24 @@ class SpotManipulationDriverROS(Node):
     def inverse_kinematics_callback(self, req: InverseKinematics.Request, resp: InverseKinematics.Response) -> InverseKinematics.Response:
         """ROS service handler for solving an inverse kinematics request for a tool pose or tool gaze pose"""
 
-        source_frame_id: str = req.gaze_target.header.frame_id if req.use_gaze_target else req.target_pose.header.frame_id
-        target_frame_id: str = 'odom'
         resp.solution_found = False
+        target_frame_id: str = 'odom'
+        source_headers: list[Header] = [req.target_pose.header]
+        if req.use_gaze_target: 
+            source_headers.append(req.gaze_target.header)
 
         # Transform the tool frame into the odom frame
-        if not self.tf_buffer.can_transform(target_frame_id, source_frame_id, Time(), rclpy.duration.Duration(seconds=1.0)):
-            self.get_logger().warn(f'Unable to solve IK problem: cannot lookup transform from odom to {source_frame_id}')
-            return resp
+        for source_header in source_headers:
+            if not self.tf_buffer.can_transform(target_frame_id, source_header.frame_id, Time.from_msg(source_header.stamp), rclpy.duration.Duration(seconds=1.0)):
+                self.get_logger().warn(f'Unable to solve IK problem: cannot lookup transform from odom to {source_header.frame_id}')
+                return resp
         
-        target_pose_ros = self.tf_buffer.transform(req.target_pose, target_frame_id) if not req.use_gaze_target else None
-        gaze_target_ros = self.tf_buffer.transform(req.gaze_target, target_frame_id) if req.gaze_target else None
+        target_pose_ros = self.tf_buffer.transform(req.target_pose, target_frame_id)
+        gaze_target_ros = self.tf_buffer.transform(req.gaze_target, target_frame_id) if req.use_gaze_target else None
 
         # Convert the data to BD API types
-        if req.use_gaze_target:
-            target_pose_proto = None
-            gaze_target_proto = MsgToVec3(gaze_target_ros)
-        else:
-            target_pose_proto = MsgToPose(target_pose_ros.pose)
-            gaze_target_proto = None
+        target_pose_proto = MsgToPose(target_pose_ros.pose)
+        gaze_target_proto = MsgToVec3(gaze_target_ros) if req.use_gaze_target else None
 
         # Load the nominal joint state from the request
         if len(req.joint_names) != len(req.joint_nominal_positions):
@@ -763,13 +762,13 @@ class SpotManipulationDriverROS(Node):
             return resp
         
         # Convert the joint names to the BD versions
-        bd_joint_names = [joint_name_map_ROS_to_BD[name] for name in req.joint_names]
+        bd_joint_names = [joint_name_map_ROS_to_BD[name] for name in req.joint_names if name in joint_name_map_ROS_to_BD]
         nominal_joint_state=dict(zip(bd_joint_names, req.joint_nominal_positions))
 
         # Determine if we're using a tool attached to the wrist
         if req.tool_frame != 'arm0_hand':
             try:
-                wrist_tform_tool_ros = self.tf_buffer.lookup_transform('arm0_hand', req.tool_frame, Time(), rclpy.duration.Duration(seconds=1.0))
+                wrist_tform_tool_ros = self.tf_buffer.lookup_transform('arm0_wrist_roll', req.tool_frame, Time(), rclpy.duration.Duration(seconds=1.0))
             except tf2_py.LookupException as e:
                 self.get_logger().warn(f'Unable to find tool tranform with respect to robot wrist: {e}')
                 return resp
@@ -781,22 +780,23 @@ class SpotManipulationDriverROS(Node):
         # Pass the request on to the main driver
         success, arm_joint_state, odom_tform_body = self.manipulation_driver.solve_ik(target_pose=target_pose_proto, gaze_target=gaze_target_proto, joint_state=nominal_joint_state, wrist_tform_tool=wrist_tform_tool)
 
-        # Transform the body pose into the base footprint frame
+        # Transform the body pose into the nominal body frame
         try:
             base_footprint_tform_odom = self.tf_buffer.lookup_transform("base_footprint", "odom", Time(seconds=0), rclpy.duration.Duration(seconds=1))
         except tf2_py.LookupException as e:
             self.get_logger().warn(f'Unable to transform body pose into base_footprint frame: {e}')
             return resp
         base_footprint_tform_body = MsgToTransform(base_footprint_tform_odom) * odom_tform_body
+        base_footprint_tform_body.z -= 0.52
             
         # Populate the response
         resp.body_pose = PoseToMsg(base_footprint_tform_body)
         
         # Convert joints back to ROS versions
         resp.arm_joint_state.header.frame_id = "base_footprint"
-        resp.arm_joint_state.header.stamp = self.get_clock().now()
-        resp.arm_joint_state.name = [joint_name_map_BD_to_ROS[name] for name in arm_joint_state.keys()]
-        resp.arm_joint_state.position = list(arm_joint_state.values())
+        resp.arm_joint_state.header.stamp = self.get_clock().now().to_msg()
+        resp.arm_joint_state.name = [joint_name_map_BD_to_ROS[name] for name in arm_joint_state.keys() if name in arm_joint_names]
+        resp.arm_joint_state.position = [arm_joint_value for [name, arm_joint_value] in arm_joint_state.items() if name in arm_joint_names]
 
         resp.solution_found = success
 

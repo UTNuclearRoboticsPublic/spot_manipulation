@@ -788,7 +788,7 @@ class SpotManipulationDriver(object):
         end_time = time.time() + timeout if timeout is not None else None
         return self.lease_manager.robot_command(robot_command, end_time)
     
-    def solve_ik(self, target_pose: SE3Pose = None, gaze_target: Vec3Proto = None, wrist_tform_tool: SE3Pose = None, joint_state: dict[str, float] = {}) -> tuple[bool, dict, SE3Pose]:
+    def solve_ik(self, target_pose: SE3Pose, gaze_target: Vec3Proto = None, wrist_tform_tool: SE3Pose = None, joint_state: dict[str, float] = {}) -> tuple[bool, dict, SE3Pose]:
         """Request an Inverse Kinematics solution from the Boston Dynamics software stack.
            The solution includes both body and arm state
 
@@ -806,7 +806,8 @@ class SpotManipulationDriver(object):
         nominal_joint_names = ['sh0', 'sh1', 'el0', 'el1', 'wr0', 'wr1']
         nominal_joint_position = ArmJointPosition()
         for joint_name in nominal_joint_names:
-            setattr(nominal_joint_position, joint_name, joint_state[f'arm0.{joint_name}'])
+            if f'arm0.{joint_name}' in joint_state:
+                getattr(nominal_joint_position, joint_name).value = joint_state[f'arm0.{joint_name}']
 
         if wrist_tform_tool is not None:
             wrist_mounted_tool = InverseKinematicsRequest.WristMountedTool(wrist_tform_tool=wrist_tform_tool.to_proto())
@@ -819,25 +820,20 @@ class SpotManipulationDriver(object):
             wrist_mounted_tool=wrist_mounted_tool
         )
 
-        has_pose_target: bool = target_pose is not None
-        has_gaze_target: bool = gaze_target is not None
-        if (has_pose_target and has_gaze_target) or (not has_pose_target and not has_gaze_target):
-            self._logger.error('You must provide exactly one option: [target_pose, gaze_target]')
-            return False, {}, SE3Pose(0, 0, 0, 0)
-        elif has_pose_target :
-            ik_request.tool_pose_task=InverseKinematicsRequest.ToolPoseTask(task_tform_desired_tool=target_pose.to_proto())
+        if gaze_target is not None:
+            ik_request.tool_gaze_task.CopyFrom(InverseKinematicsRequest.ToolGazeTask(task_tform_desired_tool=target_pose.to_proto(), target_in_task=gaze_target))
         else:
-            ik_request.tool_gaze_task=InverseKinematicsRequest.ToolGazeTask(task_tform_desired_tool=target_pose.to_proto(), target_in_task=gaze_target)
+            ik_request.tool_pose_task.CopyFrom(InverseKinematicsRequest.ToolPoseTask(task_tform_desired_tool=target_pose.to_proto()))
 
         response: InverseKinematicsResponseProto = self._ik_client.inverse_kinematics(ik_request)
         if response.status != InverseKinematicsResponse.Status.STATUS_OK:
             self._logger.warn('Inverse kinematics request failed, target is unreachable')
             return False, {}, SE3Pose(0, 0, 0, 0)
 
-        arm_joint_state = {joint.name: joint.position for joint in response.robot_configuration.joint_states}
-        body_pose = get_a_tform_b(response.robot_configuration.transforms_snapshot, ODOM_FRAME_NAME, BODY_FRAME_NAME)
+        arm_joint_state = {joint.name: joint.position.value for joint in response.robot_configuration.joint_states}
+        odom_tform_body = get_a_tform_b(response.robot_configuration.transforms_snapshot, ODOM_FRAME_NAME, BODY_FRAME_NAME)
 
-        return (True, arm_joint_state, body_pose)
+        return (True, arm_joint_state, odom_tform_body)
 
     def stow_arm(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.arm_stow_command()
