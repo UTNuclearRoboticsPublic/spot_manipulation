@@ -37,8 +37,8 @@ joint_order_9DoF = [
 def MsgToWrench(wrench_msg: Wrench) -> WrenchProto:
     """Convert geometry_msgs.msg.Wrench to geometry_pb2.Wrench"""
     return geometry_pb2.Wrench(
-        force=ros_helpers.MsgToVec3(wrench_msg.force),
-        torque=ros_helpers.MsgToVec3(wrench_msg.torque)
+        force=ros_helpers.MsgToVec3(wrench_msg.force).to_proto(),
+        torque=ros_helpers.MsgToVec3(wrench_msg.torque).to_proto()
     )
 
 def WrenchToMsg(wrench_proto: WrenchProto) -> Wrench:
