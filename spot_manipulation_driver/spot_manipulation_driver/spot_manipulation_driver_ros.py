@@ -787,7 +787,6 @@ class SpotManipulationDriverROS(Node):
             self.get_logger().warn(f'Unable to transform body pose into base_footprint frame: {e}')
             return resp
         base_footprint_tform_body = MsgToTransform(base_footprint_tform_odom) * odom_tform_body
-        base_footprint_tform_body.z -= 0.52
             
         # Populate the response
         resp.body_pose = PoseToMsg(base_footprint_tform_body)
