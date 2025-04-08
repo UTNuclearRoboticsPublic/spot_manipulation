@@ -5,7 +5,7 @@ from typing import Tuple, List
 from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2, image_pb2, trajectory_pb2
 from bosdyn.util import seconds_to_duration
 from bosdyn.client.math_helpers import SE3Pose, Quat
-from bosdyn.client.frame_helpers import ODOM_FRAME_NAME, HAND_FRAME_NAME, get_a_tform_b
+from bosdyn.client.frame_helpers import ODOM_FRAME_NAME, HAND_FRAME_NAME, get_a_tform_b, WR1_FRAME_NAME
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist, TwistStamped, WrenchStamped, Wrench
 from google.protobuf import timestamp_pb2
@@ -317,8 +317,14 @@ def img_msg_to_proto(image_msg: Image, camera_info_msg: CameraInfo, tf_msg: TFMe
 
 def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffer) -> ArmCartesianCommandProto:
 
-    odom_tform_task = tf_buffer.lookup_transform(ODOM_FRAME_NAME, msg.header.frame_id, rclpy.time.Time.from_msg(msg.header.stamp), rclpy.time.Duration(seconds=1.0))
-    ref_time = timestamp_pb2.Timestamp().GetCurrentTime()
+    # We define the task frame as whatever frame the request was defined in
+    odom_tform_task = ros_helpers.MsgToTransform(tf_buffer.lookup_transform(ODOM_FRAME_NAME, msg.header.frame_id, rclpy.time.Time.from_msg(msg.header.stamp), rclpy.time.Duration(seconds=1.0)))
+
+    # Get the transform from the wrist to the optional tool frame
+    if msg.tool_frame != "arm0_hand":
+        wrist_tform_tool = ros_helpers.MsgToTransform(tf_buffer.lookup_transform(WR1_FRAME_NAME, msg.tool_frame, msg.header.stamp, rclpy.time.Duration(seconds=1.0)))
+    else:
+        wrist_tform_tool = SE3Pose(0.19557, 0, 0, Quat())
 
     # Form the position trajectory
     pose_trajectory = trajectory_pb2.SE3Trajectory(
@@ -329,7 +335,6 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
             )
             for (ros_pose, time_offset) in zip(msg.waypoints, msg.timestamps)
         ],
-        reference_time = ref_time,
         pos_interpolation = trajectory_pb2.POS_INTERP_CUBIC,
         ang_interpolation = trajectory_pb2.ANG_INTERP_CUBIC_EULER
     )
@@ -343,13 +348,14 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
             )
             for (ros_wrench, time_offset) in zip(msg.wrench_trajectory, msg.timestamps)
         ],
-        reference_time = ref_time,
     )
 
     arm_cartesian_request = arm_command_pb2.ArmCartesianCommand.Request()
     arm_cartesian_request.root_frame_name = ODOM_FRAME_NAME
-    arm_cartesian_request.root_tform_task.CopyFrom(ros_helpers.MsgToTransform(odom_tform_task.transform).to_proto())
-    arm_cartesian_request.pose_trajectory_in_task.CopyFrom(pose_trajectory)
+    arm_cartesian_request.root_tform_task.CopyFrom(odom_tform_task.to_proto())
+    arm_cartesian_request.wrist_tform_tool.CopyFrom(wrist_tform_tool.to_proto())
+    if len(msg.waypoints) > 0:
+        arm_cartesian_request.pose_trajectory_in_task.CopyFrom(pose_trajectory)
     if msg.max_acceleration != 0:
         arm_cartesian_request.maximum_acceleration.value = msg.max_acceleration
     if msg.max_linear_velocity != 0:
@@ -367,6 +373,7 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
     arm_cartesian_request.rx_axis = msg.rx_axis_mode
     arm_cartesian_request.ry_axis = msg.ry_axis_mode
     arm_cartesian_request.rz_axis = msg.rz_axis_mode
-    arm_cartesian_request.wrench_trajectory_in_task.CopyFrom(wrench_trajectory)
+    if len(msg.wrench_trajectory) > 0:
+        arm_cartesian_request.wrench_trajectory_in_task.CopyFrom(wrench_trajectory)
 
     return arm_cartesian_request
