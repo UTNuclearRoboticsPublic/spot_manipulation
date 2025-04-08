@@ -36,6 +36,7 @@ import threading
 
 import rclpy
 import rclpy.callback_groups
+import rclpy.duration
 from rclpy.time import Time, CONVERSION_CONSTANT
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse
@@ -45,11 +46,14 @@ from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, Paramete
 import tf2_py
 from tf2_ros import Buffer, TransformListener
 
+# These imports are not unused; they allow us to call tf_buffer.transform() on these types
+from tf2_geometry_msgs import PoseStamped, PointStamped
+
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
 from spot_msgs.msg import ManipulatorCarryState, ManipulatorStowState
-from spot_msgs.srv import GripperAngleMove
+from spot_msgs.srv import GripperAngleMove, InverseKinematics
 from spot_msgs.action import ImageToGrasp, ArmCartesianCommand
 from control_msgs.action import FollowJointTrajectory
 from std_msgs.msg import Float32, Bool, Header
@@ -57,7 +61,8 @@ from geometry_msgs.msg import WrenchStamped, Vector3
 from trajectory_msgs.msg import JointTrajectory
 
 import spot_manipulation_driver.ros_helpers as ros_helpers
-from spot_driver.ros_helpers import JointStatesToMsg
+from spot_driver.ros_helpers import (JointStatesToMsg, MsgToPose, MsgToVec3, 
+                                    MsgToTransform, PoseToMsg, joint_name_map_BD_to_ROS, joint_name_map_ROS_to_BD, arm_joint_names)
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
@@ -237,6 +242,9 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/close_gripper"  , self.gripper_close_service_callback, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/open_gripper"   , self.gripper_open_service_callback , callback_group=gripper_callback_group)
         self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
+
+        # Planning services
+        self.create_service(InverseKinematics, '~/solve_ik', self.inverse_kinematics_callback)
 
         # Handle manual action namespace 
         action_ns = self.get_parameter('action_namespace').value
@@ -724,6 +732,73 @@ class SpotManipulationDriverROS(Node):
         resp.success = success
         resp.message = msg
         time.sleep(0.5) # sleep to ensure end config is reached
+        return resp
+        
+    def inverse_kinematics_callback(self, req: InverseKinematics.Request, resp: InverseKinematics.Response) -> InverseKinematics.Response:
+        """ROS service handler for solving an inverse kinematics request for a tool pose or tool gaze pose"""
+
+        resp.solution_found = False
+        target_frame_id: str = 'odom'
+        source_headers: list[Header] = [req.target_pose.header]
+        if req.use_gaze_target: 
+            source_headers.append(req.gaze_target.header)
+
+        # Transform the tool frame into the odom frame
+        for source_header in source_headers:
+            if not self.tf_buffer.can_transform(target_frame_id, source_header.frame_id, Time.from_msg(source_header.stamp), rclpy.duration.Duration(seconds=1.0)):
+                self.get_logger().warn(f'Unable to solve IK problem: cannot lookup transform from odom to {source_header.frame_id}')
+                return resp
+        
+        target_pose_ros = self.tf_buffer.transform(req.target_pose, target_frame_id)
+        gaze_target_ros = self.tf_buffer.transform(req.gaze_target, target_frame_id) if req.use_gaze_target else None
+
+        # Convert the data to BD API types
+        target_pose_proto = MsgToPose(target_pose_ros.pose)
+        gaze_target_proto = MsgToVec3(gaze_target_ros) if req.use_gaze_target else None
+
+        # Load the nominal joint state from the request
+        if len(req.joint_names) != len(req.joint_nominal_positions):
+            self.get_logger().warn(f'Error solving for IK: {len(req.joint_names)} starting position joint labels were provided, while {len(req.joint_nominal_positions)} joint positions were provided')
+            return resp
+        
+        # Convert the joint names to the BD versions
+        bd_joint_names = [joint_name_map_ROS_to_BD[name] for name in req.joint_names if name in joint_name_map_ROS_to_BD]
+        nominal_joint_state=dict(zip(bd_joint_names, req.joint_nominal_positions))
+
+        # Determine if we're using a tool attached to the wrist
+        if req.tool_frame != 'arm0_hand':
+            try:
+                wrist_tform_tool_ros = self.tf_buffer.lookup_transform('arm0_wrist_roll', req.tool_frame, Time(), rclpy.duration.Duration(seconds=1.0))
+            except tf2_py.LookupException as e:
+                self.get_logger().warn(f'Unable to find tool tranform with respect to robot wrist: {e}')
+                return resp
+            
+            wrist_tform_tool = MsgToTransform(wrist_tform_tool_ros.transform)
+        else:
+            wrist_tform_tool = None
+
+        # Pass the request on to the main driver
+        success, arm_joint_state, odom_tform_body = self.manipulation_driver.solve_ik(target_pose=target_pose_proto, gaze_target=gaze_target_proto, joint_state=nominal_joint_state, wrist_tform_tool=wrist_tform_tool)
+
+        # Transform the body pose into the nominal body frame
+        try:
+            base_footprint_tform_odom = self.tf_buffer.lookup_transform("base_footprint", "odom", Time(seconds=0), rclpy.duration.Duration(seconds=1))
+        except tf2_py.LookupException as e:
+            self.get_logger().warn(f'Unable to transform body pose into base_footprint frame: {e}')
+            return resp
+        base_footprint_tform_body = MsgToTransform(base_footprint_tform_odom) * odom_tform_body
+            
+        # Populate the response
+        resp.body_pose = PoseToMsg(base_footprint_tform_body)
+        
+        # Convert joints back to ROS versions
+        resp.arm_joint_state.header.frame_id = "base_footprint"
+        resp.arm_joint_state.header.stamp = self.get_clock().now().to_msg()
+        resp.arm_joint_state.name = [joint_name_map_BD_to_ROS[name] for name in arm_joint_state.keys() if name in arm_joint_names]
+        resp.arm_joint_state.position = [arm_joint_value for [name, arm_joint_value] in arm_joint_state.items() if name in arm_joint_names]
+
+        resp.solution_found = success
+
         return resp
 
     def publish_joint_states(self, _):

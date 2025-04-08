@@ -40,14 +40,16 @@ from bosdyn.api import (arm_command_pb2, estop_pb2, manipulation_api_pb2,
                         synchronized_command_pb2, basic_command_pb2, geometry_pb2)
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.api.spot.robot_command_pb2 import BodyControlParams
+from bosdyn.api.spot.inverse_kinematics_pb2 import InverseKinematicsRequest, InverseKinematicsResponse
 from bosdyn.api.robot_command_pb2 import RobotCommandFeedbackResponse
 from bosdyn.api.mobility_command_pb2 import MobilityCommand
-from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand
-from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME,
+from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand, ArmJointPosition
+from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME, BODY_FRAME_NAME,
                                         GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.math_helpers import SE3Pose
 from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command)
 from bosdyn.client.exceptions import RpcError
+from bosdyn.client.inverse_kinematics import InverseKinematicsClient
 from bosdyn.util import seconds_to_timestamp, seconds_to_duration
 from google.protobuf import duration_pb2, timestamp_pb2
 from spot_driver.async_queries import AsyncRobotState
@@ -75,6 +77,7 @@ class SpotManipulationDriver(object):
         # Clients
         self._robot_state_client = None
         self._lease_manager = None
+        self._ik_client = None
         self._manipulation_api_client = None
 
         # Tasks
@@ -101,7 +104,10 @@ class SpotManipulationDriver(object):
         # Start the service clients
         try:
             self._manipulation_api_client = self._lease_manager.robot.ensure_client(
-            ManipulationApiClient.default_service_name
+                ManipulationApiClient.default_service_name
+            )
+            self._ik_client = self._lease_manager.robot.ensure_client(
+                InverseKinematicsClient.default_service_name
             )
         except Exception as e:
             self._logger.error(f"Unable to create client service: {e}")
@@ -781,6 +787,53 @@ class SpotManipulationDriver(object):
         robot_command.synchronized_command.arm_command.arm_cartesian_command.CopyFrom(cartesian_command)
         end_time = time.time() + timeout if timeout is not None else None
         return self.lease_manager.robot_command(robot_command, end_time)
+    
+    def solve_ik(self, target_pose: SE3Pose, gaze_target: Vec3Proto = None, wrist_tform_tool: SE3Pose = None, joint_state: dict[str, float] = {}) -> tuple[bool, dict, SE3Pose]:
+        """Request an Inverse Kinematics solution from the Boston Dynamics software stack.
+           The solution includes both body and arm state
+
+        Args:
+            target_pose - The pose for the end effector to reach
+            gaze_target - The point at which the end effector x-axis should point
+            joint_state - A dict of joint targets for the nomial robot state. The IK solution will try
+                          to enforce joint positions close to this if possible
+        Returns:
+            success          - Whether the operation was successful and there was a valid robot config
+            arm_joint_states - The joint values for the robot arm in the solution
+            body_position    - The SE3 pose of the robot in the odom frame in the IK solution
+        """
+
+        nominal_joint_names = ['sh0', 'sh1', 'el0', 'el1', 'wr0', 'wr1']
+        nominal_joint_position = ArmJointPosition()
+        for joint_name in nominal_joint_names:
+            if f'arm0.{joint_name}' in joint_state:
+                getattr(nominal_joint_position, joint_name).value = joint_state[f'arm0.{joint_name}']
+
+        if wrist_tform_tool is not None:
+            wrist_mounted_tool = InverseKinematicsRequest.WristMountedTool(wrist_tform_tool=wrist_tform_tool.to_proto())
+        else:
+            wrist_mounted_tool = InverseKinematicsRequest.WristMountedTool()
+
+        ik_request = InverseKinematicsRequest(
+            root_frame_name=ODOM_FRAME_NAME,
+            nominal_arm_configuration_overrides=nominal_joint_position,
+            wrist_mounted_tool=wrist_mounted_tool
+        )
+
+        if gaze_target is not None:
+            ik_request.tool_gaze_task.CopyFrom(InverseKinematicsRequest.ToolGazeTask(task_tform_desired_tool=target_pose.to_proto(), target_in_task=gaze_target))
+        else:
+            ik_request.tool_pose_task.CopyFrom(InverseKinematicsRequest.ToolPoseTask(task_tform_desired_tool=target_pose.to_proto()))
+
+        response: InverseKinematicsResponseProto = self._ik_client.inverse_kinematics(ik_request)
+        if response.status != InverseKinematicsResponse.Status.STATUS_OK:
+            self._logger.warn('Inverse kinematics request failed, target is unreachable')
+            return False, {}, SE3Pose(0, 0, 0, 0)
+
+        arm_joint_state = {joint.name: joint.position.value for joint in response.robot_configuration.joint_states}
+        odom_tform_body = get_a_tform_b(response.robot_configuration.transforms_snapshot, ODOM_FRAME_NAME, BODY_FRAME_NAME)
+
+        return (True, arm_joint_state, odom_tform_body)
 
     def stow_arm(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.arm_stow_command()
