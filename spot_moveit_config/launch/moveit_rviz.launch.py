@@ -4,10 +4,15 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import SetRemap, Node
-
+from spot_description.get_accessories import get_accessories_from_env
 
 def generate_launch_description():
-    moveit_config = MoveItConfigsBuilder("spot", package_name="spot_moveit_config").to_moveit_configs()
+    spot_accessories = get_accessories_from_env()
+    moveit_config_builder = MoveItConfigsBuilder("spot", package_name="spot_moveit_config")
+    moveit_config_builder.robot_description(mappings=spot_accessories)
+    moveit_config_builder.robot_description_semantic(mappings=spot_accessories)
+    
+    moveit_config = moveit_config_builder.to_moveit_configs()
 
     rviz_config = DeclareLaunchArgument(
         "rviz_config",
