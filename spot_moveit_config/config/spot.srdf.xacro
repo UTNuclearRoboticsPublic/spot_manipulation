@@ -131,12 +131,8 @@
     <disable_collisions link1="rear_right_hip" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="rear_right_lower_leg" link2="rear_right_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="rear_right_upper_leg" link2="velodyne_base_link" reason="Never"/>
-    <disable_collisions link1="body" link2="eap_2_assembly" reason="Adjacent"/>
     <disable_collisions link1="arm0_base_link" link2="arm0_shoulder_yaw" reason="Adjacent"/>
     <disable_collisions link1="arm0_base_link" link2="body" reason="Adjacent"/>
-    <disable_collisions link1="alpha_detector" link2="arm0_wrist_roll" reason="Adjacent"/>
-    <disable_collisions link1="alpha_detector" link2="arm0_wrist_pitch" reason="Adjacent"/>
-    <disable_collisions link1="alpha_detector" link2="arm0_fingers" reason="Adjacent"/>
 
     <!-- Accessory collisions -->
     <xacro:if value="$(arg has_eap)">
