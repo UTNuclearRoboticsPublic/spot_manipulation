@@ -7,6 +7,7 @@ from spot_description.get_accessories import get_accessories_from_env
 
 def spot_config():
     xacro_args = get_accessories_from_env()
+    xacro_args['kinematic_model'] = 'body_assist'
     moveit_config_builder = MoveItConfigsBuilder("spot", package_name="spot_moveit_config")
     moveit_config_builder.robot_description(mappings=xacro_args)
     moveit_config_builder.robot_description_semantic(mappings=xacro_args)

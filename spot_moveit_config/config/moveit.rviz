@@ -7,7 +7,7 @@ Panels:
         - /Global Options1
         - /MotionPlanning1
       Splitter Ratio: 0.5
-    Tree Height: 315
+    Tree Height: 448
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -141,18 +141,6 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          body_height:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          body_with_pitch_and_yaw:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          body_with_yaw:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
           eap_2_assembly:
             Alpha: 1
             Show Axes: false
@@ -263,7 +251,7 @@ Visualization Manager:
         Show Workspace: false
         Start State Alpha: 1
         Start State Color: 0; 255; 0
-      Planning Scene Topic: monitored_planning_scene
+      Planning Scene Topic: /spot_moveit/monitored_planning_scene
       Robot Description: robot_description
       Scene Geometry:
         Scene Alpha: 1
@@ -354,18 +342,6 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          body_height:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          body_with_pitch_and_yaw:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          body_with_yaw:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
           eap_2_assembly:
             Alpha: 1
             Show Axes: false
@@ -455,7 +431,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: spot_nav/map
+    Fixed Frame: odom
     Frame Rate: 30
   Name: root
   Tools:
@@ -470,7 +446,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3.0622894763946533
+      Distance: 7.345398902893066
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -485,15 +461,15 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.810000479221344
+      Pitch: 0.8050006031990051
       Target Frame: base_footprint
       Value: Orbit (rviz_default_plugins)
-      Yaw: 0.5820058584213257
+      Yaw: 5.460208892822266
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1043
+  Height: 1376
   Help:
     collapsed: false
   Hide Left Dock: false
@@ -502,9 +478,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000003a3000003b9fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004100fffffffb000000100044006900730070006c006100790073010000003d00000178000000c900fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001bb000001880000018800fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a005600690065007700730100000349000000ad000000a400ffffff00000391000003b900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000003a300000506fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004100fffffffb000000100044006900730070006c006100790073010000003d000001fd000000c900fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000240000002130000017d00fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a005600690065007700730100000459000000ea000000a400ffffff000002ec0000050600000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 1850
-  X: 70
+  Width: 1685
+  X: 1755
   Y: 27
