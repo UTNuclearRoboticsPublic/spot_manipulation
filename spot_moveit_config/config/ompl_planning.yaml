@@ -4,10 +4,12 @@
 planning_plugin: ompl_interface/OMPLPlanner
 
 request_adapters: >-
-  default_planning_request_adapters/ResolveConstraintFrames
-  default_planning_request_adapters/ValidateWorkspaceBounds
-  default_planning_request_adapters/CheckStartStateBounds
-  default_planning_request_adapters/CheckStartStateCollision
+  default_planner_request_adapters/AddTimeOptimalParameterization
+  default_planner_request_adapters/ResolveConstraintFrames
+  default_planner_request_adapters/FixWorkspaceBounds
+  default_planner_request_adapters/FixStartStateBounds
+  default_planner_request_adapters/FixStartStateCollision
+  default_planner_request_adapters/FixStartStatePathConstraints
 
 planner_configs:
   RRTConnect:
@@ -67,7 +69,7 @@ planner_configs:
     max_failures: 5000  # maximum consecutive failure limit. default: 5000
 
 arm:
-  default_planner_config: RRTConnectkConfigDefault
+  default_planner_config: RRTConnect
   planner_configs:
     - RRTConnect
     - RRTstar
