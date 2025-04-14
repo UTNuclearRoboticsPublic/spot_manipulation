@@ -4,10 +4,6 @@
     A URDF file must exist for this robot as well, where the joints and the links that are referenced are defined
 -->
 <robot name="spot" xmlns:xacro="http://www.ros.org/wiki/xacro">
-    <xacro:arg name="has_eap"    default="False"/>
-    <xacro:arg name="has_eap_2"  default="False"/>
-    <xacro:arg name="has_rl_kit" default="False"/>
-
     <!--GROUPS: Representation of a set of joints and links. This can be useful for specifying DOF to plan for, defining arms, end effectors, etc-->
     <!--LINKS: When a link is specified, the parent joint of that link (if it exists) is automatically included-->
     <!--JOINTS: When a joint is specified, the child link of that joint (which will always exist) is automatically included-->
@@ -54,7 +50,6 @@
     <disable_collisions link1="arm0_shoulder_pitch" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_pitch" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="arm0_shoulder_yaw" reason="Default"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="arm0_wrist_pitch" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="front_left_hip" reason="Never"/>
@@ -63,7 +58,6 @@
     <disable_collisions link1="arm0_shoulder_roll" link2="rear_left_upper_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_roll" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="body" reason="Adjacent"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="front_left_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="front_right_hip" reason="Never"/>
@@ -73,7 +67,6 @@
     <disable_collisions link1="arm0_shoulder_yaw" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_yaw" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="arm0_wrist_pitch" link2="arm0_wrist_roll" reason="Adjacent"/>
     <disable_collisions link1="body" link2="front_left_hip" reason="Adjacent"/>
     <disable_collisions link1="body" link2="front_left_upper_leg" reason="Default"/>
@@ -83,7 +76,6 @@
     <disable_collisions link1="body" link2="rear_left_upper_leg" reason="Default"/>
     <disable_collisions link1="body" link2="rear_right_hip" reason="Adjacent"/>
     <disable_collisions link1="body" link2="rear_right_upper_leg" reason="Default"/>
-    <disable_collisions link1="body" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="front_left_lower_leg" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="front_left_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="front_left_hip" link2="front_right_lower_leg" reason="Never"/>
@@ -93,7 +85,6 @@
     <disable_collisions link1="front_left_hip" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="front_left_hip" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="front_left_lower_leg" link2="front_left_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="front_left_lower_leg" link2="front_right_hip" reason="Never"/>
     <disable_collisions link1="front_left_lower_leg" link2="rear_right_hip" reason="Never"/>
@@ -101,7 +92,6 @@
     <disable_collisions link1="front_left_upper_leg" link2="rear_left_hip" reason="Never"/>
     <disable_collisions link1="front_left_upper_leg" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="front_left_upper_leg" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="front_left_upper_leg" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="front_right_lower_leg" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="front_right_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="front_right_hip" link2="rear_left_hip" reason="Never"/>
@@ -110,31 +100,29 @@
     <disable_collisions link1="front_right_hip" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="front_right_hip" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="front_right_lower_leg" link2="front_right_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="front_right_lower_leg" link2="rear_left_hip" reason="Never"/>
     <disable_collisions link1="front_right_upper_leg" link2="rear_left_hip" reason="Never"/>
     <disable_collisions link1="front_right_upper_leg" link2="rear_left_upper_leg" reason="Never"/>
     <disable_collisions link1="front_right_upper_leg" link2="rear_right_hip" reason="Never"/>
-    <disable_collisions link1="front_right_upper_leg" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="rear_left_hip" link2="rear_left_lower_leg" reason="Never"/>
     <disable_collisions link1="rear_left_hip" link2="rear_left_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="rear_left_hip" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="rear_left_hip" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="rear_left_hip" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="rear_left_lower_leg" link2="rear_left_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="rear_left_lower_leg" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="rear_left_upper_leg" link2="rear_right_hip" reason="Never"/>
-    <disable_collisions link1="rear_left_upper_leg" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="rear_right_hip" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="rear_right_hip" link2="rear_right_upper_leg" reason="Adjacent"/>
-    <disable_collisions link1="rear_right_hip" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="rear_right_lower_leg" link2="rear_right_upper_leg" reason="Adjacent"/>
-    <disable_collisions link1="rear_right_upper_leg" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="arm0_base_link" link2="arm0_shoulder_yaw" reason="Adjacent"/>
     <disable_collisions link1="arm0_base_link" link2="body" reason="Adjacent"/>
 
     <!-- Accessory collisions -->
+    <xacro:arg name="has_eap"    default="False"/>
+    <xacro:arg name="has_eap_2"  default="False"/>
+    <xacro:arg name="has_rl_kit" default="False"/>
+
     <xacro:if value="$(arg has_eap)">
         <xacro:include filename="$(find spot_moveit_config)/config/accessories/eap.srdf.xacro"/>
     </xacro:if>
