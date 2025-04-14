@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<robot name="eap_2_srdf" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <disable_collisions link1="arm0_base_link" link2="eap_2_assembly" reason="Never"/>
+    <disable_collisions link1="arm0_shoulder_pitch" link2="eap_2_assembly" reason="Never"/>
+    <disable_collisions link1="arm0_shoulder_roll" link2="eap_2_assembly" reason="Never"/>
+    <disable_collisions link1="arm0_shoulder_yaw" link2="eap_2_assembly" reason="Never"/>
+    <disable_collisions link1="body" link2="eap_2_assembly" reason="Adjacent"/>
+    <disable_collisions link1="eap_2_assembly" link2="front_left_hip" reason="Never"/>
+    <disable_collisions link1="eap_2_assembly" link2="front_left_upper_leg" reason="Never"/>
+    <disable_collisions link1="eap_2_assembly" link2="front_right_hip" reason="Never"/>
+    <disable_collisions link1="eap_2_assembly" link2="front_right_upper_leg" reason="Never"/>
+    <disable_collisions link1="eap_2_assembly" link2="rear_left_hip" reason="Never"/>
+    <disable_collisions link1="eap_2_assembly" link2="rear_right_hip" reason="Never"/>
+    <disable_collisions link1="eap_2_assembly" link2="rear_right_upper_leg" reason="Never"/>
+</robot>

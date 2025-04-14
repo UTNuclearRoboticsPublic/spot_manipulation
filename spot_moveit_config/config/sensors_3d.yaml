@@ -6,9 +6,9 @@ velodyne:
   point_cloud_topic: /velodyne_points
   max_range: 4.0
   max_update_rate: 1.0
-  padding_offset: 0.1
-  padding_scale: 1.2
-  point_subsample: 5
+  padding_offset: 0.15
+  padding_scale: 1.4
+  point_subsample: 1
   filtered_cloud_topic: spot_moveit_pointcloud
   sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
 
