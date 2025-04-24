@@ -1,5 +1,4 @@
 from moveit_configs_utils import MoveItConfigsBuilder
-from moveit_configs_utils.launches import generate_moveit_rviz_launch
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -7,8 +6,17 @@ from launch_ros.actions import SetRemap, Node
 from spot_description.get_accessories import get_accessories_from_env
 
 def generate_launch_description():
+
+    # Launch args
+    launch_args = [
+        DeclareLaunchArgument('kinematic_model',
+                            description='The kinematic model to use for the Spot description',
+                            choices=['none', 'body_assist', 'mobile_manipulation'],
+                            default_value='none')
+    ]
+
     xacro_args = get_accessories_from_env()
-    xacro_args['kinematic_model'] = 'body_assist'
+    xacro_args['kinematic_model'] = LaunchConfiguration('kinematic_model')
     moveit_config_builder = MoveItConfigsBuilder("spot", package_name="spot_moveit_config")
     moveit_config_builder.robot_description(mappings=xacro_args)
     moveit_config_builder.robot_description_semantic(mappings=xacro_args)
@@ -36,6 +44,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        *launch_args,
         SetRemap(src='/spot_moveit/joint_states', dst='/spot_driver/joint_states'),
         SetRemap(src='/spot_moveit/arm_controller/follow_joint_trajectory', dst='/arm_controller/follow_joint_trajectory'),
         SetRemap(src='/spot_moveit/body_manipulation_controller/follow_joint_trajectory', dst='/body_manipulation_controller/follow_joint_trajectory'),
