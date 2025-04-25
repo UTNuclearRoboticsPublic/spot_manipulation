@@ -36,6 +36,7 @@ import threading
 
 import rclpy
 import rclpy.callback_groups
+import rclpy.duration
 from rclpy.time import Time, CONVERSION_CONSTANT
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse
@@ -45,18 +46,23 @@ from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, Paramete
 import tf2_py
 from tf2_ros import Buffer, TransformListener
 
-from sensor_msgs.msg import CameraInfo, Image, JointState
+# These imports are not unused; they allow us to call tf_buffer.transform() on these types
+from tf2_geometry_msgs import PoseStamped, PointStamped
+
+from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
 from spot_msgs.msg import ManipulatorCarryState, ManipulatorStowState
-from spot_msgs.srv import GripperAngleMove
+from spot_msgs.srv import GripperAngleMove, InverseKinematics
 from spot_msgs.action import ImageToGrasp, ArmCartesianCommand
 from control_msgs.action import FollowJointTrajectory
 from std_msgs.msg import Float32, Bool, Header
 from geometry_msgs.msg import WrenchStamped, Vector3
+from trajectory_msgs.msg import JointTrajectory
 
 import spot_manipulation_driver.ros_helpers as ros_helpers
-from spot_driver.ros_helpers import JointStatesToMsg, getImageMsg
+from spot_driver.ros_helpers import (JointStatesToMsg, MsgToPose, MsgToVec3, 
+                                    MsgToTransform, PoseToMsg, joint_name_map_BD_to_ROS, joint_name_map_ROS_to_BD, arm_joint_names)
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
@@ -106,7 +112,7 @@ class SpotManipulationDriverROS(Node):
             ),
         )
 
-        self.declare_parameter(
+        self.publish_joint_states_flag = self.declare_parameter(
             "publish_joint_states",
             False,
             ParameterDescriptor(
@@ -114,26 +120,13 @@ class SpotManipulationDriverROS(Node):
                 type=ParameterType.PARAMETER_BOOL,
                 read_only=True,
             ),
-        )
+        ).value
 
         self.declare_parameter(
             "rates.robot_state",
             1.0,
             ParameterDescriptor(
                 description="Publish rate for robot state topics",
-                type=ParameterType.PARAMETER_DOUBLE,
-                floating_point_range=[
-                    FloatingPointRange(from_value=0.0, to_value=1000.0, step=0.0)
-                ],
-                read_only=True,
-            ),
-        )
-
-        self.declare_parameter(
-            "rates.sensors.hand_image",
-            1.0,
-            ParameterDescriptor(
-                description="Publish rate for hand images",
                 type=ParameterType.PARAMETER_DOUBLE,
                 floating_point_range=[
                     FloatingPointRange(from_value=0.0, to_value=1000.0, step=0.0)
@@ -150,6 +143,16 @@ class SpotManipulationDriverROS(Node):
                 type=ParameterType.PARAMETER_STRING,
                 read_only=True
             )
+        )
+
+        self.declare_parameter(
+            "data_capture_mode",
+            False,
+            ParameterDescriptor(
+                description="Whether or not to publish received action server goals on goal topics",
+                type=ParameterType.PARAMETER_BOOL,
+                read_only=True,
+            ),
         )
 
         # --- Initialize action messages --- #
@@ -169,6 +172,9 @@ class SpotManipulationDriverROS(Node):
         # Image_to_grasp-related attributes
         self.image_to_grasp_result = ImageToGrasp.Result()
 
+        # Check if we need to capture data
+        self.data_capture_mode = self.get_parameter('data_capture_mode').value
+
     def connect(self, lease_manager: SpotLeaseManager) -> bool:
         self.get_logger().info("Connecting manipulation driver")
         self.manipulation_driver = SpotManipulationDriver(
@@ -178,11 +184,9 @@ class SpotManipulationDriverROS(Node):
         self.get_logger().info("Setting arm state callbacks")
         callbacks = {
             "robot_state": self.arm_state_callback,
-            "hand_image": self.publish_hand_images,
         }
         rates = {
             "robot_state": self.get_parameter("rates.robot_state").value,
-            "hand_image": self.get_parameter("rates.sensors.hand_image").value,
         }
 
         callbacks["robot_state"] = lambda t: (
@@ -200,16 +204,6 @@ class SpotManipulationDriverROS(Node):
         motion_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
         gripper_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
 
-        # Create image publishers
-        self._hand_image_pub             = self.create_publisher(Image           , "~/rgb/tof/image"           , 10)
-        self._hand_depth_map_pub         = self.create_publisher(Image           , "~/depth/tof/image"         , 10)
-        self._hand_4k_image_pub          = self.create_publisher(Image           , "~/rgb/camera/image"        , 10)
-        self._hand_4k_depth_map_pub      = self.create_publisher(Image           , "~/depth/camera/image"      , 10)
-        self._hand_image_info_pub        = self.create_publisher(CameraInfo      , "~/rgb/tof/camera_info"     , 10)
-        self._hand_depth_map_info_pub    = self.create_publisher(CameraInfo      , "~/depth/tof/camera_info"   , 10)
-        self._hand_4k_image_info_pub     = self.create_publisher(CameraInfo      , "~/rgb/camera/camera_info"  , 10)
-        self._hand_4k_depth_map_info_pub = self.create_publisher(CameraInfo      , "~/depth/camera/camera_info", 10)
-
         # Create data publishers
         self._arm_wrench_pub = self.create_publisher(WrenchStamped        , "~/manipulator_state/wrench"                  , 10)
         self._arm_vel_pub    = self.create_publisher(TwistStamped         , "~/manipulator_state/velocity"                , 10)
@@ -220,6 +214,7 @@ class SpotManipulationDriverROS(Node):
         self._collision_pub  = self.create_publisher(Bool                 , "~/manipulator_state/is_hand_in_collision"    , 10)
 
         self._joint_state_pub = self.create_publisher(JointState, "/joint_states", 10)
+        self._arm_goal_pub = self.create_publisher(JointTrajectory, "/arm_controller/follow_joint_trajectory/goal", 10)
 
         # Command subscriptions
         self.ee_vel_sub = self.create_subscription(
@@ -247,6 +242,9 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/close_gripper"  , self.gripper_close_service_callback, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/open_gripper"   , self.gripper_open_service_callback , callback_group=gripper_callback_group)
         self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
+
+        # Planning services
+        self.create_service(InverseKinematics, '~/solve_ik', self.inverse_kinematics_callback)
 
         # Handle manual action namespace 
         action_ns = self.get_parameter('action_namespace').value
@@ -305,11 +303,6 @@ class SpotManipulationDriverROS(Node):
         # Create timers to update the async tasks for publishing
         update_group = rclpy.callback_groups.ReentrantCallbackGroup()
         self.create_timer(
-            0.5 / rates["hand_image"],
-            lambda: self.manipulation_driver._hand_image_task.update(),
-            callback_group=update_group
-        )
-        self.create_timer(
             0.5 / rates["robot_state"],
             lambda: self.manipulation_driver._robot_state_task.update(),
             callback_group=update_group
@@ -328,6 +321,23 @@ class SpotManipulationDriverROS(Node):
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
             goal_handle.request.trajectory, ARM_JOINT_ORDER
         )
+
+        # Publish the received trajectory (only once) before executing for data-capture purposes
+        if self.data_capture_mode:
+            def arm_goal_publisher() -> None:
+                timeout = 3.0
+                start_time = time.time()  
+
+                while self._arm_goal_pub.get_subscription_count() < 1:
+                    if time.time() - start_time > timeout:
+                        self.get_logger().info("Timed out waiting for an arm_controller/follow_joint_trajectory/goal subscriber to be available")
+                        return  
+                    time.sleep(0.1)  # sleep to avoid busy-waiting
+                self.get_logger().info("Publishing received joint trajectory on the arm_controller/follow_joint_trajectory/goal topic")
+                self._arm_goal_pub.publish(goal_handle.request.trajectory)
+
+            arm_goal_publisher_thread = threading.Thread(target=arm_goal_publisher)
+            arm_goal_publisher_thread.start()
 
         trajectory_success = False
 
@@ -351,7 +361,10 @@ class SpotManipulationDriverROS(Node):
             )
             rate.sleep()
 
+        # Join threads
         arm_execution_thread.join()
+        if self.data_capture_mode:
+            arm_goal_publisher_thread.join()
 
         if self._arm_trajectory_cancel_event.is_set():
             goal_handle.canceled()
@@ -695,7 +708,7 @@ class SpotManipulationDriverROS(Node):
     def mini_unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response :
         arm_vel_request = ros_helpers.twist_to_vel_request(self.manipulation_driver.robot_time, Twist())
         resp.success, resp.message = self.manipulation_driver.ee_velocity_msg_executor(arm_vel_request)
-        time.sleep(1) # sleep to ensure end config is reached
+        time.sleep(3) # sleep to ensure end config is reached
         return resp
 
     def gripper_close_service_callback(self, _, resp: Trigger.Response) -> Trigger.Response:
@@ -720,34 +733,76 @@ class SpotManipulationDriverROS(Node):
         resp.message = msg
         time.sleep(0.5) # sleep to ensure end config is reached
         return resp
+        
+    def inverse_kinematics_callback(self, req: InverseKinematics.Request, resp: InverseKinematics.Response) -> InverseKinematics.Response:
+        """ROS service handler for solving an inverse kinematics request for a tool pose or tool gaze pose"""
 
-    def publish_hand_images(self, _):
-        images = self.manipulation_driver.latest_hand_images
-        if images is None:
-            return
+        resp.solution_found = False
+        target_frame_id: str = 'odom'
+        source_headers: list[Header] = [req.target_pose.header]
+        if req.use_gaze_target: 
+            source_headers.append(req.gaze_target.header)
 
-        for image in images:
-            if image.source.name == "hand_image":
-                pub_img = self._hand_image_pub
-                pub_info = self._hand_image_info_pub
-            elif image.source.name == "hand_depth":
-                pub_img = self._hand_depth_map_pub
-                pub_info = self._hand_depth_map_info_pub
-            elif image.source.name == "hand_color_image":
-                pub_img = self._hand_4k_image_pub
-                pub_info = self._hand_4k_image_info_pub
-            elif image.source.name == "hand_depth_in_hand_color_frame":
-                pub_img = self._hand_4k_depth_map_pub
-                pub_info = self._hand_4k_depth_map_info_pub
+        # Transform the tool frame into the odom frame
+        for source_header in source_headers:
+            if not self.tf_buffer.can_transform(target_frame_id, source_header.frame_id, Time.from_msg(source_header.stamp), rclpy.duration.Duration(seconds=1.0)):
+                self.get_logger().warn(f'Unable to solve IK problem: cannot lookup transform from odom to {source_header.frame_id}')
+                return resp
+        
+        target_pose_ros = self.tf_buffer.transform(req.target_pose, target_frame_id)
+        gaze_target_ros = self.tf_buffer.transform(req.gaze_target, target_frame_id) if req.use_gaze_target else None
 
-            if pub_img.get_subscription_count() > 0:
-                img_msg, info_msg, _ = getImageMsg(
-                    image, self.manipulation_driver.lease_manager
-                )
-                pub_img.publish(img_msg)
-                pub_info.publish(info_msg)
+        # Convert the data to BD API types
+        target_pose_proto = MsgToPose(target_pose_ros.pose)
+        gaze_target_proto = MsgToVec3(gaze_target_ros) if req.use_gaze_target else None
+
+        # Load the nominal joint state from the request
+        if len(req.joint_names) != len(req.joint_nominal_positions):
+            self.get_logger().warn(f'Error solving for IK: {len(req.joint_names)} starting position joint labels were provided, while {len(req.joint_nominal_positions)} joint positions were provided')
+            return resp
+        
+        # Convert the joint names to the BD versions
+        bd_joint_names = [joint_name_map_ROS_to_BD[name] for name in req.joint_names if name in joint_name_map_ROS_to_BD]
+        nominal_joint_state=dict(zip(bd_joint_names, req.joint_nominal_positions))
+
+        # Determine if we're using a tool attached to the wrist
+        if req.tool_frame != 'arm0_hand':
+            try:
+                wrist_tform_tool_ros = self.tf_buffer.lookup_transform('arm0_wrist_roll', req.tool_frame, Time(), rclpy.duration.Duration(seconds=1.0))
+            except tf2_py.LookupException as e:
+                self.get_logger().warn(f'Unable to find tool tranform with respect to robot wrist: {e}')
+                return resp
+            
+            wrist_tform_tool = MsgToTransform(wrist_tform_tool_ros.transform)
+        else:
+            wrist_tform_tool = None
+
+        # Pass the request on to the main driver
+        success, arm_joint_state, odom_tform_body = self.manipulation_driver.solve_ik(target_pose=target_pose_proto, gaze_target=gaze_target_proto, joint_state=nominal_joint_state, wrist_tform_tool=wrist_tform_tool)
+
+        # Transform the body pose into the nominal body frame
+        try:
+            base_footprint_tform_odom = self.tf_buffer.lookup_transform("base_footprint", "odom", Time(seconds=0), rclpy.duration.Duration(seconds=1))
+        except tf2_py.LookupException as e:
+            self.get_logger().warn(f'Unable to transform body pose into base_footprint frame: {e}')
+            return resp
+        base_footprint_tform_body = MsgToTransform(base_footprint_tform_odom) * odom_tform_body
+            
+        # Populate the response
+        resp.body_pose = PoseToMsg(base_footprint_tform_body)
+        
+        # Convert joints back to ROS versions
+        resp.arm_joint_state.header.frame_id = "base_footprint"
+        resp.arm_joint_state.header.stamp = self.get_clock().now().to_msg()
+        resp.arm_joint_state.name = [joint_name_map_BD_to_ROS[name] for name in arm_joint_state.keys() if name in arm_joint_names]
+        resp.arm_joint_state.position = [arm_joint_value for [name, arm_joint_value] in arm_joint_state.items() if name in arm_joint_names]
+
+        resp.solution_found = success
+
+        return resp
 
     def publish_joint_states(self, _):
-        state = self.manipulation_driver.kinematic_state
-        joint_states = JointStatesToMsg(state, self.manipulation_driver.lease_manager)
-        self._joint_state_pub.publish(joint_states)
+        if self.publish_joint_states_flag:
+            state = self.manipulation_driver.kinematic_state
+            joint_states = JointStatesToMsg(state, self.manipulation_driver.lease_manager)
+            self._joint_state_pub.publish(joint_states)

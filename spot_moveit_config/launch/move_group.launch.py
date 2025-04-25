@@ -1,15 +1,34 @@
 from launch import LaunchDescription
 from launch.actions import GroupAction
 from launch_ros.actions import SetRemap, SetParameter, PushRosNamespace
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from moveit_configs_utils import MoveItConfigsBuilder
 from moveit_configs_utils.launches import generate_move_group_launch
-
+from spot_description.get_accessories import get_accessories_from_env    
+    
 def generate_launch_description():
+
+    # Launch args
+    launch_args = [
+    DeclareLaunchArgument('kinematic_model',
+                        description='The kinematic model to use for the Spot description',
+                        choices=['none', 'body_assist', 'mobile_manipulation'],
+                        default_value='body_assist')
+    ]
+
+    kinematic_model = LaunchConfiguration('kinematic_model')
+
+    xacro_args = get_accessories_from_env()
+    xacro_args['kinematic_model'] = kinematic_model
     moveit_config_builder = MoveItConfigsBuilder("spot", package_name="spot_moveit_config")
-    moveit_config_builder.planning_pipelines("ompl", ["ompl"])
+    moveit_config_builder.robot_description(mappings=xacro_args)
+    moveit_config_builder.robot_description_semantic(mappings=xacro_args)
     moveit_config = moveit_config_builder.to_moveit_configs()
     moveit_config.move_group_capabilities["capabilities"] = ""
+
     return LaunchDescription([
+        *launch_args,
         GroupAction(
             actions=[
                 PushRosNamespace("spot_moveit"),

@@ -3,7 +3,7 @@
     This is a format for representing semantic information about the robot structure.
     A URDF file must exist for this robot as well, where the joints and the links that are referenced are defined
 -->
-<robot name="spot">
+<robot name="spot" xmlns:xacro="http://www.ros.org/wiki/xacro">
     <!--GROUPS: Representation of a set of joints and links. This can be useful for specifying DOF to plan for, defining arms, end effectors, etc-->
     <!--LINKS: When a link is specified, the parent joint of that link (if it exists) is automatically included-->
     <!--JOINTS: When a joint is specified, the child link of that joint (which will always exist) is automatically included-->
@@ -28,30 +28,12 @@
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_shoulder_yaw" reason="Never"/>
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_wrist_pitch" reason="Never"/>
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_wrist_roll" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_pitch" link2="camera_link" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_pitch" link2="realsense_camera_mount" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_pitch" link2="realsense_mount_chin" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_pitch" link2="realsense_mount_chin_top" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_pitch" link2="realsense_mount_slider" reason="Never"/>
     <disable_collisions link1="arm0_elbow_pitch" link2="rear_right_hip" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_pitch" link2="velodyne" reason="Never"/>
     <disable_collisions link1="arm0_elbow_roll" link2="arm0_fingers" reason="Never"/>
     <disable_collisions link1="arm0_elbow_roll" link2="arm0_wrist_pitch" reason="Adjacent"/>
     <disable_collisions link1="arm0_elbow_roll" link2="arm0_wrist_roll" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_roll" link2="camera_link" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_roll" link2="realsense_camera_mount" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_roll" link2="realsense_mount_chin" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_roll" link2="realsense_mount_chin_top" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_roll" link2="realsense_mount_slider" reason="Never"/>
-    <disable_collisions link1="arm0_elbow_roll" link2="velodyne" reason="Never"/>
     <disable_collisions link1="arm0_fingers" link2="arm0_wrist_pitch" reason="Never"/>
     <disable_collisions link1="arm0_fingers" link2="arm0_wrist_roll" reason="Adjacent"/>
-    <disable_collisions link1="arm0_fingers" link2="camera_link" reason="Never"/>
-    <disable_collisions link1="arm0_fingers" link2="realsense_camera_mount" reason="Never"/>
-    <disable_collisions link1="arm0_fingers" link2="realsense_mount_chin" reason="Never"/>
-    <disable_collisions link1="arm0_fingers" link2="realsense_mount_chin_top" reason="Never"/>
-    <disable_collisions link1="arm0_fingers" link2="realsense_mount_slider" reason="Never"/>
-    <disable_collisions link1="arm0_fingers" link2="velodyne" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="arm0_shoulder_roll" reason="Adjacent"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="arm0_shoulder_yaw" reason="Adjacent"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="arm0_wrist_pitch" reason="Never"/>
@@ -62,15 +44,12 @@
     <disable_collisions link1="arm0_shoulder_pitch" link2="front_right_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="front_right_lower_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="front_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_pitch" link2="lidar_assembly" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="rear_left_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="rear_left_lower_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="rear_left_upper_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_pitch" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_pitch" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_pitch" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="arm0_shoulder_yaw" reason="Default"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="arm0_wrist_pitch" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="front_left_hip" reason="Never"/>
@@ -79,132 +58,85 @@
     <disable_collisions link1="arm0_shoulder_roll" link2="rear_left_upper_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_roll" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_roll" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_roll" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="body" reason="Adjacent"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="front_left_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="front_right_hip" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_yaw" link2="lidar_assembly" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="rear_left_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="rear_left_lower_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="rear_left_upper_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="arm0_shoulder_yaw" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_yaw" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="arm0_shoulder_yaw" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="arm0_wrist_pitch" link2="arm0_wrist_roll" reason="Adjacent"/>
-    <disable_collisions link1="arm0_wrist_pitch" link2="camera_link" reason="Never"/>
-    <disable_collisions link1="arm0_wrist_pitch" link2="realsense_camera_mount" reason="Never"/>
-    <disable_collisions link1="arm0_wrist_pitch" link2="realsense_mount_chin" reason="Never"/>
-    <disable_collisions link1="arm0_wrist_pitch" link2="realsense_mount_chin_top" reason="Never"/>
-    <disable_collisions link1="arm0_wrist_pitch" link2="realsense_mount_slider" reason="Never"/>
-    <disable_collisions link1="arm0_wrist_pitch" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="arm0_wrist_roll" link2="camera_link" reason="Never"/>
-    <disable_collisions link1="arm0_wrist_roll" link2="realsense_camera_mount" reason="Never"/>
-    <disable_collisions link1="arm0_wrist_roll" link2="realsense_mount_chin" reason="Adjacent"/>
-    <disable_collisions link1="arm0_wrist_roll" link2="realsense_mount_chin_top" reason="Default"/>
-    <disable_collisions link1="arm0_wrist_roll" link2="realsense_mount_slider" reason="Never"/>
-    <disable_collisions link1="arm0_wrist_roll" link2="velodyne" reason="Never"/>
     <disable_collisions link1="body" link2="front_left_hip" reason="Adjacent"/>
     <disable_collisions link1="body" link2="front_left_upper_leg" reason="Default"/>
     <disable_collisions link1="body" link2="front_right_hip" reason="Adjacent"/>
     <disable_collisions link1="body" link2="front_right_upper_leg" reason="Default"/>
-    <disable_collisions link1="body" link2="lidar_assembly" reason="Adjacent"/>
     <disable_collisions link1="body" link2="rear_left_hip" reason="Adjacent"/>
     <disable_collisions link1="body" link2="rear_left_upper_leg" reason="Default"/>
     <disable_collisions link1="body" link2="rear_right_hip" reason="Adjacent"/>
     <disable_collisions link1="body" link2="rear_right_upper_leg" reason="Default"/>
-    <disable_collisions link1="body" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="body" link2="velodyne_base_link" reason="Never"/>
-    <disable_collisions link1="camera_link" link2="realsense_camera_mount" reason="Adjacent"/>
-    <disable_collisions link1="camera_link" link2="realsense_mount_chin" reason="Never"/>
-    <disable_collisions link1="camera_link" link2="realsense_mount_chin_top" reason="Never"/>
-    <disable_collisions link1="camera_link" link2="realsense_mount_slider" reason="Never"/>
-    <disable_collisions link1="camera_link" link2="velodyne" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="front_left_lower_leg" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="front_left_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="front_left_hip" link2="front_right_lower_leg" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="front_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="front_left_hip" link2="lidar_assembly" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="rear_left_hip" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="rear_left_upper_leg" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="front_left_hip" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="front_left_hip" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="front_left_hip" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="front_left_lower_leg" link2="front_left_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="front_left_lower_leg" link2="front_right_hip" reason="Never"/>
     <disable_collisions link1="front_left_lower_leg" link2="rear_right_hip" reason="Never"/>
-    <disable_collisions link1="front_left_lower_leg" link2="velodyne" reason="Never"/>
     <disable_collisions link1="front_left_upper_leg" link2="front_right_hip" reason="Never"/>
-    <disable_collisions link1="front_left_upper_leg" link2="lidar_assembly" reason="Never"/>
     <disable_collisions link1="front_left_upper_leg" link2="rear_left_hip" reason="Never"/>
     <disable_collisions link1="front_left_upper_leg" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="front_left_upper_leg" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="front_left_upper_leg" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="front_left_upper_leg" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="front_right_lower_leg" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="front_right_upper_leg" reason="Adjacent"/>
-    <disable_collisions link1="front_right_hip" link2="lidar_assembly" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="rear_left_hip" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="rear_left_lower_leg" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="rear_left_upper_leg" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="rear_right_hip" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="front_right_hip" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="front_right_hip" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="front_right_hip" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="front_right_lower_leg" link2="front_right_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="front_right_lower_leg" link2="rear_left_hip" reason="Never"/>
-    <disable_collisions link1="front_right_lower_leg" link2="velodyne" reason="Never"/>
     <disable_collisions link1="front_right_upper_leg" link2="rear_left_hip" reason="Never"/>
     <disable_collisions link1="front_right_upper_leg" link2="rear_left_upper_leg" reason="Never"/>
     <disable_collisions link1="front_right_upper_leg" link2="rear_right_hip" reason="Never"/>
-    <disable_collisions link1="front_right_upper_leg" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="front_right_upper_leg" link2="velodyne_base_link" reason="Never"/>
-    <disable_collisions link1="lidar_assembly" link2="rear_left_hip" reason="Never"/>
-    <disable_collisions link1="lidar_assembly" link2="rear_left_upper_leg" reason="Never"/>
-    <disable_collisions link1="lidar_assembly" link2="rear_right_hip" reason="Never"/>
-    <disable_collisions link1="lidar_assembly" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="lidar_assembly" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="lidar_assembly" link2="velodyne_base_link" reason="Adjacent"/>
-    <disable_collisions link1="realsense_camera_mount" link2="realsense_mount_chin" reason="Never"/>
-    <disable_collisions link1="realsense_camera_mount" link2="realsense_mount_chin_top" reason="Never"/>
-    <disable_collisions link1="realsense_camera_mount" link2="realsense_mount_slider" reason="Adjacent"/>
-    <disable_collisions link1="realsense_camera_mount" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="realsense_mount_chin" link2="realsense_mount_chin_top" reason="Adjacent"/>
-    <disable_collisions link1="realsense_mount_chin" link2="realsense_mount_slider" reason="Adjacent"/>
-    <disable_collisions link1="realsense_mount_chin" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="realsense_mount_chin_top" link2="realsense_mount_slider" reason="Never"/>
-    <disable_collisions link1="realsense_mount_chin_top" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="realsense_mount_slider" link2="velodyne" reason="Never"/>
     <disable_collisions link1="rear_left_hip" link2="rear_left_lower_leg" reason="Never"/>
     <disable_collisions link1="rear_left_hip" link2="rear_left_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="rear_left_hip" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="rear_left_hip" link2="rear_right_upper_leg" reason="Never"/>
-    <disable_collisions link1="rear_left_hip" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="rear_left_hip" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="rear_left_lower_leg" link2="rear_left_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="rear_left_lower_leg" link2="rear_right_hip" reason="Never"/>
-    <disable_collisions link1="rear_left_lower_leg" link2="velodyne" reason="Never"/>
     <disable_collisions link1="rear_left_upper_leg" link2="rear_right_hip" reason="Never"/>
-    <disable_collisions link1="rear_left_upper_leg" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="rear_left_upper_leg" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="rear_right_hip" link2="rear_right_lower_leg" reason="Never"/>
     <disable_collisions link1="rear_right_hip" link2="rear_right_upper_leg" reason="Adjacent"/>
-    <disable_collisions link1="rear_right_hip" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="rear_right_hip" link2="velodyne_base_link" reason="Never"/>
     <disable_collisions link1="rear_right_lower_leg" link2="rear_right_upper_leg" reason="Adjacent"/>
-    <disable_collisions link1="rear_right_lower_leg" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="rear_right_upper_leg" link2="velodyne" reason="Never"/>
-    <disable_collisions link1="rear_right_upper_leg" link2="velodyne_base_link" reason="Never"/>
-    <disable_collisions link1="velodyne" link2="velodyne_base_link" reason="Adjacent"/>
-    <disable_collisions link1="body" link2="eap_2_assembly" reason="Adjacent"/>
     <disable_collisions link1="arm0_base_link" link2="arm0_shoulder_yaw" reason="Adjacent"/>
     <disable_collisions link1="arm0_base_link" link2="body" reason="Adjacent"/>
-    <disable_collisions link1="alpha_detector" link2="arm0_wrist_roll" reason="Adjacent"/>
-    <disable_collisions link1="alpha_detector" link2="arm0_wrist_pitch" reason="Adjacent"/>
-    <disable_collisions link1="alpha_detector" link2="arm0_fingers" reason="Adjacent"/>
+
+    <!-- Accessory collisions -->
+    <xacro:arg name="has_eap"    default="False"/>
+    <xacro:arg name="has_eap_2"  default="False"/>
+    <xacro:arg name="has_rl_kit" default="False"/>
+
+    <xacro:if value="$(arg has_eap)">
+        <xacro:include filename="$(find spot_moveit_config)/config/accessories/eap.srdf.xacro"/>
+    </xacro:if>
+
+    <xacro:if value="$(arg has_eap_2)">
+        <xacro:include filename="$(find spot_moveit_config)/config/accessories/eap_2.srdf.xacro"/>
+    </xacro:if>
+
+    <xacro:if value="$(arg has_rl_kit)">
+        <xacro:include filename="$(find spot_moveit_config)/config/accessories/rl_kit.srdf.xacro"/>
+    </xacro:if>
+
+    <xacro:property name="spot_srdf_extras" value="$(optenv SPOT_SRDF_EXTRAS '')"/>
+    <xacro:if value="${spot_srdf_extras != ''}">
+        <xacro:include filename="${spot_srdf_extras}"/>
+    </xacro:if>
 </robot>
