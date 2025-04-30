@@ -613,6 +613,11 @@ class SpotManipulationDriverROS(Node):
 
     def arm_state_callback(self):
         self.manipulation_driver.update_robot_state()
+
+        if self.publish_joint_states_flag:
+            joint_states = JointStatesToMsg(self.manipulation_driver.kinematic_state, self.manipulation_driver.lease_manager)
+            self._joint_state_pub.publish(joint_states)
+
         state = self.manipulation_driver.arm_state
         if state is None:
             return
