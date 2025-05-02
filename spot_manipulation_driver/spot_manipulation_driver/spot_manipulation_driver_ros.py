@@ -182,19 +182,9 @@ class SpotManipulationDriverROS(Node):
         )
 
         self.get_logger().info("Setting arm state callbacks")
-        callbacks = {
-            "robot_state": self.arm_state_callback,
-        }
-        rates = {
-            "robot_state": self.get_parameter("rates.robot_state").value,
-        }
+        self.arm_state_timer = self.create_timer(1/self.get_parameter('rates.robot_state').value, self.arm_state_callback)
 
-        callbacks["robot_state"] = lambda t: (
-            self.publish_joint_states(t),
-            self.arm_state_callback(t),
-        )
-
-        if self.manipulation_driver.connect(lease_manager, rates, callbacks):
+        if self.manipulation_driver.connect(lease_manager):
             self.get_logger().info(f"Connected to Spot {lease_manager.ID.nickname}")
         else:
             self.get_logger().fatal("Failed to launch Spot manipulation driver")
@@ -298,14 +288,6 @@ class SpotManipulationDriverROS(Node):
             "~/arm_cartesian_command",
             self.arm_cartesian_command_callback,
             callback_group=motion_callback_group
-        )
-
-        # Create timers to update the async tasks for publishing
-        update_group = rclpy.callback_groups.ReentrantCallbackGroup()
-        self.create_timer(
-            0.5 / rates["robot_state"],
-            lambda: self.manipulation_driver._robot_state_task.update(),
-            callback_group=update_group
         )
 
         return True
@@ -629,7 +611,13 @@ class SpotManipulationDriverROS(Node):
         """Callback for Affordance Primitive end effector velocity command subscriber"""
         self.ee_vel_sub_callback(msg.twist)
 
-    def arm_state_callback(self, _):
+    def arm_state_callback(self):
+        self.manipulation_driver.update_robot_state()
+
+        if self.publish_joint_states_flag:
+            joint_states = JointStatesToMsg(self.manipulation_driver.kinematic_state, self.manipulation_driver.lease_manager)
+            self._joint_state_pub.publish(joint_states)
+
         state = self.manipulation_driver.arm_state
         if state is None:
             return
@@ -801,8 +789,3 @@ class SpotManipulationDriverROS(Node):
 
         return resp
 
-    def publish_joint_states(self, _):
-        if self.publish_joint_states_flag:
-            state = self.manipulation_driver.kinematic_state
-            joint_states = JointStatesToMsg(state, self.manipulation_driver.lease_manager)
-            self._joint_state_pub.publish(joint_states)
