@@ -575,6 +575,7 @@ class SpotManipulationDriverROS(Node):
         self.get_logger().info(
             "Executing goal for the /image_to_grasp action server"
         )
+        self.log_image_to_grasp_goal(self.get_logger(), goal_handle.request)
         self.image_to_grasp_result.success = False
         image_proto = ros_helpers.img_msg_to_proto(goal_handle.request.image, goal_handle.request.camera_info, goal_handle.request.tf_msg, self.manipulation_driver)
 
@@ -586,6 +587,35 @@ class SpotManipulationDriverROS(Node):
             goal_handle.abort()
             self.get_logger().info("image_to_grasp action server goal aborted")
         return self.image_to_grasp_result
+
+    def log_image_to_grasp_goal(self, logger, goal: ImageToGrasp.Goal):
+        """Logs an image to grasp goal"""
+
+        # Log image info
+        logger.info(f"Image encoding: {goal.image.encoding}")
+        logger.info(f"Image width: {goal.image.width}, height: {goal.image.height}")
+
+        # Log camera_info
+        logger.info(f"Camera frame_id: {goal.camera_info.header.frame_id}")
+        logger.info(f"Camera K matrix: {goal.camera_info.k}")
+
+        # Log TF tree
+        logger.info(f"TFMessage contains {len(goal.tf_msg.transforms)} transforms")
+        for tf in goal.tf_msg.transforms:
+            trans = tf.transform.translation
+            rot = tf.transform.rotation
+            logger.info(
+                f"  {tf.header.frame_id} -> {tf.child_frame_id} | "
+                f"translation: [x={trans.x:.3f}, y={trans.y:.3f}, z={trans.z:.3f}] | "
+                f"rotation (quat): [x={rot.x:.3f}, y={rot.y:.3f}, z={rot.z:.3f}, w={rot.w:.3f}]"
+            )
+
+        # Log pixel coordinates
+        pixel_coords_str = ", ".join(str(p) for p in goal.pixel_coordinates)
+        logger.info(f"Pixel coordinates: [{pixel_coords_str}]")
+
+        # Log grasp strategy
+        logger.info(f"Grasp strategy: {goal.grasp_strategy}")
 
     def finger_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for finger action server"""
