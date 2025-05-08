@@ -37,7 +37,7 @@ import threading
 import rclpy
 import rclpy.callback_groups
 import rclpy.duration
-from rclpy.time import Time, CONVERSION_CONSTANT
+from rclpy.time import Time
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse
 from rclpy.action.server import ServerGoalHandle
@@ -66,6 +66,7 @@ from spot_driver.ros_helpers import (JointStatesToMsg, MsgToPose, MsgToVec3,
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
+S_TO_NS = 1000 * 1000 * 1000
 
 ARM_JOINT_ORDER = [
     "arm0_shoulder_yaw",
@@ -668,7 +669,7 @@ class SpotManipulationDriverROS(Node):
 
         # Calculate the collision state
         dt_ros = self.get_clock().now() - Time.from_msg(self._last_gripper_velocity.header.stamp)
-        dt_sec = dt_ros.nanoseconds / CONVERSION_CONSTANT
+        dt_sec = dt_ros.nanoseconds / S_TO_NS
         arm_acc = Vector3()
         arm_acc.x = (arm_vel.twist.linear.x - self._last_gripper_velocity.twist.linear.x)/dt_sec
         arm_acc.y = (arm_vel.twist.linear.y - self._last_gripper_velocity.twist.linear.y)/dt_sec
