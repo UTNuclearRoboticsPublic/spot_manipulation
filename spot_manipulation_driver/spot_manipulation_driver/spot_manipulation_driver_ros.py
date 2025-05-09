@@ -50,7 +50,7 @@ from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
 from spot_msgs.msg import ManipulatorCarryState, ManipulatorStowState
 from spot_msgs.srv import GripperAngleMove
-from spot_msgs.action import ImageToGrasp, ArmCartesianCommand
+from spot_msgs.action import ImageToGrasp, ImageToWalk, ArmCartesianCommand
 from control_msgs.action import FollowJointTrajectory
 from std_msgs.msg import Float32, Bool, Header
 from geometry_msgs.msg import WrenchStamped, Vector3
@@ -167,7 +167,10 @@ class SpotManipulationDriverROS(Node):
         self.arm_and_finger_result = FollowJointTrajectory.Result()
 
         # Image_to_grasp-related attributes
-        self.image_to_grasp_result = ImageToGrasp.Result()
+        self.image_to_grasp_result = ImageToGrasp.Result() 
+        
+        # Image_to_walk-related attributes
+        self.image_to_walk_result = ImageToWalk.Result()
 
     def connect(self, lease_manager: SpotLeaseManager) -> bool:
         self.get_logger().info("Connecting manipulation driver")
@@ -292,6 +295,14 @@ class SpotManipulationDriverROS(Node):
             ImageToGrasp,
             "image_to_grasp",
             self.image_to_grasp_goal_callback,
+            callback_group=motion_callback_group,
+        )
+
+        self.image_to_walk_action_server = ActionServer(
+            self,
+            ImageToWalk,
+            "image_to_walk",
+            self.image_to_walk_goal_callback,
             callback_group=motion_callback_group,
         )
 
@@ -593,6 +604,22 @@ class SpotManipulationDriverROS(Node):
             goal_handle.abort()
             self.get_logger().info("image_to_grasp action server goal aborted")
         return self.image_to_grasp_result
+    
+    def image_to_walk_goal_callback(self, goal_handle):
+        """Callback for the /image_to_walk action server """
+        self.get_logger().info( "Executing goal for the /image_to_walk action server" )
+        success = False
+        image_proto = ros_helpers.img_msg_to_proto(goal_handle.request.image, goal_handle.request.camera_info, goal_handle.request.tf_msg, self.manipulation_driver)
+
+        success = self.manipulation_driver.image_to_walk(image_proto, goal_handle.request.pixel_coordinates, goal_handle.request.offset_distance)
+        self.image_to_walk_result.success = success
+        if success:
+            goal_handle.succeed()
+            self.get_logger().info("Successfully executed image_to_walk goal")
+        else:
+            goal_handle.abort()
+            self.get_logger().info("image_to_walk action server goal aborted")
+        return self.image_to_walk_result
 
     def finger_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for finger action server"""

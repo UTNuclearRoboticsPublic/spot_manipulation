@@ -749,7 +749,82 @@ class SpotManipulationDriver(object):
 
         time.sleep(0.75) # Wait for the ready command to finish
         return holding_trash
+        
+    def image_to_walk(self, image, pixel_coordinates, offset_distance=0.5):
+        """
+        Commands the robot to walk toward an object identified by pixel coordinates in the given image.
+        This method is analogous to image_to_grasp, but instead of grasping the object,
+        it instructs the robot to navigate to it.
 
+        Args:
+            image: An image object containing the shot details and camera model.
+            pixel_coordinates: A tuple (x, y) representing the pixel location of the object.
+            offset_distance: The distance at which the robot should stop relative to the object.
+
+        Returns:
+            True if the robot successfully walked to the object, False if the command failed.
+        """
+        # Build the pixel vector from the provided coordinates.
+        pixel_vec = geometry_pb2.Vec2(x=pixel_coordinates[0], y=pixel_coordinates[1])
+        
+        # Create a walk-to-object request using the image and camera information.
+        walk_cmd = manipulation_api_pb2.WalkToObjectInImage(
+            pixel_xy=pixel_vec,
+            transforms_snapshot_for_camera=image.shot.transforms_snapshot,
+            frame_name_image_sensor=image.shot.frame_name_image_sensor,
+            camera_model=image.source.pinhole,
+            offset_distance=offset_distance  # Distance to stop from the object.
+        )
+        
+        # Build the Manipulation API request with the walk-to-object command.
+        walk_request = manipulation_api_pb2.ManipulationApiRequest(
+            walk_to_object_in_image=walk_cmd
+        )
+        
+        self._lease_manager.robot.logger.info("Sending walk to object request.")
+        
+        # Send the request.
+        cmd_response = self._manipulation_api_client.manipulation_api_command(
+            manipulation_api_request=walk_request
+        )
+        
+        # Wait for the walk command to complete.
+        walk_done = False
+        failed = False
+        time_start = time.time()
+        while not walk_done:
+            feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
+                manipulation_cmd_id=cmd_response.manipulation_cmd_id
+            )
+            response = self._manipulation_api_client.manipulation_api_feedback_command(
+                manipulation_api_feedback_request=feedback_request
+            )
+            current_state = response.current_state
+            current_time = time.time() - time_start
+            self._lease_manager.robot.logger.info(
+                "Current state ({time:.1f} sec): {state}".format(
+                    time=current_time,
+                    state=manipulation_api_pb2.ManipulationFeedbackState.Name(current_state),
+                )
+            )
+            
+            # Define potential failure states (assuming similar naming to the grasp feedback).
+            failed_states = [
+                manipulation_api_pb2.MANIP_STATE_WALK_FAILED,
+                manipulation_api_pb2.MANIP_STATE_WALK_PLANNING_NO_SOLUTION,
+                manipulation_api_pb2.MANIP_STATE_WALK_FAILED_TO_RAYCAST_INTO_MAP,
+            ]
+            
+            failed = current_state in failed_states
+            walk_done = (current_state == manipulation_api_pb2.MANIP_STATE_WALK_SUCCEEDED or failed)
+            time.sleep(0.1)
+        
+        if failed:
+            self._lease_manager.robot.logger.info("Walk to object failed.")
+            return False
+
+        self._lease_manager.robot.logger.info("Walk to object succeeded. Robot reached target.")
+        return True
 
     def ee_velocity_msg_executor(
         self, request: ArmVelocityCommandProto
