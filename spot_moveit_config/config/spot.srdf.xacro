@@ -130,6 +130,10 @@
     <disable_collisions link1="rear_right_lower_leg" link2="rear_right_upper_leg" reason="Adjacent"/>
     <disable_collisions link1="arm0_base_link" link2="arm0_shoulder_yaw" reason="Adjacent"/>
     <disable_collisions link1="arm0_base_link" link2="body" reason="Adjacent"/>
+    <disable_collisions link1="body" link2="rl_kit_jetson_housing_box" reason="Adjacent"/>
+    <disable_collisions link1="body" link2="rl_kit_wire_housing_box" reason="Adjacent"/>
+    <disable_collisions link1="rl_kit_jetson_housing_box" link2="rl_kit_wire_housing_box" reason="Adjacent"/>
+
 
     <!-- Accessory collisions -->
     <xacro:arg name="has_eap"    default="False"/>
