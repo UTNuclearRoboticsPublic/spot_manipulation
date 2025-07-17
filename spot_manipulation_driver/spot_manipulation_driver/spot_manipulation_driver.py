@@ -61,6 +61,7 @@ from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
+GRIPPER_CLOSE_TORQUE = 10.0
 
 class GraspStrategy(Enum):
     TOP_DOWN_GRASP = 1
@@ -862,7 +863,7 @@ class SpotManipulationDriver(object):
         return success, msg
 
     def close_gripper(self) -> Tuple[bool, Text]:
-        robot_cmd = RobotCommandBuilder.claw_gripper_close_command()
+        robot_cmd = RobotCommandBuilder.claw_gripper_close_command(max_torque=GRIPPER_CLOSE_TORQUE)
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
 
