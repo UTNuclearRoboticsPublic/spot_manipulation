@@ -61,7 +61,7 @@ from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
-GRIPPER_CLOSE_TORQUE = 10.0
+GRIPPER_CLOSE_TORQUE = 15.0
 
 class GraspStrategy(Enum):
     TOP_DOWN_GRASP = 1
