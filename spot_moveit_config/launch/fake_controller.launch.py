@@ -1,6 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, GroupAction
+from launch.actions import IncludeLaunchDescription, GroupAction, DeclareLaunchArgument
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, PushRosNamespace, SetRemap, SetParameter
 from launch_ros.substitutions import FindPackageShare
@@ -8,9 +9,12 @@ from moveit_configs_utils import MoveItConfigsBuilder
 from spot_description.get_accessories import get_accessories_from_env    
 
 def generate_launch_description():
+    launch_args = [
+        DeclareLaunchArgument('rviz', default_value='True'),
+    ]
+
     xacro_args = get_accessories_from_env()
     xacro_args['kinematic_model'] = 'none'
-    # xacro_args['kinematic_model'] = LaunchConfiguration('kinematic_model')
     moveit_config_builder = MoveItConfigsBuilder('spot', package_name='spot_moveit_config')
     moveit_config_builder.robot_description(mappings=xacro_args)
     moveit_config_builder.robot_description_semantic(mappings=xacro_args)
@@ -83,11 +87,13 @@ def generate_launch_description():
     rviz_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([package_share, "launch", "moveit_rviz.launch.py"])
-        )
+        ),
+        condition=IfCondition(LaunchConfiguration('rviz'))
     )
 
     return LaunchDescription(
         [
+            *launch_args,
             GroupAction(actions=[
                 SetParameter(name="publish_planning_scene_hz", value="30.0"),
                 move_group_launch,
