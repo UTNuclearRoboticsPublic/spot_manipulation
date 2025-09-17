@@ -9,79 +9,54 @@
                 <!-- By default, set up controllers for simulation. This won't work on real hardware -->
                 <plugin>mock_components/GenericSystem</plugin>
             </hardware>
-            <xacro:if value="${kinematic_model == 'body_assist'}">
-              <joint name="body_height_joint">
-                  <command_interface name="position"/>
-                  <state_interface name="position">
-                    <param name="initial_value">${initial_positions['body_height_joint']}</param>
-                  </state_interface>
-                  <state_interface name="velocity"/>
-              </joint>
-              <joint name="body_yaw_joint">
-                  <command_interface name="position"/>
-                  <state_interface name="position">
-                    <param name="initial_value">${initial_positions['body_yaw_joint']}</param>
-                  </state_interface>
-                  <state_interface name="velocity"/>
-              </joint>
-              <joint name="body_pitch_joint">
-                  <command_interface name="position"/>
-                  <state_interface name="position">
-                    <param name="initial_value">${initial_positions['body_pitch_joint']}</param>
-                  </state_interface>
-                  <state_interface name="velocity"/>
-              </joint>
-              <joint name="body_roll_joint">
-                  <command_interface name="position"/>
-                  <state_interface name="position">
-                    <param name="initial_value">${initial_positions['body_roll_joint']}</param>
-                  </state_interface>
-                  <state_interface name="velocity"/>
-              </joint>
-            </xacro:if>
-            <joint name="arm0_shoulder_yaw">
-                <command_interface name="position"/>
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['arm0_shoulder_yaw']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
-            <joint name="arm0_shoulder_pitch">
-                <command_interface name="position"/>
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['arm0_shoulder_pitch']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
-            <joint name="arm0_elbow_pitch">
-                <command_interface name="position"/>
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['arm0_elbow_pitch']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
-            <joint name="arm0_elbow_roll">
-                <command_interface name="position"/>
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['arm0_elbow_roll']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
-            <joint name="arm0_wrist_pitch">
-                <command_interface name="position"/>
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['arm0_wrist_pitch']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
-            <joint name="arm0_wrist_roll">
-                <command_interface name="position"/>
-                <state_interface name="position">
-                  <param name="initial_value">${initial_positions['arm0_wrist_roll']}</param>
-                </state_interface>
-                <state_interface name="velocity"/>
-            </joint>
 
+            <!-- Controlled joints -->
+            <xacro:macro name="AddControlledJoint" params="joint_name">
+                <joint name="${joint_name}">
+                    <command_interface name="position"/>
+                    <state_interface name="position">
+                        <param name="initial_value">${initial_positions[joint_name]}</param>
+                    </state_interface>
+                    <state_interface name="velocity"/>"
+                </joint>
+            </xacro:macro>
+
+            <xacro:if value="${kinematic_model == 'body_assist'}">
+                <xacro:AddControlledJoint joint_name="body_height_joint"/>
+                <xacro:AddControlledJoint joint_name="body_yaw_joint"/>
+                <xacro:AddControlledJoint joint_name="body_pitch_joint"/>
+                <xacro:AddControlledJoint joint_name="body_roll_joint"/>
+            </xacro:if>
+            <xacro:AddControlledJoint joint_name="arm0_shoulder_yaw"/>
+            <xacro:AddControlledJoint joint_name="arm0_shoulder_pitch"/>
+            <xacro:AddControlledJoint joint_name="arm0_elbow_pitch"/>
+            <xacro:AddControlledJoint joint_name="arm0_elbow_roll"/>
+            <xacro:AddControlledJoint joint_name="arm0_wrist_pitch"/>
+            <xacro:AddControlledJoint joint_name="arm0_wrist_roll"/>
+
+            <!-- Non-controlled joints -->
+            <xacro:macro name="AddNonControlledJoint" params="joint_name">
+                <joint name="${joint_name}">
+                    <state_interface name="position">
+                        <param name="initial_value">${initial_positions[joint_name]}</param>
+                    </state_interface>
+                    <state_interface name="velocity"/>"
+                </joint>
+            </xacro:macro>
+
+            <xacro:AddNonControlledJoint joint_name="front_left_hip_x"/>
+            <xacro:AddNonControlledJoint joint_name="front_left_hip_y"/>
+            <xacro:AddNonControlledJoint joint_name="front_left_knee"/>
+            <xacro:AddNonControlledJoint joint_name="front_right_hip_x"/>
+            <xacro:AddNonControlledJoint joint_name="front_right_hip_y"/>
+            <xacro:AddNonControlledJoint joint_name="front_right_knee"/>
+            <xacro:AddNonControlledJoint joint_name="rear_left_hip_x"/>
+            <xacro:AddNonControlledJoint joint_name="rear_left_hip_y"/>
+            <xacro:AddNonControlledJoint joint_name="rear_left_knee"/>
+            <xacro:AddNonControlledJoint joint_name="rear_right_hip_x"/>
+            <xacro:AddNonControlledJoint joint_name="rear_right_hip_y"/>
+            <xacro:AddNonControlledJoint joint_name="rear_right_knee"/>
+            <xacro:AddNonControlledJoint joint_name="arm0_fingers"/>
         </ros2_control>
     </xacro:macro>
 </robot>
