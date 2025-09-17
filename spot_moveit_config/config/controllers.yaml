@@ -8,7 +8,7 @@ spot_moveit/controller_manager:
 
 spot_moveit/joint_state_broadcaster:
   ros__parameters:
-    update_rate: 30
+    update_rate: 100
 
 spot_moveit/arm_controller:
   ros__parameters:
