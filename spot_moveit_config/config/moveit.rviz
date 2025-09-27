@@ -141,6 +141,18 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          body_height:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          body_with_pitch_and_yaw:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          body_with_yaw:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
           eap_2_assembly:
             Alpha: 1
             Show Axes: false
@@ -342,6 +354,18 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          body_height:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          body_with_pitch_and_yaw:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          body_with_yaw:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
           eap_2_assembly:
             Alpha: 1
             Show Axes: false
@@ -431,7 +455,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: odom
+    Fixed Frame: spot_nav/map
     Frame Rate: 30
   Name: root
   Tools:
@@ -461,10 +485,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8050006031990051
+      Pitch: 0.775000810623169
       Target Frame: base_footprint
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.460208892822266
+      Yaw: 5.520209789276123
     Saved: ~
 Window Geometry:
   Displays:

@@ -34,6 +34,7 @@ import time
 import threading
 from typing import Text, Tuple, List
 from enum import Enum
+from asyncio import Future
 
 from bosdyn.api import (arm_command_pb2, estop_pb2, manipulation_api_pb2,
                         robot_command_pb2, robot_state_pb2, trajectory_pb2,
@@ -60,6 +61,7 @@ from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
+GRIPPER_CLOSE_TORQUE = 15.0
 
 class GraspStrategy(Enum):
     TOP_DOWN_GRASP = 1
@@ -81,7 +83,8 @@ class SpotManipulationDriver(object):
         self._manipulation_api_client = None
 
         # Tasks
-        self._robot_state_task = None
+        self._robot_state_future: Future = None
+        self._robot_state_proto = None
 
     def connect(self, lease_manager: SpotLeaseManager, rates={}, callbacks={}) -> bool:
         if lease_manager is None:
@@ -125,19 +128,19 @@ class SpotManipulationDriver(object):
 
     @property
     def robot_state(self) -> robot_state_pb2:
-        return self._robot_state_task.proto
+        return self._robot_state_proto
 
     @property
     def kinematic_state(self) -> KinematicStateProto:
-        if self._robot_state_task.proto is None:
+        if self._robot_state_proto is None:
             return None
-        return self._robot_state_task.proto.kinematic_state
+        return self._robot_state_proto.kinematic_state
 
     @property
     def arm_state(self) -> ManipulatorStateProto:
-        if self._robot_state_task.proto is None:
+        if self._robot_state_proto is None:
             return None
-        return self._robot_state_task.proto.manipulator_state
+        return self._robot_state_proto.manipulator_state
 
     @property
     def hand_force(self):
@@ -156,6 +159,14 @@ class SpotManipulationDriver(object):
     @property
     def lease_manager(self):
         return self._lease_manager
+    
+    def set_robot_state(self, future: Future) -> None:
+        self._robot_state_proto = future.result()
+
+    def update_robot_state(self) -> None:
+        if self._robot_state_future is None or self._robot_state_future.done():
+            self._robot_state_future = self._lease_manager._robot_state_client.get_robot_state_async()
+            self._robot_state_future.add_done_callback(self.set_robot_state)
 
     # Verify that an e-stop exists: function borrowed from arm_joint_long_trajectory example
     def verify_estop(self):
@@ -854,7 +865,7 @@ class SpotManipulationDriver(object):
         return success, msg
 
     def close_gripper(self) -> Tuple[bool, Text]:
-        robot_cmd = RobotCommandBuilder.claw_gripper_close_command()
+        robot_cmd = RobotCommandBuilder.claw_gripper_close_command(max_torque=GRIPPER_CLOSE_TORQUE)
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
 

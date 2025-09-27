@@ -1,29 +1,26 @@
+import os
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-
-from moveit_configs_utils import MoveItConfigsBuilder
+from ament_index_python import get_package_share_directory
 
 
 def generate_launch_description():
-    ld = LaunchDescription()
+    package_share = get_package_share_directory('spot_moveit_config')
 
-    moveit_config = MoveItConfigsBuilder("spot").to_moveit_configs()
-
-    ld.add_action(
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                str(moveit_config.package_path / "launch/move_group.launch.py")
-            )
+    move_group_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(package_share, "launch", "move_group.launch.py")
         )
     )
 
-    ld.add_action(
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                str(moveit_config.package_path / "launch/moveit_rviz.launch.py")
-            ),
+    rviz_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(package_share, "launch", "moveit_rviz.launch.py")
         )
     )
 
-    return ld
+    return LaunchDescription([
+        move_group_launch,
+        rviz_launch
+    ])

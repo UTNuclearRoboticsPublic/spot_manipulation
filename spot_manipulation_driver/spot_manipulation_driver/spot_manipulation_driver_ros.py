@@ -37,7 +37,7 @@ import threading
 import rclpy
 import rclpy.callback_groups
 import rclpy.duration
-from rclpy.time import Time, CONVERSION_CONSTANT
+from rclpy.time import Time
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse
 from rclpy.action.server import ServerGoalHandle
@@ -66,6 +66,7 @@ from spot_driver.ros_helpers import (JointStatesToMsg, MsgToPose, MsgToVec3,
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_manipulation_driver.spot_manipulation_driver import SpotManipulationDriver
 
+S_TO_NS = 1000 * 1000 * 1000
 
 ARM_JOINT_ORDER = [
     "arm0_shoulder_yaw",
@@ -182,19 +183,9 @@ class SpotManipulationDriverROS(Node):
         )
 
         self.get_logger().info("Setting arm state callbacks")
-        callbacks = {
-            "robot_state": self.arm_state_callback,
-        }
-        rates = {
-            "robot_state": self.get_parameter("rates.robot_state").value,
-        }
+        self.arm_state_timer = self.create_timer(1/self.get_parameter('rates.robot_state').value, self.arm_state_callback)
 
-        callbacks["robot_state"] = lambda t: (
-            self.publish_joint_states(t),
-            self.arm_state_callback(t),
-        )
-
-        if self.manipulation_driver.connect(lease_manager, rates, callbacks):
+        if self.manipulation_driver.connect(lease_manager):
             self.get_logger().info(f"Connected to Spot {lease_manager.ID.nickname}")
         else:
             self.get_logger().fatal("Failed to launch Spot manipulation driver")
@@ -298,14 +289,6 @@ class SpotManipulationDriverROS(Node):
             "~/arm_cartesian_command",
             self.arm_cartesian_command_callback,
             callback_group=motion_callback_group
-        )
-
-        # Create timers to update the async tasks for publishing
-        update_group = rclpy.callback_groups.ReentrantCallbackGroup()
-        self.create_timer(
-            0.5 / rates["robot_state"],
-            lambda: self.manipulation_driver._robot_state_task.update(),
-            callback_group=update_group
         )
 
         return True
@@ -593,8 +576,13 @@ class SpotManipulationDriverROS(Node):
         self.get_logger().info(
             "Executing goal for the /image_to_grasp action server"
         )
+        self.log_image_to_grasp_goal(self.get_logger(), goal_handle.request)
         self.image_to_grasp_result.success = False
         image_proto = ros_helpers.img_msg_to_proto(goal_handle.request.image, goal_handle.request.camera_info, goal_handle.request.tf_msg, self.manipulation_driver)
+        self.get_logger().info(f'Frame name image sensor: {image_proto.shot.frame_name_image_sensor}')
+        self.get_logger().info(f'Pinhole: {image_proto.source.pinhole}')
+        self.get_logger().info(f'Transforms Snap: {image_proto.shot.transforms_snapshot}')
+        self.get_logger().info(f'Pixel coordinates: {goal_handle.request.pixel_coordinates}')
 
         self.image_to_grasp_result.success = self.manipulation_driver.image_to_grasp(image_proto, goal_handle.request.pixel_coordinates, goal_handle.request.grasp_strategy)
         if self.image_to_grasp_result.success:
@@ -604,6 +592,35 @@ class SpotManipulationDriverROS(Node):
             goal_handle.abort()
             self.get_logger().info("image_to_grasp action server goal aborted")
         return self.image_to_grasp_result
+
+    def log_image_to_grasp_goal(self, logger, goal: ImageToGrasp.Goal):
+        """Logs an image to grasp goal"""
+
+        # Log image info
+        logger.info(f"Image encoding: {goal.image.encoding}")
+        logger.info(f"Image width: {goal.image.width}, height: {goal.image.height}")
+
+        # Log camera_info
+        logger.info(f"Camera frame_id: {goal.camera_info.header.frame_id}")
+        logger.info(f"Camera K matrix: {goal.camera_info.k}")
+
+        # Log TF tree
+        logger.info(f"TFMessage contains {len(goal.tf_msg.transforms)} transforms")
+        for tf in goal.tf_msg.transforms:
+            trans = tf.transform.translation
+            rot = tf.transform.rotation
+            logger.info(
+                f"  {tf.header.frame_id} -> {tf.child_frame_id} | "
+                f"translation: [x={trans.x:.3f}, y={trans.y:.3f}, z={trans.z:.3f}] | "
+                f"rotation (quat): [x={rot.x:.3f}, y={rot.y:.3f}, z={rot.z:.3f}, w={rot.w:.3f}]"
+            )
+
+        # Log pixel coordinates
+        pixel_coords_str = ", ".join(str(p) for p in goal.pixel_coordinates)
+        logger.info(f"Pixel coordinates: [{pixel_coords_str}]")
+
+        # Log grasp strategy
+        logger.info(f"Grasp strategy: {goal.grasp_strategy}")
 
     def finger_follow_joint_trajectory_feedback(self, goal_handle: ServerGoalHandle):
         """Feedback for finger action server"""
@@ -629,7 +646,13 @@ class SpotManipulationDriverROS(Node):
         """Callback for Affordance Primitive end effector velocity command subscriber"""
         self.ee_vel_sub_callback(msg.twist)
 
-    def arm_state_callback(self, _):
+    def arm_state_callback(self):
+        self.manipulation_driver.update_robot_state()
+
+        if self.publish_joint_states_flag:
+            joint_states = JointStatesToMsg(self.manipulation_driver.kinematic_state, self.manipulation_driver.lease_manager)
+            self._joint_state_pub.publish(joint_states)
+
         state = self.manipulation_driver.arm_state
         if state is None:
             return
@@ -646,7 +669,7 @@ class SpotManipulationDriverROS(Node):
 
         # Calculate the collision state
         dt_ros = self.get_clock().now() - Time.from_msg(self._last_gripper_velocity.header.stamp)
-        dt_sec = dt_ros.nanoseconds / CONVERSION_CONSTANT
+        dt_sec = dt_ros.nanoseconds / S_TO_NS
         arm_acc = Vector3()
         arm_acc.x = (arm_vel.twist.linear.x - self._last_gripper_velocity.twist.linear.x)/dt_sec
         arm_acc.y = (arm_vel.twist.linear.y - self._last_gripper_velocity.twist.linear.y)/dt_sec
@@ -801,8 +824,3 @@ class SpotManipulationDriverROS(Node):
 
         return resp
 
-    def publish_joint_states(self, _):
-        if self.publish_joint_states_flag:
-            state = self.manipulation_driver.kinematic_state
-            joint_states = JointStatesToMsg(state, self.manipulation_driver.lease_manager)
-            self._joint_state_pub.publish(joint_states)

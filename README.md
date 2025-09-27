@@ -17,7 +17,7 @@ This repository contains the `spot_manipulation_driver` package required to oper
   - Jog arm with twist messages
 
 ## Spot Manipulation Driver
-The recommended way to run this driver is to run it combined with the body driver. For that, detailed information is available [here](https://github.com/UTNuclearRobotics/spot_ros)
+The recommended way to run this driver is to run it combined with the body driver. For that, detailed information is available [here](https://github.com/UTNuclearRoboticsPublic/spot_ros.git)
 
 If there is a need to run just the manipulation driver, execute the following command from the command line:
 ```bash
