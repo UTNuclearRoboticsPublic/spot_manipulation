@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
     RCLCPP_INFO(node->get_logger(), "Loading config from file \"%s\"", file_path.c_str());
     YAML::Node robot_config = YAML::LoadFile(file_path);
 
-    const std::string base_link = "base_footprint";
+    const std::string base_link = "body";
 
     visualization_msgs::msg::MarkerArray raw_array;
     visualization_msgs::msg::MarkerArray self_array;
