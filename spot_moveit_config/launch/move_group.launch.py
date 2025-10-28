@@ -31,7 +31,7 @@ def generate_launch_description():
                 PushRosNamespace("spot_moveit"),
                 SetRemap(src='/spot_moveit/joint_states', dst='/spot_driver/joint_states'),
                 SetRemap(src='/spot_moveit/robot_description', dst='/spot_driver/robot_description'),
-                SetParameter(name="octomap_resolution", value=0.03),
+                SetParameter(name="octomap_resolution", value=0.075),
                 SetParameter(name="octomap_frame", value="spot_nav/map"),
                 generate_move_group_launch(moveit_config)
             ]
