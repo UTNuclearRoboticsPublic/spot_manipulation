@@ -1,38 +1,30 @@
 format: xrdf
 format_version: 1.0
 
-modifiers:
-    - set_base_frame: "arm0_base_link"
-
 default_joint_positions:
-    arm0_shoulder_yaw : 0.0
-    arm0_shoulder_pitch : 0.0
-    arm0_elbow_pitch : 0.0
-    arm0_elbow_roll : 0.0
-    arm0_wrist_pitch : 0.0
-    arm0_wrist_roll : 0.0
-    arm0_fingers : 0.0
+    arm0_shoulder_yaw : -0.029943227767944336
+    arm0_shoulder_pitch : -2.634772539138794
+    arm0_elbow_pitch : 2.914163589477539
+    arm0_elbow_roll : 0.024838924407958984
+    arm0_wrist_pitch : -0.24115753173828125
+    arm0_wrist_roll : -0.020923614501953125
+    arm0_fingers : -0.010993599891662598
+
+    front_left_hip_x: -0.3428281247615814
+    front_left_hip_y: 1.0187467336654663
+    front_left_knee: -2.605299711227417
+    front_right_hip_x: 0.29793134331703186
+    front_right_hip_y: 1.0114928483963013
+    front_right_knee: -2.5962142944335938
+    rear_left_hip_x: -0.22116026282310486
+    rear_left_hip_y: 1.0229789018630981
+    rear_left_knee: -2.6222493648529053
+    rear_right_hip_x: 0.18044471740722656
+    rear_right_hip_y: 1.0009557008743286
+    rear_right_knee: -2.6095738410949707
 
 cspace:
     joint_names:
-        - "body_height_joint"
-        - "body_pitch_joint"
-        - "body_yaw_joint"
-        - "body_roll_joint"
-
-        - "front_left_hip_x"
-        - "front_right_hip_x"
-        - "rear_left_hip_x"
-        - "rear_right_hip_x"
-        - "front_left_hip_y"
-        - "front_right_hip_y"
-        - "rear_left_hip_y"
-        - "rear_right_hip_y"
-        - "front_left_knee"
-        - "front_right_knee"
-        - "rear_left_knee"
-        - "rear_right_knee"
-
         - "arm0_shoulder_yaw"
         - "arm0_shoulder_pitch"
         - "arm0_elbow_pitch"
@@ -40,8 +32,8 @@ cspace:
         - "arm0_wrist_pitch"
         - "arm0_wrist_roll"
         - "arm0_fingers"
-    acceleration_limits: [15.0, 15.0, 15.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
-    jerk_limits: [500.0, 500.0, 500.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 500.0, 500.0, 500.0, 500.0, 500.0, 500.0, 500.0]
+    acceleration_limits: [15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
+    jerk_limits: [500.0, 500.0, 500.0, 500.0, 500.0, 500.0, 500.0]
 
 tool_frames: ["arm0_hand"]
 
@@ -59,13 +51,17 @@ collision:
 self_collision:
     geometry: "spot_collision_spheres"
     ignore:
-        "arm0_base_link"     : ["arm0_shoulder_yaw"]
-        "arm0_shoulder_yaw"  : ["arm0_shoulder_pitch"]
-        "arm0_shoulder_pitch": ["arm0_elbow_pitch"]
-        "arm0_elbow_pitch"   : ["arm0_elbow_roll"]
-        "arm0_elbow_roll"    : ["arm0_wrist_pitch", "arm0_wrist_roll"]
-        "arm0_wrist_pitch"   : ["arm0_wrist_roll"]
-        "body"               : ["arm0_base_link", "arm0_shoulder_yaw"]
+        "arm0_base_link"       : ["arm0_shoulder_yaw"]
+        "arm0_shoulder_yaw"    : ["arm0_shoulder_pitch"]
+        "arm0_shoulder_pitch"  : ["arm0_elbow_pitch", "rear_rail"]
+        "arm0_elbow_pitch"     : ["arm0_elbow_roll"]
+        "arm0_elbow_roll"      : ["arm0_wrist_pitch", "arm0_wrist_roll"]
+        "arm0_wrist_pitch"     : ["arm0_wrist_roll"]
+        "body"                 : ["arm0_base_link", "arm0_shoulder_yaw", "front_left_upper_leg", "front_right_upper_leg", "rear_left_upper_leg", "rear_right_upper_leg", "rear_rail"]
+        "front_left_upper_leg" : ["front_left_lower_leg"]
+        "front_right_upper_leg": ["front_right_lower_leg"]
+        "rear_left_upper_leg"  : ["rear_left_lower_leg"]
+        "rear_right_upper_leg" : ["rear_right_lower_leg"]
     buffer_distance:
         arm0_shoulder_yaw: 0.004
         arm0_shoulder_pitch: 0.004
@@ -81,14 +77,14 @@ geometry:
                 - {center: [-0.01, -0.05, 0.0], radius: 0.07}
                 - {center: [-0.01, 0.05, 0.0] , radius: 0.07}
             arm0_shoulder_pitch: 
-                - {center: [0.1, 0.0, 0.0] , radius: 0.05}
-                - {center: [0.05, 0.0, 0.0], radius: 0.05}
-                - {center: [0.15, 0.0, 0.0], radius: 0.05}
-                - {center: [0.2, 0.0, 0.0] , radius: 0.05}
-                - {center: [0.25, 0.0, 0.0], radius: 0.05}
-                - {center: [0.3, 0.0, 0.0] , radius: 0.05}
+                - {center: [0.1, 0.0, 0.0] , radius: 0.047}
+                - {center: [0.05, 0.0, 0.0], radius: 0.047}
+                - {center: [0.15, 0.0, 0.0], radius: 0.047}
+                - {center: [0.2, 0.0, 0.0] , radius: 0.047}
+                - {center: [0.25, 0.0, 0.0], radius: 0.047}
+                - {center: [0.3, 0.0, 0.0] , radius: 0.047}
+                - {center: [0.33, 0.0, 0.0] , radius: 0.047}
             arm0_elbow_pitch: 
-                - {center: [0.0, 0.0, 0.0]  , radius: 0.05}
                 - {center: [0.05, 0.0, 0.05], radius: 0.07}
                 - {center: [0.1, 0.0, 0.08] , radius: 0.05}
             arm0_elbow_roll: 
@@ -105,22 +101,61 @@ geometry:
                 - {center: [0.15, 0.0, -0.01], radius: 0.06}
                 - {center: [0.20, 0.0, -0.025], radius: 0.045}
             body:
-                - {center: [ 0.30,  0.10, -0.06], radius: 0.2}
-                - {center: [ 0.30, -0.10, -0.06], radius: 0.2}
-                - {center: [ 0.10,  0.10, -0.06], radius: 0.2}
-                - {center: [ 0.10, -0.10, -0.06], radius: 0.2}
-                - {center: [-0.10,  0.10, -0.06], radius: 0.2}
-                - {center: [-0.10, -0.10, -0.06], radius: 0.2}
-                - {center: [-0.30,  0.10, -0.06], radius: 0.2}
-                - {center: [-0.30, -0.10, -0.06], radius: 0.2}
-                - {center: [ 0.30,  0.10, -0.38], radius: 0.2}
-                - {center: [ 0.30, -0.10, -0.38], radius: 0.2}
-                - {center: [ 0.10,  0.10, -0.38], radius: 0.2}
-                - {center: [ 0.10, -0.10, -0.38], radius: 0.2}
-                - {center: [-0.10,  0.10, -0.38], radius: 0.2}
-                - {center: [-0.10, -0.10, -0.38], radius: 0.2}
-                - {center: [-0.30,  0.10, -0.38], radius: 0.2}
-                - {center: [-0.30, -0.10, -0.38], radius: 0.2}
-                - {center: [-0.46, -0.18, -0.21], radius: 0.1}
-                - {center: [-0.46,  0.18, -0.21], radius: 0.1}
-                - {center: [-0.15,  0.00,  0.20], radius: 0.1}
+                - {center: [ 0.35,  0.00,  0.00], radius: 0.13}
+                - {center: [ 0.17,  0.00,  0.00], radius: 0.145}
+                - {center: [ 0.00,  0.00,  0.00], radius: 0.145}
+                - {center: [-0.17,  0.00,  0.00], radius: 0.145}
+                - {center: [-0.35,  0.00,  0.00], radius: 0.13}
+            front_left_upper_leg:
+                - {center: [0, 0, 0], radius: 0.1}
+                - {center: [0, 0, -0.13], radius: 0.07}
+                - {center: [0, 0, -0.22], radius: 0.07}
+                - {center: [0, 0, -0.31], radius: 0.07}
+            front_left_lower_leg:
+                - {center: [0, 0, 0], radius: 0.05}
+                - {center: [0.02, 0, -0.10], radius: 0.05}
+                - {center: [0.03, 0, -0.20], radius: 0.05}
+                - {center: [0.01, 0, -0.28], radius: 0.05}
+                - {center: [0, 0, -0.35], radius: 0.05}
+            rear_left_upper_leg:
+                - {center: [0, 0, 0], radius: 0.1}
+                - {center: [0, 0, -0.13], radius: 0.07}
+                - {center: [0, 0, -0.22], radius: 0.07}
+                - {center: [0, 0, -0.31], radius: 0.07}
+            rear_left_lower_leg:
+                - {center: [0, 0, 0], radius: 0.05}
+                - {center: [0.02, 0, -0.10], radius: 0.05}
+                - {center: [0.03, 0, -0.20], radius: 0.05}
+                - {center: [0.01, 0, -0.28], radius: 0.05}
+                - {center: [0, 0, -0.35], radius: 0.05}
+            front_right_upper_leg:
+                - {center: [0, 0, 0], radius: 0.1}
+                - {center: [0, 0, -0.13], radius: 0.07}
+                - {center: [0, 0, -0.22], radius: 0.07}
+                - {center: [0, 0, -0.31], radius: 0.07}
+            front_right_lower_leg:
+                - {center: [0, 0, 0], radius: 0.05}
+                - {center: [0.02, 0, -0.10], radius: 0.05}
+                - {center: [0.03, 0, -0.20], radius: 0.05}
+                - {center: [0.01, 0, -0.28], radius: 0.05}
+                - {center: [0, 0, -0.35], radius: 0.05}
+            rear_right_upper_leg:
+                - {center: [0, 0, 0], radius: 0.1}
+                - {center: [0, 0, -0.13], radius: 0.07}
+                - {center: [0, 0, -0.22], radius: 0.07}
+                - {center: [0, 0, -0.31], radius: 0.07}
+            rear_right_lower_leg:
+                - {center: [0, 0, 0], radius: 0.05}
+                - {center: [0.02, 0, -0.10], radius: 0.05}
+                - {center: [0.03, 0, -0.20], radius: 0.05}
+                - {center: [0.01, 0, -0.28], radius: 0.05}
+                - {center: [0, 0, -0.35], radius: 0.05}
+            rear_rail:
+                - {center: [0.05, 0, 0.05], radius: 0.1}
+                - {center: [0.05, 0, 0.15], radius: 0.1}
+                - {center: [0.05, 0, 0.25], radius: 0.1}
+                - {center: [-0.075, 0, 0.05], radius: 0.1}
+                - {center: [-0.075, 0, 0.15], radius: 0.1}
+                - {center: [-0.075, 0, 0.25], radius: 0.1}
+
+                
