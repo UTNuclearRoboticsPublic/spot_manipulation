@@ -2,6 +2,10 @@
 
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 
+trajectory_execution:
+  allowed_start_tolerance: 0.10
+  execution_duration_monitoring: False
+
 moveit_simple_controller_manager:
   controller_names:
     - body_manipulation_controller

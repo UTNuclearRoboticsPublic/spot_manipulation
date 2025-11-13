@@ -135,6 +135,11 @@
     <disable_collisions link1="body" link2="rl_kit_gxp_interface" reason="Adjacent"/>
     <disable_collisions link1="rl_kit_jetson_housing_box" link2="rl_kit_wire_housing_box" reason="Adjacent"/>
     <disable_collisions link1="rl_kit_gxp_interface" link2="rl_kit_wire_housing_box" reason="Adjacent" />
+    <disable_collisions link1="rl_kit_jetson_housing_box" link2="rl_kit_velodyne_mounting_plate" reason="Adjacent" />
+    <disable_collisions link1="velodyne" link2="velodyne_base_link" reason="Adjacent" />
+    <disable_collisions link1="velodyne" link2="velodyne_cage" reason="Adjacent" />
+    <disable_collisions link1="velodyne_base_link" link2="velodyne_cage" reason="Adjacent" />
+
 
 
     <!-- Accessory collisions -->

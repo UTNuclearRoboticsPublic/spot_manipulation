@@ -59,8 +59,10 @@ planner_configs:
   LazyPRM:
     type: geometric::LazyPRM
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
+    multi_query_planning: true
   LazyPRMstar:
     type: geometric::LazyPRMstar
+    multi_query_planning: true
   SPARStwo:
     type: geometric::SPARStwo
     stretch_factor: 3.0  # roadmap spanner stretch factor. multiplicative upper bound on path quality. It does not make sense to make this parameter more than 3. default: 3.0
