@@ -358,80 +358,199 @@ class SpotManipulationDriver(object):
 
     #     return RobotCommandBuilder.build_synchro_command(arm_cmd, mobility_cmd)
 
+    # def create_arm_and_mobility_command(self, arm_positions, body_points, times, vision_T_body, ref_time, ros_logger):
+    #     # Assumes that the body points are in the body frame
+    #
+    #     if len(times) != len(body_points) or len(times) != len(arm_positions):
+    #         ros_logger.error("Length mismatch between times, body points, or arm positions.")
+    #         return None
+    #
+    #     # Initialize a RobotCommand message
+    #     command = robot_command_pb2.RobotCommand()
+    #
+    #     # Build the arm joint trajectory command
+    #     arm_joint_traj_command = command.synchronized_command.arm_command.arm_joint_move_command
+    #
+    #     # Build the joint trajectory
+    #     joint_trajectory = trajectory_pb2.JointTrajectory()
+    #
+    #     for ii in range(len(times)):
+    #         positions = arm_positions[ii]  # List of joint positions at time times[ii]
+    #         traj_time = times[ii]
+    #
+    #         # Add a new point to the joint trajectory
+    #         point = joint_trajectory.points.add()
+    #         point.positions.extend(positions)
+    #         duration = seconds_to_duration(traj_time)
+    #         point.time_since_reference.CopyFrom(duration)
+    #
+    #     # Set the trajectory in the request
+    #     arm_joint_traj_command.trajectory.CopyFrom(joint_trajectory)
+    #
+    #     # Set the reference time for the arm command
+    #     if ref_time is not None:
+    #         arm_joint_traj_command.request.ref_time.CopyFrom(ref_time)
+    #
+    #     # Set the interpolation method to CUBIC for smooth trajectories
+    #     arm_joint_traj_command.params.interpolation = arm_command_pb2.ArmJointTrajectoryParams.CUBIC
+    #
+    #     # Assign the arm_joint_traj_command to the command's arm_command
+    #     command.synchronized_command.arm_command.arm_joint_trajectory.CopyFrom(arm_joint_traj_command)
+    #
+    #     # Build the mobility command
+    #     mobility_command = command.synchronized_command.mobility_command
+    #     se2_trajectory_request = mobility_command.se2_trajectory_request
+    #
+    #     # Iterate over time points and body points to build the trajectory
+    #     for ii in range(len(times)):
+    #         x = body_points[ii][0]
+    #         y = body_points[ii][1]
+    #         yaw = body_points[ii][2]
+    #
+    #         # Transform desired position into vision frame
+    #         x_ewrt_vision, y_ewrt_vision, _ = vision_T_body.transform_point(x, y, 0)
+    #
+    #         # Add a new point to the robot command's SE2 trajectory request
+    #         point = se2_trajectory_request.trajectory.points.add()
+    #         point.pose.position.x = x_ewrt_vision
+    #         point.pose.position.y = y_ewrt_vision
+    #         point.pose.angle = vision_T_body.rot.to_yaw() + yaw
+    #
+    #         traj_time = times[ii]
+    #         duration = seconds_to_duration(traj_time)
+    #         point.time_since_reference.CopyFrom(duration)
+    #
+    #     # Set the frame for the mobility trajectory
+    #     se2_trajectory_request.se2_frame_name = VISION_FRAME_NAME
+    #
+    #     # Constrain the robot's speed
+    #     speed_limit = geometry_pb2.SE2VelocityLimit(
+    #         max_vel=geometry_pb2.SE2Velocity(linear=geometry_pb2.Vec2(x=0.5, y=0.5), angular=0.5),
+    #         min_vel=geometry_pb2.SE2Velocity(linear=geometry_pb2.Vec2(x=-0.5, y=-0.5), angular=-0.5)
+    #     )
+    #
+    #     mobility_params = spot_command_pb2.MobilityParams(vel_limit=speed_limit)
+    #     mobility_command.params.CopyFrom(RobotCommandBuilder._to_any(mobility_params))
+    #
+    #     return command
     def create_arm_and_mobility_command(self, arm_positions, body_points, times, vision_T_body, ref_time, ros_logger):
-        # Assumes that the body points are in the body frame
-
+        """
+        Creates a synchronized command for arm joint trajectory and mobility using SDK helpers.
+        
+        Args:
+            arm_positions: List of arm joint position lists (6 joints per waypoint)
+            body_points: List of [x, y, yaw] in body frame
+            times: List of time offsets from reference time
+            vision_T_body: Transform from body to vision frame
+            ref_time: Reference timestamp for the trajectory
+            ros_logger: Logger instance
+        
+        Returns:
+            RobotCommand with synchronized arm and mobility commands, or None on error
+        """
+        
         if len(times) != len(body_points) or len(times) != len(arm_positions):
             ros_logger.error("Length mismatch between times, body points, or arm positions.")
             return None
-
-        # Initialize a RobotCommand message
-        command = robot_command_pb2.RobotCommand()
-
-        # Build the arm joint trajectory command
-        arm_joint_traj_command = command.synchronized_command.arm_command.arm_joint_move_command
-
-        # Build the joint trajectory
-        joint_trajectory = trajectory_pb2.JointTrajectory()
-
-        for ii in range(len(times)):
-            positions = arm_positions[ii]  # List of joint positions at time times[ii]
-            traj_time = times[ii]
-
-            # Add a new point to the joint trajectory
-            point = joint_trajectory.points.add()
-            point.positions.extend(positions)
-            duration = seconds_to_duration(traj_time)
-            point.time_since_reference.CopyFrom(duration)
-
-        # Set the trajectory in the request
-        arm_joint_traj_command.trajectory.CopyFrom(joint_trajectory)
-
-        # Set the reference time for the arm command
-        if ref_time is not None:
-            arm_joint_traj_command.request.ref_time.CopyFrom(ref_time)
-
-        # Set the interpolation method to CUBIC for smooth trajectories
-        arm_joint_traj_command.params.interpolation = arm_command_pb2.ArmJointTrajectoryParams.CUBIC
-
-        # Assign the arm_joint_traj_command to the command's arm_command
-        command.synchronized_command.arm_command.arm_joint_trajectory.CopyFrom(arm_joint_traj_command)
-
-        # Build the mobility command
-        mobility_command = command.synchronized_command.mobility_command
-        se2_trajectory_request = mobility_command.se2_trajectory_request
-
-        # Iterate over time points and body points to build the trajectory
-        for ii in range(len(times)):
-            x = body_points[ii][0]
-            y = body_points[ii][1]
-            yaw = body_points[ii][2]
-
-            # Transform desired position into vision frame
-            x_ewrt_vision, y_ewrt_vision, _ = vision_T_body.transform_point(x, y, 0)
-
-            # Add a new point to the robot command's SE2 trajectory request
-            point = se2_trajectory_request.trajectory.points.add()
-            point.pose.position.x = x_ewrt_vision
-            point.pose.position.y = y_ewrt_vision
-            point.pose.angle = vision_T_body.rot.to_yaw() + yaw
-
-            traj_time = times[ii]
-            duration = seconds_to_duration(traj_time)
-            point.time_since_reference.CopyFrom(duration)
-
-        # Set the frame for the mobility trajectory
-        se2_trajectory_request.se2_frame_name = VISION_FRAME_NAME
-
-        # Constrain the robot's speed
-        speed_limit = geometry_pb2.SE2VelocityLimit(
-            max_vel=geometry_pb2.SE2Velocity(linear=geometry_pb2.Vec2(x=0.5, y=0.5), angular=0.5),
-            min_vel=geometry_pb2.SE2Velocity(linear=geometry_pb2.Vec2(x=-0.5, y=-0.5), angular=-0.5)
+    
+        # Validate arm positions
+        for i, positions in enumerate(arm_positions):
+            if len(positions) != 6:
+                ros_logger.error(f"Invalid arm position count at index {i}: expected 6, got {len(positions)}")
+                return None
+    
+        # ============================================================
+        # BUILD ARM JOINT MOVE COMMAND using SDK helper
+        # ============================================================
+        arm_command = RobotCommandBuilder.arm_joint_move_helper(
+            joint_positions=arm_positions,
+            times=times,
+            ref_time=ref_time,
+            max_vel=2.5,  # rad/s - adjust as needed
+            max_acc=15.0   # rad/s^2 - adjust as needed
         )
-
+    
+        # ============================================================
+        # BUILD SE2 TRAJECTORY for mobility using SDK helper
+        # ============================================================
+        # Transform body points to vision frame
+        se2_trajectory_points = []
+        for i in range(len(body_points)):
+            x_body = body_points[i][0]
+            y_body = body_points[i][1]
+            yaw_body = body_points[i][2]
+            
+            # Transform to vision frame
+            x_vision, y_vision, _ = vision_T_body.transform_point(x_body, y_body, 0)
+            yaw_vision = vision_T_body.rot.to_yaw() + yaw_body
+            
+            # Create SE2TrajectoryPoint
+            se2_pose = geometry_pb2.SE2Pose(
+                position=geometry_pb2.Vec2(x=x_vision, y=y_vision),
+                angle=yaw_vision
+            )
+            se2_trajectory_points.append((times[i], se2_pose))
+    
+        # Build mobility params with velocity limits
+        speed_limit = geometry_pb2.SE2VelocityLimit(
+            max_vel=geometry_pb2.SE2Velocity(
+                linear=geometry_pb2.Vec2(x=0.5, y=0.5), 
+                angular=0.5
+            ),
+            min_vel=geometry_pb2.SE2Velocity(
+                linear=geometry_pb2.Vec2(x=-0.5, y=-0.5), 
+                angular=-0.5
+            )
+        )
+        
+        # mobility_params = RobotCommandBuilder.mobility_params(
+        #     vel_limit=speed_limit,
+        #     body_height=0.0,
+        #     locomotion_hint=spot_command_pb2.HINT_AUTO
+        # )
         mobility_params = spot_command_pb2.MobilityParams(vel_limit=speed_limit)
-        mobility_command.params.CopyFrom(RobotCommandBuilder._to_any(mobility_params))
+    
+        # Use SDK helper to build SE2 trajectory command
+        mobility_command = RobotCommandBuilder.synchro_se2_trajectory_command(
+            goal_se2=se2_trajectory_points[-1][1],  # Final pose
+            frame_name=VISION_FRAME_NAME,
+            params=mobility_params,
+            body_height=0.0,
+            locomotion_hint=spot_command_pb2.HINT_AUTO
+        )
+        
+        # Add waypoints to the trajectory
+        se2_traj = mobility_command.synchronized_command.mobility_command.se2_trajectory_request.trajectory
+        del se2_traj.points[:]  # Clear existing points - protobuf repeated field
+        
+        for time_offset, se2_pose in se2_trajectory_points:
+            point = se2_traj.points.add()
+            point.pose.CopyFrom(se2_pose)
+            point.time_since_reference.CopyFrom(seconds_to_duration(time_offset))
+        
+        # Set reference time
+        if ref_time is not None:
+            mobility_command.synchronized_command.mobility_command.se2_trajectory_request.end_time.CopyFrom(ref_time)
+    
+        # ============================================================
+        # COMBINE into synchronized command using SDK helper
+        # ============================================================
+        # Extract just the arm and mobility commands (not the full synchronized_command wrapper)
+        # with sync
+        arm_sync_command = robot_command_pb2.RobotCommand()
+        mobility_sync_command = robot_command_pb2.RobotCommand()
+        arm_sync_command.synchronized_command.arm_command.CopyFrom(arm_command.synchronized_command.arm_command)
+        mobility_sync_command.synchronized_command.mobility_command.CopyFrom(mobility_command.synchronized_command.mobility_command)
+        command = RobotCommandBuilder.build_synchro_command(mobility_sync_command, arm_sync_command)
 
+        # without sync
+        # command = robot_command_pb2.RobotCommand()
+        # command.synchronized_command.arm_command.CopyFrom(arm_command.synchronized_command.arm_command)
+        # command.synchronized_command.mobility_command.CopyFrom(mobility_command.synchronized_command.mobility_command)
+    
+        ros_logger.info(f"Created synchronized command with {len(times)} waypoints using SDK helpers")
+        
+        # return synchro_command
         return command
 
     # Execute long trajectories
@@ -475,8 +594,8 @@ class SpotManipulationDriver(object):
         start_time = time.time() + TRAJ_APPROACH_TIME
         ref_time = seconds_to_timestamp(start_time)
 
-        # while traj_index[0] < end_index:
-        while traj_index[0] < 2:
+        while traj_index[0] < end_index:
+        # while traj_index[0] < 2:
             ros_logger.info(f"INSIDE LOOP")
             times = []
             positions = []
@@ -506,7 +625,7 @@ class SpotManipulationDriver(object):
                 time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
 
             ros_logger.info(f"Before sending commmand inside loop")
-            # success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, time.time()+times[-1]-times[0])
+            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, time.time()+times[-1]-times[0])
             ros_logger.info(f"After sending command inside loop")
 
             time_index = time.time()
