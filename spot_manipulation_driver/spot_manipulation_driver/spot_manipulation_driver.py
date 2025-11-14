@@ -625,7 +625,7 @@ class SpotManipulationDriver(object):
                 time.sleep(time_to_goal_in_seconds - (time.time() - time_index) - 0.05)
 
             ros_logger.info(f"Before sending commmand inside loop")
-            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, time.time()+times[-1]-times[0])
+            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+times[-1]-times[0])
             ros_logger.info(f"After sending command inside loop")
 
             time_index = time.time()
