@@ -105,6 +105,7 @@ class SpotManipulationDriverROS(Node):
 
         self._arm_trajectory_cancel_event = threading.Event()
         self._arm_and_finger_trajectory_cancel_event = threading.Event()
+        self._mobile_manipulation_trajectory_cancel_event = threading.Event()
         self._arm_cartesian_command_cancel_event = threading.Event()
 
         # Declare ROS parameters
@@ -508,6 +509,10 @@ class SpotManipulationDriverROS(Node):
             error_string = "Exception occured"
 
         return FollowJointTrajectory.Result(error_code=error_code, error_string=error_string)
+
+    def mobile_manipulation_goal_cancel_callback(self, cancel_request):
+        self._mobile_manipulation_trajectory_cancel_event.set()
+        return CancelResponse.ACCEPT
     
     def arm_cartesian_command_cancel_callback(self, cancel_request):
         self._arm_cartesian_command_cancel_event.set()
