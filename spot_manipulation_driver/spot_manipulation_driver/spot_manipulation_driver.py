@@ -61,6 +61,7 @@ from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
+MAX_MOBILE_MANIPULATION_POINTS = 10
 GRIPPER_CLOSE_TORQUE = 15.0
 
 class GraspStrategy(Enum):
@@ -194,7 +195,7 @@ class SpotManipulationDriver(object):
 
         self.verify_estop()
 
-    # Execute long trajectories
+    # Execute long arm trajectories
     def arm_long_trajectory_executor(
         self, traj_point_positions, traj_point_velocities, timepoints, cancel_event: threading.Event
     ) -> None:
@@ -464,6 +465,57 @@ class SpotManipulationDriver(object):
     #     self._logger.info("Successfully executed arm and gripper trajectory")
     #     return True
 
+    # Execute long mobile manipulation trajectories
+    def mobile_manipulation_long_trajectory_executor(
+        self, traj_point_positions, traj_point_velocities, timepoints, cancel_event: threading.Event
+    ) -> None:
+
+        # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
+        try:
+            if self._lease_manager.robot.is_powered_on(5):
+                self._logger.info("Arm is about to move.")
+            else:
+                self._logger.warn("Cannot execute mobile manipulation long trajectory, robot is not powered on")
+                return False
+        except RpcError as e:
+            self._logger.warn(f"Cannot execute mobile manipulation long trajectory, unable to communicate with robot\n\tMsg: {e}")
+            return False
+
+        start_time = time.time()
+        ref_time = seconds_to_timestamp(start_time)
+
+        mobile_manipulation_trajectory_manager = TrajectoryManager(
+            points=traj_point_positions,
+            times_since_ref=timepoints,
+            ref_time=start_time
+        )
+
+        while not mobile_manipulation_trajectory_manager.done():
+            if cancel_event.is_set():
+                self.stop_robot()
+                self._logger.info("Mobile manipulation trajectory action cancelled early. Stopping robot")
+                return False
+            
+            window, timestamps, sleep_time = mobile_manipulation_trajectory_manager.get_window(MAX_MOBILE_MANIPULATION_POINTS)
+
+            # robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
+            #     joint_positions=window,
+            #     times=timestamps,
+            #     ref_time=ref_time,
+            # )
+
+            success, msg, _ = self._lease_manager.robot_command(robot_cmd)
+
+            if not success:
+                self._logger.warn(f"mobile_manipulation_long_trajectory_executor: Error executing robot command: {msg}")
+                return False
+
+            if mobile_manipulation_trajectory_manager.last():
+                time.sleep(sleep_time)
+            else:
+                time.sleep(max(sleep_time - 0.2, 0))
+        self._logger.info("Successfully executed mobile manipulation trajectory")
+        return True
 
     def body_manipulation_trajectory_executor(
             self, body_trajectory: List[SE3Pose], arm_trajectory: List[List[float]], timestamps: List[float]
