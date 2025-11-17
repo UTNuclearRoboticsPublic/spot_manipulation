@@ -176,7 +176,7 @@ class SpotManipulationDriverROS(Node):
         # Arm-and-finger-related attributes
         self.arm_and_finger_result = FollowJointTrajectory.Result()
 
-        # Whole-body-control-related attributes
+        # Mobile-manipulation-related attributes
         self.mobile_manipulation_result = FollowJointTrajectory.Result()
 
         # Image_to_grasp-related attributes
