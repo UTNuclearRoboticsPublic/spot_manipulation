@@ -175,6 +175,9 @@ class SpotManipulationDriverROS(Node):
         # Arm-and-finger-related attributes
         self.arm_and_finger_result = FollowJointTrajectory.Result()
 
+        # Whole-body-control-related attributes
+        self.mobile_manipulation_control_result = FollowJointTrajectory.Result()
+
         # Image_to_grasp-related attributes
         self.image_to_grasp_result = ImageToGrasp.Result()
 
@@ -270,6 +273,15 @@ class SpotManipulationDriverROS(Node):
             self.arm_and_finger_goal_callback,
             callback_group=motion_callback_group,
             cancel_callback=self.arm_and_finger_goal_cancel_callback
+        )
+
+        self.mobile_manipulation_control_action_server = ActionServer(
+            self,
+            FollowJointTrajectory,
+            f"{action_ns}/mobile_manipulation_controller/follow_joint_trajectory",
+            self.mobile_manipulation_control_goal_callback,
+            callback_group=motion_callback_group,
+            cancel_callback=self.mobile_manipulation_goal_cancel_callback
         )
 
         self.body_manipulation_action_server = ActionServer(
