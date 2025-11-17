@@ -177,7 +177,7 @@ class SpotManipulationDriverROS(Node):
         self.arm_and_finger_result = FollowJointTrajectory.Result()
 
         # Whole-body-control-related attributes
-        self.mobile_manipulation_control_result = FollowJointTrajectory.Result()
+        self.mobile_manipulation_result = FollowJointTrajectory.Result()
 
         # Image_to_grasp-related attributes
         self.image_to_grasp_result = ImageToGrasp.Result()
@@ -215,6 +215,7 @@ class SpotManipulationDriverROS(Node):
 
         self._joint_state_pub = self.create_publisher(JointState, "/joint_states", 10)
         self._arm_goal_pub = self.create_publisher(JointTrajectory, "/arm_controller/follow_joint_trajectory/goal", 10)
+        self._mobile_manipulation_goal_pub = self.create_publisher(JointTrajectory, "/mobile_manipulation_controller/follow_joint_trajectory/goal", 10)
 
         # Command subscriptions
         self.ee_vel_sub = self.create_subscription(
@@ -276,11 +277,11 @@ class SpotManipulationDriverROS(Node):
             cancel_callback=self.arm_and_finger_goal_cancel_callback
         )
 
-        self.mobile_manipulation_control_action_server = ActionServer(
+        self.mobile_manipulation_action_server = ActionServer(
             self,
             FollowJointTrajectory,
             f"{action_ns}/mobile_manipulation_controller/follow_joint_trajectory",
-            self.mobile_manipulation_control_goal_callback,
+            self.mobile_manipulation_goal_callback,
             callback_group=motion_callback_group,
             cancel_callback=self.mobile_manipulation_goal_cancel_callback
         )
@@ -513,6 +514,68 @@ class SpotManipulationDriverROS(Node):
     def mobile_manipulation_goal_cancel_callback(self, cancel_request):
         self._mobile_manipulation_trajectory_cancel_event.set()
         return CancelResponse.ACCEPT
+
+    def mobile_manipulation_goal_callback(self, goal_handle: ServerGoalHandle):
+        """Callback for the /mobile_manipulation_controller/follow_joint_trajectory action server """
+
+        # Translate message and execute trajectory while publishing feedback
+        traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
+            goal_handle.request.trajectory, WHOLE_BODY_JOINT_ORDER
+        )
+
+        # Publish the received trajectory (only once) before executing for data-capture purposes
+        if self.data_capture_mode:
+            def mobile_manipulation_goal_publisher() -> None:
+                timeout = 3.0
+                start_time = time.time()  
+
+                while self._mobile_manipulation_goal_pub.get_subscription_count() < 1:
+                    if time.time() - start_time > timeout:
+                        self.get_logger().info("Timed out waiting for an mobile_manipulation_controller/follow_joint_trajectory/goal subscriber to be available")
+                        return  
+                    time.sleep(0.1)  # sleep to avoid busy-waiting
+                self.get_logger().info("Publishing received joint trajectory on the mobile_manipulation_controller/follow_joint_trajectory/goal topic")
+                self._mobile_manipulation_goal_pub.publish(goal_handle.request.trajectory)
+
+            mobile_manipulation_goal_publisher_thread = threading.Thread(target=mobile_manipulation_goal_publisher)
+            mobile_manipulation_goal_publisher_thread.start()
+
+        trajectory_success = False
+
+        def execute_trajectory() -> None:
+            nonlocal trajectory_success
+            try:
+                trajectory_success = self.manipulation_driver.mobile_manipulation_long_trajectory_executor(
+                    traj_point_positions, traj_point_velocities, timepoints, self._mobile_manipulation_trajectory_cancel_event
+                ) 
+            except Exception as e:
+                self._logger.info(f"Error executing mobile manipulation long trajectory: {e}")
+                return
+
+        mobile_manipulation_execution_thread = threading.Thread(target=execute_trajectory)
+        mobile_manipulation_execution_thread.start()
+        
+        rate = self.create_rate(10.0)
+        while mobile_manipulation_execution_thread.is_alive():
+            goal_handle.publish_feedback(
+                ros_helpers.get_joint_state_feedback(self.manipulation_driver)
+            )
+            rate.sleep()
+
+        # Join threads
+        mobile_manipulation_execution_thread.join()
+        if self.data_capture_mode:
+            mobile_manipulation_goal_publisher_thread.join()
+
+        if self._mobile_manipulation_trajectory_cancel_event.is_set():
+            goal_handle.canceled()
+            self._mobile_manipulation_trajectory_cancel_event.clear()
+        elif trajectory_success:
+            goal_handle.succeed()
+        else:
+            goal_handle.abort()
+
+        return self.mobile_manipulation_result
     
     def arm_cartesian_command_cancel_callback(self, cancel_request):
         self._arm_cartesian_command_cancel_event.set()
