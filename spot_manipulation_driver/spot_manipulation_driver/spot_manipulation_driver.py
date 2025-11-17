@@ -62,7 +62,15 @@ from bosdyn.client.manipulation_api_client import ManipulationApiClient
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
 MAX_MOBILE_MANIPULATION_POINTS = 10
+ARM_NUM_JOINTS = 6
+BODY_MOBILE_NUM_JOINTS = 3
+MOBILE_MANIPULATION_NUM_JOINTS = ARM_NUM_JOINTS + BODY_MOBILE_NUM_JOINTS
 GRIPPER_CLOSE_TORQUE = 15.0
+MAX_ARM_JOINT_VEL = 2.5  # rad/s
+MAX_ARM_JOINT_ACC = 15.0  # rad/s^2
+MAX_BODY_VEL_LINEAR = 0.5  # m/s
+MAX_BODY_VEL_ANGULAR = 0.5  # rad/s
+BODY_HEIGHT_FOR_MOBILE_MANIPULATION = 0.0  # meters
 
 class GraspStrategy(Enum):
     TOP_DOWN_GRASP = 1
@@ -465,6 +473,111 @@ class SpotManipulationDriver(object):
     #     self._logger.info("Successfully executed arm and gripper trajectory")
     #     return True
 
+    def create_mobile_manipulation_command(self, traj_points: list, times: list[float], ref_time: float) -> Any:
+        """
+        Creates a synchronized command for mobile manipulation (i.e. body, arm (and TODO: gripper)) using SDK helpers.
+        
+        Args:
+            traj_point_positions: List of joint positions for each trajectory point in the mobile manipulation trajectory. Includes body and arm joints.
+            times: List of time offsets from reference time
+            ref_time: Reference timestamp for the trajectory
+        
+        Returns:
+            RobotCommand with synchronized arm (TODO: gripper) and mobility commands, or None on error
+        """
+        
+        # Validate length of times and trajectory points
+        if len(times) != len(traj_points):
+            self._logger.error("Length mismatch between times and trajectory points.")
+            return None
+    
+        # Validate number of joints in each trajectory point
+        for i, positions in enumerate(traj_points):
+            if len(positions) != MOBILE_MANIPULATION_NUM_JOINTS:
+                self._logger.error(f"Invalid number of joints at index {i}: expected {MOBILE_MANIPULATION_NUM_JOINTS}, got {len(positions)}")
+                return None
+
+        # Separate body and arm points
+        body_points = [traj_points[0][:BODY_MOBILE_NUM_JOINTS]]
+        arm_positions = [traj_points[0][BODY_MOBILE_NUM_JOINTS:BODY_MOBILE_NUM_JOINTS + ARM_NUM_JOINTS]] # Next ARM_NUM_JOINTS are arm joints
+
+        # Get the latest robot state for transforms
+        robot_state = self._lease_manager._robot_state_client.get_robot_state()
+        vision_T_body = get_vision_tform_body(robot_state.kinematic_state.transforms_snapshot)
+    
+        # Build arm command
+        arm_command = RobotCommandBuilder.arm_joint_move_helper(
+            joint_positions=arm_positions,
+            times=times,
+            ref_time=ref_time,
+            max_vel=MAX_ARM_JOINT_VEL,
+            max_acc=MAX_ARM_JOINT_ACC
+        )
+    
+        # Build se2 trajectory for the mobility command
+        # Transform body points to vision frame
+        se2_trajectory_points = []
+        for i in range(len(body_points)):
+            x_body = body_points[i][0]
+            y_body = body_points[i][1]
+            yaw_body = body_points[i][2]
+            
+            # Transform to vision frame
+            x_vision, y_vision, _ = vision_T_body.transform_point(x_body, y_body, 0)
+            yaw_vision = vision_T_body.rot.to_yaw() + yaw_body
+            
+            # Create SE2TrajectoryPoint
+            se2_pose = geometry_pb2.SE2Pose(
+                position=geometry_pb2.Vec2(x=x_vision, y=y_vision),
+                angle=yaw_vision
+            )
+            se2_trajectory_points.append((times[i], se2_pose))
+    
+        # Build mobility params with velocity limits
+        speed_limit = geometry_pb2.SE2VelocityLimit(
+            max_vel=geometry_pb2.SE2Velocity(
+                linear=geometry_pb2.Vec2(x=MAX_BODY_VEL_LINEAR, y=MAX_BODY_VEL_LINEAR), 
+                angular=MAX_BODY_VEL_ANGULAR
+            ),
+            min_vel=geometry_pb2.SE2Velocity(
+                linear=geometry_pb2.Vec2(x=-MAX_BODY_VEL_LINEAR, y=-MAX_BODY_VEL_LINEAR), 
+                angular=-MAX_BODY_VEL_ANGULAR
+            )
+        )
+        
+        mobility_params = spot_command_pb2.MobilityParams(vel_limit=speed_limit)
+    
+        # Build the mobility command with mobility params and the final pose from the se2 trajectory
+        mobility_command = RobotCommandBuilder.synchro_se2_trajectory_command(
+            goal_se2=se2_trajectory_points[-1][1],  # Final pose
+            frame_name=VISION_FRAME_NAME,
+            params=mobility_params,
+            body_height=BODY_HEIGHT_FOR_MOBILE_MANIPULATION,
+            locomotion_hint=spot_command_pb2.HINT_AUTO
+        )
+        
+        # Reset the se2 trajectory in the mobility command and manually add waypoints
+        se2_traj = mobility_command.synchronized_command.mobility_command.se2_trajectory_request.trajectory
+        del se2_traj.points[:]  # Clear existing points - protobuf repeated field
+        
+        for time_offset, se2_pose in se2_trajectory_points:
+            point = se2_traj.points.add()
+            point.pose.CopyFrom(se2_pose)
+            point.time_since_reference.CopyFrom(seconds_to_duration(time_offset))
+        
+        # Set reference time
+        if ref_time is not None:
+            mobility_command.synchronized_command.mobility_command.se2_trajectory_request.end_time.CopyFrom(ref_time)
+    
+        # Combine arm and mobility commands into synchronized command
+        arm_sync_command = robot_command_pb2.RobotCommand()
+        mobility_sync_command = robot_command_pb2.RobotCommand()
+        arm_sync_command.synchronized_command.arm_command.CopyFrom(arm_command.synchronized_command.arm_command)
+        mobility_sync_command.synchronized_command.mobility_command.CopyFrom(mobility_command.synchronized_command.mobility_command)
+        command = RobotCommandBuilder.build_synchro_command(mobility_sync_command, arm_sync_command)
+
+        return command
+
     # Execute long mobile manipulation trajectories
     def mobile_manipulation_long_trajectory_executor(
         self, traj_point_positions, traj_point_velocities, timepoints, cancel_event: threading.Event
@@ -498,11 +611,7 @@ class SpotManipulationDriver(object):
             
             window, timestamps, sleep_time = mobile_manipulation_trajectory_manager.get_window(MAX_MOBILE_MANIPULATION_POINTS)
 
-            # robot_cmd = RobotCommandBuilder.arm_joint_move_helper(
-            #     joint_positions=window,
-            #     times=timestamps,
-            #     ref_time=ref_time,
-            # )
+            robot_cmd = self.create_mobile_manipulation_command(window, timestamps, ref_time)
 
             success, msg, _ = self._lease_manager.robot_command(robot_cmd)
 
