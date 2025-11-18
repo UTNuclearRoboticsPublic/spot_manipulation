@@ -46,7 +46,7 @@ from bosdyn.api.robot_command_pb2 import RobotCommandFeedbackResponse
 from bosdyn.api.mobility_command_pb2 import MobilityCommand
 from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand, ArmJointPosition
 from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME, BODY_FRAME_NAME,
-                                        GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b)
+                                        GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b, get_vision_tform_body)
 from bosdyn.client.math_helpers import SE3Pose
 from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command)
 from bosdyn.client.exceptions import RpcError
@@ -473,7 +473,7 @@ class SpotManipulationDriver(object):
     #     self._logger.info("Successfully executed arm and gripper trajectory")
     #     return True
 
-    def create_mobile_manipulation_command(self, traj_points: list, times: list[float], ref_time: float) -> Any:
+    def create_mobile_manipulation_command(self, traj_points: list, times: list[float], ref_time: float, vision_T_body: SE3Pose) -> robot_command_pb2.RobotCommand:
         """
         Creates a synchronized command for mobile manipulation (i.e. body, arm (and TODO: gripper)) using SDK helpers.
         
@@ -481,6 +481,7 @@ class SpotManipulationDriver(object):
             traj_point_positions: List of joint positions for each trajectory point in the mobile manipulation trajectory. Includes body and arm joints.
             times: List of time offsets from reference time
             ref_time: Reference timestamp for the trajectory
+            vision_T_body: Transform from body frame to vision frame
         
         Returns:
             RobotCommand with synchronized arm (TODO: gripper) and mobility commands, or None on error
@@ -498,13 +499,9 @@ class SpotManipulationDriver(object):
                 return None
 
         # Separate body and arm points
-        body_points = [traj_points[0][:BODY_MOBILE_NUM_JOINTS]]
-        arm_positions = [traj_points[0][BODY_MOBILE_NUM_JOINTS:BODY_MOBILE_NUM_JOINTS + ARM_NUM_JOINTS]] # Next ARM_NUM_JOINTS are arm joints
+        body_points = [point[:BODY_MOBILE_NUM_JOINTS] for point in traj_points]
+        arm_positions = [point[BODY_MOBILE_NUM_JOINTS:BODY_MOBILE_NUM_JOINTS + ARM_NUM_JOINTS] for point in traj_points]# Next ARM_NUM_JOINTS in each point are arm joints
 
-        # Get the latest robot state for transforms
-        robot_state = self._lease_manager._robot_state_client.get_robot_state()
-        vision_T_body = get_vision_tform_body(robot_state.kinematic_state.transforms_snapshot)
-    
         # Build arm command
         arm_command = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=arm_positions,
@@ -586,7 +583,7 @@ class SpotManipulationDriver(object):
         # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
         try:
             if self._lease_manager.robot.is_powered_on(5):
-                self._logger.info("Arm is about to move.")
+                self._logger.info("Spot is about to move its whole body.")
             else:
                 self._logger.warn("Cannot execute mobile manipulation long trajectory, robot is not powered on")
                 return False
@@ -597,6 +594,11 @@ class SpotManipulationDriver(object):
         start_time = time.time()
         ref_time = seconds_to_timestamp(start_time)
 
+        # Get the latest robot state for transforms
+        robot_state = self._lease_manager._robot_state_client.get_robot_state()
+        vision_T_body = get_vision_tform_body(robot_state.kinematic_state.transforms_snapshot)
+
+        # Initialize trajectory manager to extract slices from the original trajectory for execution
         mobile_manipulation_trajectory_manager = TrajectoryManager(
             points=traj_point_positions,
             times_since_ref=timepoints,
@@ -611,9 +613,9 @@ class SpotManipulationDriver(object):
             
             window, timestamps, sleep_time = mobile_manipulation_trajectory_manager.get_window(MAX_MOBILE_MANIPULATION_POINTS)
 
-            robot_cmd = self.create_mobile_manipulation_command(window, timestamps, ref_time)
+            robot_cmd = self.create_mobile_manipulation_command(window, timestamps, ref_time, vision_T_body)
 
-            success, msg, _ = self._lease_manager.robot_command(robot_cmd)
+            success, msg, _ = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+sleep_time)
 
             if not success:
                 self._logger.warn(f"mobile_manipulation_long_trajectory_executor: Error executing robot command: {msg}")
