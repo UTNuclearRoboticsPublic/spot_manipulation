@@ -83,7 +83,7 @@ GRIPPER_JOINT_ORDER = [
 WHOLE_BODY_JOINT_ORDER = [
     "body_x",
     "body_y",
-    "body_or"] + ARM_JOINT_ORDER
+    "body_or"] + ARM_JOINT_ORDER + GRIPPER_JOINT_ORDER
 
 
 class SpotManipulationDriverROS(Node):

@@ -63,9 +63,12 @@ MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
 MAX_MOBILE_MANIPULATION_POINTS = 10
 ARM_NUM_JOINTS = 6
+GRIPPER_NUM_JOINTS = 1
 BODY_MOBILE_NUM_JOINTS = 3
-MOBILE_MANIPULATION_NUM_JOINTS = ARM_NUM_JOINTS + BODY_MOBILE_NUM_JOINTS
+MOBILE_MANIPULATION_NUM_JOINTS = ARM_NUM_JOINTS + BODY_MOBILE_NUM_JOINTS + GRIPPER_NUM_JOINTS
 GRIPPER_CLOSE_TORQUE = 15.0
+MAX_GRIPPER_JOINT_VEL = 2.5  # rad/s
+MAX_GRIPPER_JOINT_ACC = 15.0  # rad/s^2
 MAX_ARM_JOINT_VEL = 2.5  # rad/s
 MAX_ARM_JOINT_ACC = 15.0  # rad/s^2
 MAX_BODY_VEL_LINEAR = 0.5  # m/s
@@ -475,7 +478,7 @@ class SpotManipulationDriver(object):
 
     def create_mobile_manipulation_command(self, traj_points: list, times: list[float], ref_time: float, vision_T_body: SE3Pose) -> robot_command_pb2.RobotCommand:
         """
-        Creates a synchronized command for mobile manipulation (i.e. body, arm (and TODO: gripper)) using SDK helpers.
+        Creates a synchronized command for mobile manipulation (i.e. body, arm, and gripper).
         
         Args:
             traj_point_positions: List of joint positions for each trajectory point in the mobile manipulation trajectory. Includes body and arm joints.
@@ -484,7 +487,7 @@ class SpotManipulationDriver(object):
             vision_T_body: Transform from body frame to vision frame
         
         Returns:
-            RobotCommand with synchronized arm (TODO: gripper) and mobility commands, or None on error
+            RobotCommand with synchronized gripper, arm and mobility commands, or None on error
         """
         
         # Validate length of times and trajectory points
@@ -501,7 +504,17 @@ class SpotManipulationDriver(object):
         # Separate body and arm points
         body_points = [point[:BODY_MOBILE_NUM_JOINTS] for point in traj_points]
         arm_positions = [point[BODY_MOBILE_NUM_JOINTS:BODY_MOBILE_NUM_JOINTS + ARM_NUM_JOINTS] for point in traj_points]# Next ARM_NUM_JOINTS in each point are arm joints
+        gripper_positions_list = [point[-GRIPPER_NUM_JOINTS:] for point in traj_points] # Last GRIPPER_NUM_JOINTS in each point are gripper joints
+        gripper_positions = [elem for sublist in gripper_positions_list for elem in sublist] # flatten the list
 
+        # Build gripper command
+        gripper_command = RobotCommandBuilder.claw_gripper_command_helper(
+            gripper_positions=gripper_positions,
+            times=times,
+            ref_time=ref_time,
+            max_vel=MAX_GRIPPER_JOINT_VEL,
+            max_acc=MAX_GRIPPER_JOINT_ACC
+        )
         # Build arm command
         arm_command = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=arm_positions,
@@ -566,12 +579,14 @@ class SpotManipulationDriver(object):
         if ref_time is not None:
             mobility_command.synchronized_command.mobility_command.se2_trajectory_request.end_time.CopyFrom(ref_time)
     
-        # Combine arm and mobility commands into synchronized command
+        # Combine gripper, arm and mobility commands into synchronized command
+        gripper_sync_command = robot_command_pb2.RobotCommand()
         arm_sync_command = robot_command_pb2.RobotCommand()
         mobility_sync_command = robot_command_pb2.RobotCommand()
+        gripper_sync_command.synchronized_command.gripper_command.CopyFrom(gripper_command.synchronized_command.gripper_command)
         arm_sync_command.synchronized_command.arm_command.CopyFrom(arm_command.synchronized_command.arm_command)
         mobility_sync_command.synchronized_command.mobility_command.CopyFrom(mobility_command.synchronized_command.mobility_command)
-        command = RobotCommandBuilder.build_synchro_command(mobility_sync_command, arm_sync_command)
+        command = RobotCommandBuilder.build_synchro_command(mobility_sync_command, arm_sync_command, gripper_sync_command)
 
         return command
 
