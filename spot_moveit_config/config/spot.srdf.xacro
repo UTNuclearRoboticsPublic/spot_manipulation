@@ -33,6 +33,17 @@
 
     <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
     <end_effector name="arm0_hand" parent_link="arm0_wrist_roll" group="arm"/>
+
+    <!-- PRE-DEFINED STATES -->
+    <group_state name="unstowed" group="arm">
+        <joint name="arm0_shoulder_yaw" value="0.0"/>
+        <joint name="arm0_shoulder_pitch" value="-2.356"/>
+        <joint name="arm0_elbow_pitch" value="2.566"/>
+        <joint name="arm0_elbow_roll" value="0.07"/>
+        <joint name="arm0_wrist_pitch" value="-0.21"/>
+        <joint name="arm0_wrist_roll" value="-0.07"/>
+    </group_state>
+
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_elbow_roll" reason="Adjacent"/>
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_fingers" reason="Never"/>
@@ -135,12 +146,7 @@
     <disable_collisions link1="body" link2="rl_kit_gxp_interface" reason="Adjacent"/>
     <disable_collisions link1="rl_kit_jetson_housing_box" link2="rl_kit_wire_housing_box" reason="Adjacent"/>
     <disable_collisions link1="rl_kit_gxp_interface" link2="rl_kit_wire_housing_box" reason="Adjacent" />
-    <disable_collisions link1="rl_kit_jetson_housing_box" link2="rl_kit_velodyne_mounting_plate" reason="Adjacent" />
     <disable_collisions link1="velodyne" link2="velodyne_base_link" reason="Adjacent" />
-    <disable_collisions link1="velodyne" link2="velodyne_cage" reason="Adjacent" />
-    <disable_collisions link1="velodyne_base_link" link2="velodyne_cage" reason="Adjacent" />
-
-
 
     <!-- Accessory collisions -->
     <xacro:arg name="has_eap"    default="False"/>
