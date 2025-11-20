@@ -23,6 +23,13 @@
         <end_effector name="arm0_hand" parent_link="arm0_wrist_roll" group="arm_with_body"/>
     </xacro:if>
 
+    <xacro:if value="${kinematic_model == 'mobile_manipulation'}">
+        <group name="mobile_body_and_arm">
+            <chain base_link="base_footprint" tip_link="arm0_fingers"/>
+        </group>
+        <end_effector name="arm0_hand" parent_link="arm0_wrist_roll" group="arm_with_body"/>
+    </xacro:if>
+
     <!-- Depending on the kinematic model, we have a different virtual joint to place spot in the environment -->
     <xacro:unless value="${kinematic_model == 'none'}">
         <virtual_joint name="spot_mobility_joint" child_link="base_footprint" parent_frame="spot_nav/map" type="planar"/>
@@ -30,6 +37,33 @@
     <xacro:if value="${kinematic_model == 'none'}">
         <virtual_joint name="spot_mobility_joint" child_link="body" parent_frame="spot_nav/map" type="floating"/>
     </xacro:if>
+
+    <!--GROUP STATES: Purpose: Define a named state for a particular group, in terms of joint values. This is useful to define states like 'folded arms'-->
+    <group_state name="namaste" group="mobile_body_and_arm">
+        <joint name="arm0_fingers" value="0"/>
+        <joint name="arm0_elbow_pitch" value="2.291"/>
+        <joint name="arm0_elbow_roll" value="0.0675"/>
+        <joint name="arm0_shoulder_pitch" value="-1.319"/>
+        <joint name="arm0_shoulder_yaw" value="-0.00415"/>
+        <joint name="arm0_wrist_pitch" value="-1.8326"/>
+        <joint name="arm0_wrist_roll" value="-0.0606"/>
+        <joint name="body_or" value="1.57"/>
+        <joint name="body_x" value="0.2"/>
+        <joint name="body_y" value="0.2"/>
+    </group_state>
+
+    <group_state name="home" group="mobile_body_and_arm">
+        <joint name="arm0_fingers" value="0"/>
+        <joint name="arm0_elbow_pitch" value="0"/>
+        <joint name="arm0_elbow_roll" value="0"/>
+        <joint name="arm0_shoulder_pitch" value="0"/>
+        <joint name="arm0_shoulder_yaw" value="0"/>
+        <joint name="arm0_wrist_pitch" value="0"/>
+        <joint name="arm0_wrist_roll" value="0"/>
+        <joint name="body_or" value="0"/>
+        <joint name="body_x" value="0"/>
+        <joint name="body_y" value="0"/>
+    </group_state>
 
     <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
     <end_effector name="arm0_hand" parent_link="arm0_wrist_roll" group="arm"/>

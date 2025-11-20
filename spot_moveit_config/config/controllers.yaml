@@ -29,3 +29,27 @@ spot_moveit/arm_controller:
       goal_time: 0.0
     update_rate:
       30
+
+spot_moveit/mobile_manipulation_controller:
+  ros__parameters:
+    joints:
+      - body_x
+      - body_y
+      - body_or
+      - arm0_shoulder_yaw
+      - arm0_shoulder_pitch
+      - arm0_elbow_pitch
+      - arm0_elbow_roll
+      - arm0_wrist_pitch
+      - arm0_wrist_roll
+      - arm0_fingers
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    allow_partial_joints_goal: false
+    constraints:
+      goal_time: 0.0
+    update_rate:
+      30
