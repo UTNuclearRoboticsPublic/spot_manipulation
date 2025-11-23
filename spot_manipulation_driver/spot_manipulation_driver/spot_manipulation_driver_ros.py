@@ -523,6 +523,25 @@ class SpotManipulationDriverROS(Node):
             goal_handle.request.trajectory, WHOLE_BODY_JOINT_ORDER
         )
 
+        # Received body trajectory is expected to be in base_footprint frame; convert to odom frame
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                'vision',
+                'base_footprint',
+                Time(),
+                timeout=rclpy.duration.Duration(seconds=1.0)
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to lookup transform from base_footprint to odom: {e}")
+        
+        # Helper function to convert 2D pose using transform
+        def convert_point(point):
+            pose_odom = ros_helpers.transform_2d_pose(transform, point[0], point[1], point[2])
+            return [pose_odom.x, pose_odom.y, pose_odom.theta] + point[3:]
+        
+        traj_point_positions_vision = [convert_point(pt) for pt in traj_point_positions]
+        #TODO: Convert velocities as well
+
         # Publish the received trajectory (only once) before executing for data-capture purposes
         if self.data_capture_mode:
             def mobile_manipulation_goal_publisher() -> None:
@@ -546,7 +565,7 @@ class SpotManipulationDriverROS(Node):
             nonlocal trajectory_success
             try:
                 trajectory_success = self.manipulation_driver.mobile_manipulation_long_trajectory_executor(
-                    traj_point_positions, traj_point_velocities, timepoints, self._mobile_manipulation_trajectory_cancel_event
+                    traj_point_positions_vision, traj_point_velocities, timepoints, self._mobile_manipulation_trajectory_cancel_event
                 ) 
             except Exception as e:
                 self._logger.info(f"Error executing mobile manipulation long trajectory: {e}")
