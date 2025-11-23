@@ -51,7 +51,7 @@ from bosdyn.client.math_helpers import SE3Pose
 from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command)
 from bosdyn.client.exceptions import RpcError
 from bosdyn.client.inverse_kinematics import InverseKinematicsClient
-from bosdyn.util import seconds_to_timestamp, seconds_to_duration
+from bosdyn.util import seconds_to_timestamp, seconds_to_duration, timestamp_to_sec
 from google.protobuf import duration_pb2, timestamp_pb2
 from spot_driver.async_queries import AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
@@ -71,8 +71,8 @@ MAX_GRIPPER_JOINT_VEL = 1000  # rad/s
 MAX_GRIPPER_JOINT_ACC = 1000  # rad/s^2
 MAX_ARM_JOINT_VEL = 1000  # rad/s
 MAX_ARM_JOINT_ACC = 1000  # rad/s^2
-MAX_BODY_VEL_LINEAR = 0.5  # m/s
-MAX_BODY_VEL_ANGULAR = 0.5  # rad/s
+MAX_BODY_VEL_LINEAR = 1.5  # m/s
+MAX_BODY_VEL_ANGULAR = 1.5  # rad/s
 BODY_HEIGHT_FOR_MOBILE_MANIPULATION = 0.0  # meters
 
 class GraspStrategy(Enum):
@@ -476,15 +476,14 @@ class SpotManipulationDriver(object):
     #     self._logger.info("Successfully executed arm and gripper trajectory")
     #     return True
 
-    def create_mobile_manipulation_command(self, traj_points: list, times: list[float], ref_time: float, vision_T_body: SE3Pose) -> robot_command_pb2.RobotCommand:
+    def create_mobile_manipulation_command(self, traj_points: list, times: list[float], ref_time: float) -> robot_command_pb2.RobotCommand:
         """
-        Creates a synchronized command for mobile manipulation (i.e. body, arm, and gripper).
+        Creates a synchronized command for mobile manipulation (i.e. body, arm, and gripper). The body points are expected to be in the vision frame.
         
         Args:
             traj_point_positions: List of joint positions for each trajectory point in the mobile manipulation trajectory. Includes body and arm joints.
             times: List of time offsets from reference time
             ref_time: Reference timestamp for the trajectory
-            vision_T_body: Transform from body frame to vision frame
         
         Returns:
             RobotCommand with synchronized gripper, arm and mobility commands, or None on error
@@ -524,26 +523,13 @@ class SpotManipulationDriver(object):
             max_acc=MAX_ARM_JOINT_ACC
         )
     
-        # Build se2 trajectory for the mobility command
-        # Transform body points to vision frame
-        se2_trajectory_points = []
-        for i in range(len(body_points)):
-            x_body = body_points[i][0]
-            y_body = body_points[i][1]
-            yaw_body = body_points[i][2]
-            
-            # Transform to vision frame
-            x_vision, y_vision, _ = vision_T_body.transform_point(x_body, y_body, 0)
-            yaw_vision = vision_T_body.rot.to_yaw() + yaw_body
-            
-            # Create SE2TrajectoryPoint
-            se2_pose = geometry_pb2.SE2Pose(
-                position=geometry_pb2.Vec2(x=x_vision, y=y_vision),
-                angle=yaw_vision
-            )
-            se2_trajectory_points.append((times[i], se2_pose))
-    
-        # Build mobility params with velocity limits
+        # Build mobility command
+        mobility_command = robot_command_pb2.RobotCommand()
+
+        # Reference frame
+        mobility_command.synchronized_command.mobility_command.se2_trajectory_request.se2_frame_name = VISION_FRAME_NAME
+
+        # Mobility params
         speed_limit = geometry_pb2.SE2VelocityLimit(
             max_vel=geometry_pb2.SE2Velocity(
                 linear=geometry_pb2.Vec2(x=MAX_BODY_VEL_LINEAR, y=MAX_BODY_VEL_LINEAR), 
@@ -556,37 +542,29 @@ class SpotManipulationDriver(object):
         )
         
         mobility_params = spot_command_pb2.MobilityParams(vel_limit=speed_limit)
-    
-        # Build the mobility command with mobility params and the final pose from the se2 trajectory
-        mobility_command = RobotCommandBuilder.synchro_se2_trajectory_command(
-            goal_se2=se2_trajectory_points[-1][1],  # Final pose
-            frame_name=VISION_FRAME_NAME,
-            params=mobility_params,
-            body_height=BODY_HEIGHT_FOR_MOBILE_MANIPULATION,
-            locomotion_hint=spot_command_pb2.HINT_AUTO
-        )
-        
-        # Reset the se2 trajectory in the mobility command and manually add waypoints
-        se2_traj = mobility_command.synchronized_command.mobility_command.se2_trajectory_request.trajectory
-        del se2_traj.points[:]  # Clear existing points - protobuf repeated field
-        
-        for time_offset, se2_pose in se2_trajectory_points:
-            point = se2_traj.points.add()
-            point.pose.CopyFrom(se2_pose)
-            point.time_since_reference.CopyFrom(seconds_to_duration(time_offset))
-        
-        # Set reference time
-        if ref_time is not None:
-            mobility_command.synchronized_command.mobility_command.se2_trajectory_request.end_time.CopyFrom(ref_time)
+        mobility_command.synchronized_command.mobility_command.params.CopyFrom(RobotCommandBuilder._to_any(mobility_params))
+
+        # Reference and end times
+        mobility_command.synchronized_command.mobility_command.se2_trajectory_request.trajectory.reference_time.CopyFrom(ref_time)
+        end_time = seconds_to_timestamp(timestamp_to_sec(ref_time) + times[-1])
+        mobility_command.synchronized_command.mobility_command.se2_trajectory_request.end_time.CopyFrom(end_time)
+
+        # Se2 trajectory
+        for i in range(len(body_points)):
+            x_vision = body_points[i][0]
+            y_vision = body_points[i][1]
+            yaw_vision = body_points[i][2]
+            
+            # Add points to trajectory
+            point = mobility_command.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points.add()
+            point.pose.position.x = x_vision
+            point.pose.position.y = y_vision
+            point.pose.angle = yaw_vision
+            duration = seconds_to_duration(times[i])
+            point.time_since_reference.CopyFrom(duration)
     
         # Combine gripper, arm and mobility commands into synchronized command
-        gripper_sync_command = robot_command_pb2.RobotCommand()
-        arm_sync_command = robot_command_pb2.RobotCommand()
-        mobility_sync_command = robot_command_pb2.RobotCommand()
-        gripper_sync_command.synchronized_command.gripper_command.CopyFrom(gripper_command.synchronized_command.gripper_command)
-        arm_sync_command.synchronized_command.arm_command.CopyFrom(arm_command.synchronized_command.arm_command)
-        mobility_sync_command.synchronized_command.mobility_command.CopyFrom(mobility_command.synchronized_command.mobility_command)
-        command = RobotCommandBuilder.build_synchro_command(mobility_sync_command, arm_sync_command, gripper_sync_command)
+        command = RobotCommandBuilder.build_synchro_command(mobility_command, arm_command, gripper_command)
 
         return command
 
@@ -598,7 +576,7 @@ class SpotManipulationDriver(object):
         # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
         try:
             if self._lease_manager.robot.is_powered_on(5):
-                self._logger.info("Spot is about to move its whole body.")
+                self._logger.info("Spot is about to move its whole body --DEBUG .")
             else:
                 self._logger.warn("Cannot execute mobile manipulation long trajectory, robot is not powered on")
                 return False
@@ -608,10 +586,6 @@ class SpotManipulationDriver(object):
 
         start_time = time.time()
         ref_time = seconds_to_timestamp(start_time)
-
-        # Get the latest robot state for transforms
-        robot_state = self._lease_manager._robot_state_client.get_robot_state()
-        vision_T_body = get_vision_tform_body(robot_state.kinematic_state.transforms_snapshot)
 
         # Initialize trajectory manager to extract slices from the original trajectory for execution
         mobile_manipulation_trajectory_manager = TrajectoryManager(
@@ -628,7 +602,7 @@ class SpotManipulationDriver(object):
             
             window, timestamps, sleep_time = mobile_manipulation_trajectory_manager.get_window(MAX_MOBILE_MANIPULATION_POINTS)
 
-            robot_cmd = self.create_mobile_manipulation_command(window, timestamps, ref_time, vision_T_body)
+            robot_cmd = self.create_mobile_manipulation_command(window, timestamps, ref_time)
 
             success, msg, _ = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+sleep_time)
 
@@ -640,6 +614,29 @@ class SpotManipulationDriver(object):
                 time.sleep(sleep_time)
             else:
                 time.sleep(max(sleep_time - 0.2, 0))
+
+        # After trajectory completes
+        import google.protobuf.text_format as text_format
+        with open('/home/cjans-admin/ws_spot/last_command.txt', 'w') as f:
+            f.write(text_format.MessageToString(robot_cmd))
+        self._logger.info("Command protobuf written to /home/cjans-admin/ws_spot/last_command.txt")
+        self._logger.info(f"Last window - num points: {len(window)}")
+        self._logger.info(f"Last window final point: {window[-1][:3]}")  # Just body x,y,yaw
+        self._logger.info(f"Original trajectory final point: {traj_point_positions[-1][:3]}")
+        self._logger.info(f"Last window final time: {timestamps[-1]}")
+        self._logger.info(f"Original trajectory final time: {timepoints[-1]}")
+        final_state = self._lease_manager._robot_state_client.get_robot_state()
+        final_vision_T_body = get_a_tform_b(final_state.kinematic_state.transforms_snapshot, VISION_FRAME_NAME, BODY_FRAME_NAME)
+        
+        # Log both commanded and actual
+        last_commanded = robot_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points[-1]
+        self._logger.info(f"Commanded final base (vision frame): x={last_commanded.pose.position.x}, y={last_commanded.pose.position.y}, yaw={last_commanded.pose.angle}")
+        self._logger.info(f"Actual final base (vision frame): x={final_vision_T_body.position.x}, y={final_vision_T_body.position.y}, yaw={final_vision_T_body.rot.to_yaw()}")
+        # Calculate the error
+        dx = final_vision_T_body.position.x - last_commanded.pose.position.x
+        dy = final_vision_T_body.position.y - last_commanded.pose.position.y
+        dyaw = final_vision_T_body.rot.to_yaw() - last_commanded.pose.angle
+        self._logger.info(f"Base position error: dx={dx}, dy={dy}, dyaw={dyaw}")
         self._logger.info("Successfully executed mobile manipulation trajectory")
         return True
 
