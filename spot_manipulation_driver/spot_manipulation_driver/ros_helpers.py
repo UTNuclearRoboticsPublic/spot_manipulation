@@ -14,6 +14,9 @@ from spot_msgs.action import ArmCartesianCommand
 from sensor_msgs.msg import Image, CameraInfo
 from tf2_msgs.msg import TFMessage
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+import math
+from geometry_msgs.msg import PoseStamped, TransformStamped, Pose2D
+from tf2_geometry_msgs import do_transform_pose
 
 import rclpy.time
 
@@ -377,3 +380,45 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
         arm_cartesian_request.wrench_trajectory_in_task.CopyFrom(wrench_trajectory)
 
     return arm_cartesian_request
+
+def transform_2d_pose(transform: TransformStamped, x: float, y: float, theta: float) -> Pose2D:
+    """
+    Transform a 2D pose from source frame to target frame.
+    
+    Example:
+        # Transform from base_footprint to odom
+        transform = tf_buffer.lookup_transform('odom', 'base_footprint', ...)
+        pose_odom = transform_2d_pose(transform, x_base, y_base, theta_base)
+        print(f"Position: ({pose_odom.x}, {pose_odom.y}), Theta: {pose_odom.theta}")
+    
+    Args:
+        transform: TransformStamped from source frame to target frame
+        x: x position in source frame (meters)
+        y: y position in source frame (meters)
+        theta: yaw angle in source frame (radians)
+    
+    Returns:
+        Pose2D: (x, y, theta) all expressed in target frame
+    """
+    # Create pose in source frame
+    pose_in = PoseStamped()
+    pose_in.pose.position.x = x
+    pose_in.pose.position.y = y
+    pose_in.pose.position.z = 0.0
+    
+    # Convert theta to quaternion (rotation around z-axis in source frame)
+    pose_in.pose.orientation.x = 0.0
+    pose_in.pose.orientation.y = 0.0
+    pose_in.pose.orientation.z = math.sin(theta / 2.0)
+    pose_in.pose.orientation.w = math.cos(theta / 2.0)
+    
+    # Transform the pose from source frame to target frame
+    pose_out = do_transform_pose(pose_in.pose, transform)
+    
+    # Extract and create Pose2D result
+    result = Pose2D()
+    result.x = pose_out.position.x
+    result.y = pose_out.position.y
+    result.theta = 2.0 * math.atan2(pose_out.orientation.z, pose_out.orientation.w)
+    
+    return result
