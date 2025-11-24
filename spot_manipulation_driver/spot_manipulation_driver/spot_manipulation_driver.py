@@ -742,7 +742,7 @@ class SpotManipulationDriver(object):
 
         self._lease_manager.robot_command(robot_cmd)
 
-        traj_index = [0, 9]
+        traj_index = [0, MAX_MOBILE_MANIPULATION_POINTS]
         end_index = len(traj_point_positions)
 
         # Compute reference time for the entire long trajectory
@@ -770,10 +770,10 @@ class SpotManipulationDriver(object):
             window = positions
 
             # Increment indices for the next short trajectory
-            traj_index = list(map(lambda x: x + 9, traj_index))
+            traj_index = list(map(lambda x: x + MAX_MOBILE_MANIPULATION_POINTS, traj_index))
 
             # Compute sleep time and sleep before executing next trajectory
-            if traj_index[0] > 9:
+            if traj_index[0] > MAX_MOBILE_MANIPULATION_POINTS:
                 sleep_time = time_to_goal_in_seconds - (time.time() - time_index) - 0.05 
                 time.sleep(sleep_time)
                 # Extract the last point in the trajectory and execute again to ensure base placement
