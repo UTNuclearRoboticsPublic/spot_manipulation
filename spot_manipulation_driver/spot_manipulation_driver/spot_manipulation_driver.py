@@ -61,7 +61,7 @@ from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
-MAX_MOBILE_MANIPULATION_POINTS = 2
+MAX_MOBILE_MANIPULATION_POINTS = 10
 ARM_NUM_JOINTS = 6
 GRIPPER_NUM_JOINTS = 1
 BODY_MOBILE_NUM_JOINTS = 3
@@ -568,80 +568,18 @@ class SpotManipulationDriver(object):
 
         return command
 
-    # # Execute long mobile manipulation trajectories
-    # def mobile_manipulation_long_trajectory_executor(
-    #     self, traj_point_positions, traj_point_velocities, timepoints, cancel_event: threading.Event
-    # ) -> None:
-    #
-    #     # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
-    #     try:
-    #         if self._lease_manager.robot.is_powered_on(5):
-    #             self._logger.info("Spot is about to move its whole body --DEBUG .")
-    #         else:
-    #             self._logger.warn("Cannot execute mobile manipulation long trajectory, robot is not powered on")
-    #             return False
-    #     except RpcError as e:
-    #         self._logger.warn(f"Cannot execute mobile manipulation long trajectory, unable to communicate with robot\n\tMsg: {e}")
-    #         return False
-    #
-    #     start_time = time.time()
-    #     ref_time = seconds_to_timestamp(start_time)
-    #
-    #     # Initialize trajectory manager to extract slices from the original trajectory for execution
-    #     mobile_manipulation_trajectory_manager = TrajectoryManager(
-    #         points=traj_point_positions,
-    #         times_since_ref=timepoints,
-    #         ref_time=start_time
-    #     )
-    #
-    #     while not mobile_manipulation_trajectory_manager.done():
-    #         if cancel_event.is_set():
-    #             self.stop_robot()
-    #             self._logger.info("Mobile manipulation trajectory action cancelled early. Stopping robot")
-    #             return False
-    #
-    #         window, timestamps, sleep_time = mobile_manipulation_trajectory_manager.get_window(MAX_MOBILE_MANIPULATION_POINTS)
-    #
-    #         robot_cmd = self.create_mobile_manipulation_command(window, timestamps, ref_time)
-    #
-    #         success, msg, _ = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+sleep_time)
-    #
-    #         if not success:
-    #             self._logger.warn(f"mobile_manipulation_long_trajectory_executor: Error executing robot command: {msg}")
-    #             return False
-    #
-    #         if mobile_manipulation_trajectory_manager.last():
-    #             time.sleep(sleep_time)
-    #         else:
-    #             time.sleep(max(sleep_time - 0.2, 0))
-    #
-    #     # After trajectory completes
-    #     import google.protobuf.text_format as text_format
-    #     with open('/home/cjans-admin/ws_spot/last_command.txt', 'w') as f:
-    #         f.write(text_format.MessageToString(robot_cmd))
-    #     self._logger.info("Command protobuf written to /home/cjans-admin/ws_spot/last_command.txt")
-    #     self._logger.info(f"Last window - num points: {len(window)}")
-    #     self._logger.info(f"Last window final point: {window[-1][:3]}")  # Just body x,y,yaw
-    #     self._logger.info(f"Original trajectory final point: {traj_point_positions[-1][:3]}")
-    #     self._logger.info(f"Last window final time: {timestamps[-1]}")
-    #     self._logger.info(f"Original trajectory final time: {timepoints[-1]}")
-    #     final_state = self._lease_manager._robot_state_client.get_robot_state()
-    #     final_vision_T_body = get_a_tform_b(final_state.kinematic_state.transforms_snapshot, VISION_FRAME_NAME, BODY_FRAME_NAME)
-    #
-    #     # Log both commanded and actual
-    #     last_commanded = robot_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points[-1]
-    #     self._logger.info(f"Commanded final base (vision frame): x={last_commanded.pose.position.x}, y={last_commanded.pose.position.y}, yaw={last_commanded.pose.angle}")
-    #     self._logger.info(f"Actual final base (vision frame): x={final_vision_T_body.position.x}, y={final_vision_T_body.position.y}, yaw={final_vision_T_body.rot.to_yaw()}")
-    #     # Calculate the error
-    #     dx = final_vision_T_body.position.x - last_commanded.pose.position.x
-    #     dy = final_vision_T_body.position.y - last_commanded.pose.position.y
-    #     dyaw = final_vision_T_body.rot.to_yaw() - last_commanded.pose.angle
-    #     self._logger.info(f"Base position error: dx={dx}, dy={dy}, dyaw={dyaw}")
-    #     self._logger.info("Successfully executed mobile manipulation trajectory")
-    #     return True
     def get_body_corrected_command(self, robot_cmd):
-        self._logger.warn(f"Trying to correct the last traj:")
-        TIMESTAMP_SHIFT = 0.5
+        """ 
+        Returns the command to correct the body portion of a mobile manipulation command using vision-based odometry.
+        Extracts the last commanded body position from the input command, computes the error between the current state and the commanded position, and corrects the body position accordingly. Commands are assumed to be in the VISION frame.
+        Args:
+            robot_cmd: RobotCommand containing synchronized mobility, arm, and gripper commands
+        Returns:
+            corrected_robot_cmd: RobotCommand with corrected body positions
+            end_time_secs: float indicating the end time for the command execution
+        """
+
+        TIMESTAMP_SHIFT = 0.3
 
         robot_state = self._lease_manager._robot_state_client.get_robot_state()
         vision_T_body = get_vision_tform_body(robot_state.kinematic_state.transforms_snapshot)
@@ -687,165 +625,55 @@ class SpotManipulationDriver(object):
         corrected_robot_cmd = self.create_mobile_manipulation_command([corrected_positions], [corrected_timestamp], ref_time)
         end_time_secs = time.time() + TIMESTAMP_SHIFT
         return corrected_robot_cmd, end_time_secs
-    # def get_body_corrected_command(self, robot_state, robot_cmd, last_positions, last_timestamp, ref_time):
-    #     self._logger.warn(f"Trying to correct the last traj:")
-    #     TIMESTAMP_SHIFT = 0.5
-    #
-    #     vision_T_body = get_vision_tform_body(robot_state.kinematic_state.transforms_snapshot)
-    #
-    #     # Extract last commanded point for the body
-    #     commanded = robot_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points[-1]
-    #
-    #     # Compute error
-    #     dx = vision_T_body.position.x - commanded.pose.position.x
-    #     dy = vision_T_body.position.y - commanded.pose.position.y
-    #     dyaw = vision_T_body.rot.to_yaw() - commanded.pose.angle
-    #
-    #     # Compute position correction
-    #     corrected_positions = last_positions.copy()
-    #     corrected_positions[0] = last_positions[0] - dx
-    #     corrected_positions[1] = last_positions[1] - dy
-    #     corrected_positions[2] = last_positions[2] - dyaw
-    #     corrected_timestamp = last_timestamp + TIMESTAMP_SHIFT
-    #     ref_time = seconds_to_timestamp(start_time + TIMESTAMP_SHIFT)
-    #     robot_cmd = self.create_mobile_manipulation_command([corrected_positions], [corrected_timestamp], ref_time)
 
+    # Execute long mobile manipulation trajectories
     def mobile_manipulation_long_trajectory_executor(
-        self,
-        traj_point_positions,
-        traj_point_velocities,
-        timepoints,
-        cancel_event: threading.Event
-    ) -> bool:  
+        self, traj_point_positions, traj_point_velocities, timepoints, cancel_event: threading.Event
+    ) -> None:
+
         # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
         try:
             if self._lease_manager.robot.is_powered_on(5):
-                self._logger.info("Arm is about to move.")
+                self._logger.info("Spot is about to move its whole body --DEBUG .")
             else:
-                self._logger.warn("Cannot execute arm and gripper long trajectory, robot is not powered on")
+                self._logger.warn("Cannot execute mobile manipulation long trajectory, robot is not powered on")
                 return False
         except RpcError as e:
-            self._logger.warn(f"Cannot execute arm and gripper long trajectory, unable to communicate with robot\n\tMsg: {e}")
+            self._logger.warn(f"Cannot execute mobile manipulation long trajectory, unable to communicate with robot\n\tMsg: {e}")
             return False
 
-        self._lease_manager.robot.time_sync.wait_for_sync()
-        self.verify_power_and_estop()
-        self._lease_manager.robot.logger.info("Arm is about to move.")
-
-        # Get to the start configuration of the trajectory before we execute it
         start_time = time.time()
         ref_time = seconds_to_timestamp(start_time)
-        TRAJ_APPROACH_TIME = 0.1
 
-        robot_cmd = self.create_mobile_manipulation_command([traj_point_positions[0]], [TRAJ_APPROACH_TIME], ref_time)
-        self._logger.info("Created first command")
+        # Initialize trajectory manager to extract slices from the original trajectory for execution
+        mobile_manipulation_trajectory_manager = TrajectoryManager(
+            points=traj_point_positions,
+            times_since_ref=timepoints,
+            ref_time=start_time
+        )
 
-        self._lease_manager.robot_command(robot_cmd)
-
-        traj_index = [0, MAX_MOBILE_MANIPULATION_POINTS]
-        end_index = len(traj_point_positions)
-
-        # Compute reference time for the entire long trajectory
-        start_time = time.time() + TRAJ_APPROACH_TIME
-        ref_time = seconds_to_timestamp(start_time)
-
-        TIMESTAMP_SHIFT = 0.0
-        while traj_index[0] < end_index:
+        while not mobile_manipulation_trajectory_manager.done():
             if cancel_event.is_set():
                 self.stop_robot()
-                self._logger.info("Arm and gripper trajectory action cancelled early. Stopping robot")
+                self._logger.info("Mobile manipulation trajectory action cancelled early. Stopping robot")
                 return False
-            times = []
-            positions = []
 
-            # Don't let the extracted index range go beyond the end of the trajectory
-            if traj_index[1] > end_index:
-                traj_index[1] = end_index
+            window, timestamps, sleep_time = mobile_manipulation_trajectory_manager.get_window(MAX_MOBILE_MANIPULATION_POINTS)
 
-            # Extract a short trajectory from the long list
-            times = timepoints[traj_index[0] : traj_index[1]]
-            times = [pt + TIMESTAMP_SHIFT for pt in times]
-            sleep_time = times[-1] - times[0]
-            positions = traj_point_positions[traj_index[0] : traj_index[1]]
-            window = positions
+            robot_cmd = self.create_mobile_manipulation_command(window, timestamps, ref_time)
 
-            # Increment indices for the next short trajectory
-            traj_index = list(map(lambda x: x + MAX_MOBILE_MANIPULATION_POINTS, traj_index))
-
-            # Compute sleep time and sleep before executing next trajectory
-            if traj_index[0] > MAX_MOBILE_MANIPULATION_POINTS:
-                sleep_time = time_to_goal_in_seconds - (time.time() - time_index) - 0.05 
-                time.sleep(sleep_time)
-                # Extract the last point in the trajectory and execute again to ensure base placement
-                self._logger.warn(f"DEBUG: Trying to correct the last traj:")
-                TIMESTAMP_SHIFT = 0.5
-                final_state = self._lease_manager._robot_state_client.get_robot_state()
-                final_vision_T_body = get_a_tform_b(final_state.kinematic_state.transforms_snapshot, VISION_FRAME_NAME, BODY_FRAME_NAME)
-
-                # Log both commanded and actual
-                last_commanded = robot_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points[-1]
-                # Calculate the error
-                dx = final_vision_T_body.position.x - last_commanded.pose.position.x
-                dy = final_vision_T_body.position.y - last_commanded.pose.position.y
-                dyaw = final_vision_T_body.rot.to_yaw() - last_commanded.pose.angle
-                last_positions = [positions[-1]]
-                last_positions[0][0] -= dx
-                last_positions[0][1] -= dy
-                last_positions[0][2] -= dyaw
-                last_time = times[-1] + TIMESTAMP_SHIFT
-                last_times = [last_time]
-                ref_time = seconds_to_timestamp(start_time + TIMESTAMP_SHIFT)
-                robot_cmd = self.create_mobile_manipulation_command(last_positions, last_times, ref_time)
-                # robot_cmd, end_time_secs = self.get_body_corrected_command(robot_cmd)
-                # success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, end_time_secs=end_time_secs)
-                success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+TIMESTAMP_SHIFT)
-                time.sleep(TIMESTAMP_SHIFT)
-                if not success:
-                    self._logger.warn(f"arm_and_gripper_long_trajectory_executor: Error executing robot command: {msg}")
-                    return False
-
-            robot_cmd = self.create_mobile_manipulation_command(positions, times, ref_time)
-            self._logger.info("Created loop command")
-            success, msg, cmd_id = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+sleep_time + 1.0)
+            success, msg, _ = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+sleep_time)
 
             if not success:
-                self._logger.warn(f"arm_and_gripper_long_trajectory_executor: Error executing robot command: {msg}")
+                self._logger.warn(f"mobile_manipulation_long_trajectory_executor: Error executing robot command: {msg}")
                 return False
 
-            time_index = time.time()
-            feedback_resp = self._lease_manager.robot_command_feedback(cmd_id)
-            joint_move_feedback = (
-                feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_joint_move_feedback
-            )
-            time_to_goal: duration_pb2.Duration = joint_move_feedback.time_to_goal
-            time_to_goal_in_seconds: float = time_to_goal.seconds + (
-                float(time_to_goal.nanos) / float(10 ** 9)
-            )
+            if mobile_manipulation_trajectory_manager.last():
+                time.sleep(sleep_time)
+            else:
+                time.sleep(max(sleep_time - 0.2, 0))
 
-        # After trajectory completes
-        import google.protobuf.text_format as text_format
-        with open('/home/cjans-admin/ws_spot/last_command.txt', 'w') as f:
-            f.write(text_format.MessageToString(robot_cmd))
-        self._logger.info("Command protobuf written to /home/cjans-admin/ws_spot/last_command.txt")
-        self._logger.info(f"Last window - num points: {len(window)}")
-        self._logger.info(f"Last window final point: {window[-1][:3]}")  # Just body x,y,yaw
-        self._logger.info(f"Original trajectory final point: {traj_point_positions[-1][:3]}")
-        self._logger.info(f"Last window final time: {times[-1]}")
-        self._logger.info(f"Original trajectory final time: {timepoints[-1]}")
-        final_state = self._lease_manager._robot_state_client.get_robot_state()
-        final_vision_T_body = get_a_tform_b(final_state.kinematic_state.transforms_snapshot, VISION_FRAME_NAME, BODY_FRAME_NAME)
-
-        # Log both commanded and actual
-        last_commanded = robot_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points[-1]
-        self._logger.info(f"Commanded final base (vision frame): x={last_commanded.pose.position.x}, y={last_commanded.pose.position.y}, yaw={last_commanded.pose.angle}")
-        self._logger.info(f"Actual final base (vision frame): x={final_vision_T_body.position.x}, y={final_vision_T_body.position.y}, yaw={final_vision_T_body.rot.to_yaw()}")
-        # Calculate the error
-        dx = final_vision_T_body.position.x - last_commanded.pose.position.x
-        dy = final_vision_T_body.position.y - last_commanded.pose.position.y
-        dyaw = final_vision_T_body.rot.to_yaw() - last_commanded.pose.angle
-        self._logger.info(f"Base position error: dx={dx}, dy={dy}, dyaw={dyaw}")
         self._logger.info("Successfully executed mobile manipulation trajectory")
-        self._logger.info("Successfully executed arm and gripper trajectory")
         return True
 
     def body_manipulation_trajectory_executor(
