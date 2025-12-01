@@ -53,7 +53,7 @@ from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Twist, TwistStamped
 from std_srvs.srv import Trigger
 from spot_msgs.msg import ManipulatorCarryState, ManipulatorStowState
-from spot_msgs.srv import GripperAngleMove, InverseKinematics
+from spot_msgs.srv import GripperAngleMove, InverseKinematics, ArmJointMovement
 from spot_msgs.action import ImageToGrasp, ArmCartesianCommand
 from control_msgs.action import FollowJointTrajectory
 from std_msgs.msg import Float32, Bool, Header
@@ -233,6 +233,7 @@ class SpotManipulationDriverROS(Node):
         self.create_service(Trigger, "~/close_gripper"  , self.gripper_close_service_callback, callback_group=gripper_callback_group)
         self.create_service(Trigger, "~/open_gripper"   , self.gripper_open_service_callback , callback_group=gripper_callback_group)
         self.create_service(GripperAngleMove,"~/set_gripper_angle",self.gripper_angle_service_callback, callback_group=gripper_callback_group)
+        self.create_service(ArmJointMovement, "~/move_arm_joints", self.arm_joint_movement_service_callback, callback_group=motion_callback_group)
 
         # Planning services
         self.create_service(InverseKinematics, '~/solve_ik', self.inverse_kinematics_callback)
@@ -292,6 +293,12 @@ class SpotManipulationDriverROS(Node):
         )
 
         return True
+    
+    def arm_joint_movement_service_callback(self, request: ArmJointMovement.Request, response: ArmJointMovement.Response) -> ArmJointMovement.Response:
+        success, message = self.manipulation_driver.move_arm_to_joint_positions(request.joint_target, request.duration)
+        response.success = success
+        response.message = message
+        return response
     
     def arm_goal_cancel_callback(self, cancel_request):
         self._arm_trajectory_cancel_event.set()

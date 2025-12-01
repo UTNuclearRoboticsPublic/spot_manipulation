@@ -907,3 +907,73 @@ class SpotManipulationDriver(object):
             return False, Text(err)
 
         return True, "Success"
+    
+    def move_arm_to_joint_positions(
+            self,
+            joint_positions: List[float],
+            duration: float = 2.0,
+            relative: bool = False,
+        ) -> Tuple[bool, Text]:
+        """
+        Moves the robot arm to a specified joint configuration in joint space.
+
+        Args:
+            joint_positions : A list of 6 joint angles [sh0, sh1, el0, el1, wr0, wr1]
+                              Units must match Boston Dynamics API (radians).
+            duration        : Time (seconds) for the motion to complete.
+
+        Returns:
+            (success, message)
+        """
+
+        # check robot state
+        self._lease_manager.robot.time_sync.wait_for_sync()
+        self.verify_power_and_estop()
+
+        if len(joint_positions) != 6:
+            return False, "Expected 6 joint values: [sh0, sh1, el0, el1, wr0, wr1]"
+        
+        if self.arm_state is None:
+            return False, "Cannot move arm, arm state is unknown"
+        
+        if relative:
+            current_positions = [
+                self.arm_state.joint_positions.sh0.value,
+                self.arm_state.joint_positions.sh1.value,
+                self.arm_state.joint_positions.el0.value,
+                self.arm_state.joint_positions.el1.value,
+                self.arm_state.joint_positions.wr0.value,
+                self.arm_state.joint_positions.wr1.value,
+            ]
+            joint_positions = [
+                current + delta for current, delta in zip(current_positions, joint_positions)
+            ]
+
+        # build trajectory: one point → final pose
+        ref_time = seconds_to_timestamp(time.time())
+        arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
+            joint_positions=[joint_positions],
+            times=[duration],
+            ref_time=ref_time,
+            max_vel=4.0,
+            max_acc=8.0
+        )
+
+        success, msg, cmd_id = self._lease_manager.robot_command(arm_cmd)
+        if not success:
+            return False, f"Robot did not accept joint move command: {msg}"
+
+        # monitor until complete
+        start = time.time()
+        timeout = duration + 3.0
+        while True:
+            fb = self._lease_manager.robot_command_feedback(cmd_id)
+            fb = fb.feedback.synchronized_feedback.arm_command_feedback.arm_joint_move_feedback
+
+            if fb.status == ArmJointMoveCommand.Feedback.Status.STATUS_COMPLETE:
+                return True, "Arm reached joint target."
+
+            if time.time() - start > timeout:
+                return False, "Timed out waiting for arm to reach target."
+
+            time.sleep(0.05)
