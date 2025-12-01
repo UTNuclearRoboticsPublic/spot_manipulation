@@ -214,6 +214,11 @@ class SpotManipulationDriverROS(Node):
         self._collision_pub  = self.create_publisher(Bool                 , "~/manipulator_state/is_hand_in_collision"    , 10)
 
         self._joint_state_pub = self.create_publisher(JointState, "/joint_states", 10)
+
+        # Handle manual action namespace 
+        action_ns = self.get_parameter('action_namespace').value
+
+        # Initialize action server goal publishers
         self._arm_goal_pub = self.create_publisher(JointTrajectory, f"{action_ns}/arm_controller/follow_joint_trajectory/goal", 10)
         self._arm_and_finger_goal_pub = self.create_publisher(JointTrajectory, f"{action_ns}/arm_and_finger_controller/follow_joint_trajectory/goal", 10)
         self._mobile_manipulation_goal_pub = self.create_publisher(JointTrajectory, f"{action_ns}/mobile_manipulation_controller/follow_joint_trajectory/goal", 10)
@@ -247,9 +252,6 @@ class SpotManipulationDriverROS(Node):
 
         # Planning services
         self.create_service(InverseKinematics, '~/solve_ik', self.inverse_kinematics_callback)
-
-        # Handle manual action namespace 
-        action_ns = self.get_parameter('action_namespace').value
 
         # Initialize action servers
         self.arm_action_server = ActionServer(
