@@ -214,8 +214,9 @@ class SpotManipulationDriverROS(Node):
         self._collision_pub  = self.create_publisher(Bool                 , "~/manipulator_state/is_hand_in_collision"    , 10)
 
         self._joint_state_pub = self.create_publisher(JointState, "/joint_states", 10)
-        self._arm_goal_pub = self.create_publisher(JointTrajectory, "/arm_controller/follow_joint_trajectory/goal", 10)
-        self._mobile_manipulation_goal_pub = self.create_publisher(JointTrajectory, "/mobile_manipulation_controller/follow_joint_trajectory/goal", 10)
+        self._arm_goal_pub = self.create_publisher(JointTrajectory, f"{action_ns}/arm_controller/follow_joint_trajectory/goal", 10)
+        self._arm_and_finger_goal_pub = self.create_publisher(JointTrajectory, f"{action_ns}/arm_and_finger_controller/follow_joint_trajectory/goal", 10)
+        self._mobile_manipulation_goal_pub = self.create_publisher(JointTrajectory, f"{action_ns}/mobile_manipulation_controller/follow_joint_trajectory/goal", 10)
 
         # Command subscriptions
         self.ee_vel_sub = self.create_subscription(
@@ -429,6 +430,23 @@ class SpotManipulationDriverROS(Node):
     def arm_and_finger_goal_callback(self, goal_handle: ServerGoalHandle):
         """Callback for the /spot_arm/arm_and_finger_controller/follow_joint_trajectory action server """
 
+        # Publish the received trajectory (only once) before executing for data-capture purposes
+        if self.data_capture_mode:
+            def arm_and_finger_goal_publisher() -> None:
+                timeout = 3.0
+                start_time = time.time()  
+
+                while self._arm_and_finger_goal_pub.get_subscription_count() < 1:
+                    if time.time() - start_time > timeout:
+                        self.get_logger().info("Timed out waiting for an arm_and_finger_controller/follow_joint_trajectory/goal subscriber to be available")
+                        return  
+                    time.sleep(0.1)  # sleep to avoid busy-waiting
+                self.get_logger().info("Publishing received joint trajectory on the arm_and_finger_controller/follow_joint_trajectory/goal topic")
+                self._arm_and_finger_goal_pub.publish(goal_handle.request.trajectory)
+
+            arm_and_finger_goal_publisher_thread = threading.Thread(target=arm_and_finger_goal_publisher)
+            arm_and_finger_goal_publisher_thread.start()
+
         # Translate message and execute trajectory while publishing feedback
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
             goal_handle.request.trajectory, ARM_JOINT_ORDER
@@ -461,6 +479,9 @@ class SpotManipulationDriverROS(Node):
             rate.sleep()
 
         arm_and_finger_execution_thread.join()
+
+        if self.data_capture_mode:
+            arm_and_finger_goal_publisher_thread.join()
 
         if self._arm_and_finger_trajectory_cancel_event.is_set():
             goal_handle.canceled()
