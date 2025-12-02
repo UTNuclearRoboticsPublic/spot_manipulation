@@ -33,6 +33,7 @@
 import time
 import math
 import threading
+import copy
 
 import rclpy
 import rclpy.callback_groups
@@ -80,10 +81,12 @@ ARM_JOINT_ORDER = [
 GRIPPER_JOINT_ORDER = [
     "arm0_fingers"]
 
-WHOLE_BODY_JOINT_ORDER = [
+MOBILE_BODY_JOINT_ORDER = [
     "body_x",
     "body_y",
-    "body_or"] + ARM_JOINT_ORDER + GRIPPER_JOINT_ORDER
+    "body_or"]
+
+WHOLE_BODY_JOINT_ORDER = MOBILE_BODY_JOINT_ORDER + ARM_JOINT_ORDER + GRIPPER_JOINT_ORDER
 
 
 class SpotManipulationDriverROS(Node):
@@ -546,27 +549,60 @@ class SpotManipulationDriverROS(Node):
             goal_handle.request.trajectory, WHOLE_BODY_JOINT_ORDER
         )
 
-        # Received body trajectory is expected to be in base_footprint frame; convert to odom frame
+        # Received body trajectory is expected to be in base_footprint frame; convert to reference frame
+        ref_frame = 'vision'
+        child_frame = 'base_footprint'
+        
         try:
             transform = self.tf_buffer.lookup_transform(
-                'vision',
-                'base_footprint',
+                ref_frame,
+                child_frame,
                 Time(),
                 timeout=rclpy.duration.Duration(seconds=1.0)
             )
         except Exception as e:
-            raise RuntimeError(f"Failed to lookup transform from base_footprint to odom: {e}")
+            raise RuntimeError(f"Failed to lookup transform from {ref_frame} to {child_frame}: {e}")
         
         # Helper function to convert 2D pose using transform
         def convert_point(point):
-            pose_odom = ros_helpers.transform_2d_pose(transform, point[0], point[1], point[2])
-            return [pose_odom.x, pose_odom.y, pose_odom.theta] + point[3:]
+            pose_transformed = ros_helpers.transform_2d_pose(transform, point[0], point[1], point[2])
+            return [pose_transformed.x, pose_transformed.y, pose_transformed.theta] + point[3:]
         
-        traj_point_positions_vision = [convert_point(pt) for pt in traj_point_positions]
+        traj_point_positions_transformed = [convert_point(pt) for pt in traj_point_positions]
         #TODO: Convert velocities as well
 
         # Publish the received trajectory (only once) before executing for data-capture purposes
         if self.data_capture_mode:
+            # Replace the body joint positions in the trajectory with the converted ones
+            trajectory_transformed = JointTrajectory()
+            trajectory_transformed.header = goal_handle.request.trajectory.header
+
+            # Add a ref_frame trailing prefix to the body joint names
+            trajectory_transformed.joint_names = []
+            for joint_name in goal_handle.request.trajectory.joint_names:
+                if joint_name in MOBILE_BODY_JOINT_ORDER:
+                    trajectory_transformed.joint_names.append(f"{joint_name}_{ref_frame}")
+                else:
+                    trajectory_transformed.joint_names.append(joint_name)
+            
+            # Find indices of body joints in the trajectory
+            body_joint_indices = {
+                name: goal_handle.request.trajectory.joint_names.index(name) 
+                for name in MOBILE_BODY_JOINT_ORDER
+                if name in goal_handle.request.trajectory.joint_names
+            }
+            
+            for i, original_point in enumerate(goal_handle.request.trajectory.points):
+                new_point = copy.deepcopy(original_point)
+                new_point.positions = list(new_point.positions)
+                
+                for idx, name in enumerate(MOBILE_BODY_JOINT_ORDER):
+                    if name in body_joint_indices:
+                        traj_idx = body_joint_indices[name]
+                        new_point.positions[traj_idx] = traj_point_positions_transformed[i][idx]
+                
+                trajectory_transformed.points.append(new_point)
+
             def mobile_manipulation_goal_publisher() -> None:
                 timeout = 3.0
                 start_time = time.time()  
@@ -577,7 +613,7 @@ class SpotManipulationDriverROS(Node):
                         return  
                     time.sleep(0.1)  # sleep to avoid busy-waiting
                 self.get_logger().info("Publishing received joint trajectory on the mobile_manipulation_controller/follow_joint_trajectory/goal topic")
-                self._mobile_manipulation_goal_pub.publish(goal_handle.request.trajectory)
+                self._mobile_manipulation_goal_pub.publish(trajectory_transformed)
 
             mobile_manipulation_goal_publisher_thread = threading.Thread(target=mobile_manipulation_goal_publisher)
             mobile_manipulation_goal_publisher_thread.start()
@@ -588,7 +624,7 @@ class SpotManipulationDriverROS(Node):
             nonlocal trajectory_success
             try:
                 trajectory_success = self.manipulation_driver.mobile_manipulation_long_trajectory_executor(
-                    traj_point_positions_vision, traj_point_velocities, timepoints, self._mobile_manipulation_trajectory_cancel_event
+                    traj_point_positions_transformed, traj_point_velocities, timepoints, self._mobile_manipulation_trajectory_cancel_event
                 ) 
             except Exception as e:
                 self._logger.info(f"Error executing mobile manipulation long trajectory: {e}")
