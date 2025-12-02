@@ -933,23 +933,25 @@ class SpotManipulationDriver(object):
         if len(joint_positions) != 6:
             return False, "Expected 6 joint values: [sh0, sh1, el0, el1, wr0, wr1]"
         
-        if self.arm_state is None:
-            return False, "Cannot move arm, arm state is unknown"
-        
         if relative:
-            current_positions = [
-                self.arm_state.joint_positions.sh0.value,
-                self.arm_state.joint_positions.sh1.value,
-                self.arm_state.joint_positions.el0.value,
-                self.arm_state.joint_positions.el1.value,
-                self.arm_state.joint_positions.wr0.value,
-                self.arm_state.joint_positions.wr1.value,
-            ]
+            current_joints = {
+                'arm0.sh0': 0.0,
+                'arm0.sh1': 0.0,
+                'arm0.el0': 0.0,
+                'arm0.el1': 0.0,
+                'arm0.wr0': 0.0,
+                'arm0.wr1': 0.0,
+            }
+
+            for joint in self._robot_state_proto.kinematic_state.joint_states:
+                if joint.name in current_joints:
+                    current_joints[joint.name] = joint.position.value
+            
             joint_positions = [
-                current + delta for current, delta in zip(current_positions, joint_positions)
+                current + delta for current, delta in zip(list(current_joints.values()), joint_positions)
             ]
 
-        # build trajectory: one point → final pose
+        # build trajectory: one point to final pose
         ref_time = seconds_to_timestamp(time.time())
         arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=[joint_positions],
