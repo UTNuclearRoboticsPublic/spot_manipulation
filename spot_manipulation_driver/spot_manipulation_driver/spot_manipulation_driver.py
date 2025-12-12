@@ -49,7 +49,7 @@ from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAM
                                         GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b)
 from bosdyn.client.math_helpers import SE3Pose
 from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command)
-from bosdyn.client.exceptions import RpcError
+from bosdyn.client.exceptions import RpcError, InternalServerError
 from bosdyn.client.inverse_kinematics import InverseKinematicsClient
 from bosdyn.util import seconds_to_timestamp, seconds_to_duration
 from google.protobuf import duration_pb2, timestamp_pb2
@@ -951,7 +951,7 @@ class SpotManipulationDriver(object):
                 current + delta for current, delta in zip(list(current_joints.values()), joint_positions)
             ]
 
-        # build trajectory: one point to final pose
+        # build command
         ref_time = seconds_to_timestamp(time.time())
         arm_cmd = RobotCommandBuilder.arm_joint_move_helper(
             joint_positions=[joint_positions],
@@ -969,11 +969,15 @@ class SpotManipulationDriver(object):
         start = time.time()
         timeout = duration + 3.0
         while True:
-            fb = self._lease_manager.robot_command_feedback(cmd_id)
-            fb = fb.feedback.synchronized_feedback.arm_command_feedback.arm_joint_move_feedback
+            try:
+                fb = self._lease_manager.robot_command_feedback(cmd_id)
+                fb = fb.feedback.synchronized_feedback.arm_command_feedback.arm_joint_move_feedback
 
-            if fb.status == ArmJointMoveCommand.Feedback.Status.STATUS_COMPLETE:
-                return True, "Arm reached joint target."
+                if fb.status == ArmJointMoveCommand.Feedback.Status.STATUS_COMPLETE:
+                    return True, "Arm reached joint target."
+
+            except InternalServerError:
+                pass
 
             if time.time() - start > timeout:
                 return False, "Timed out waiting for arm to reach target."
