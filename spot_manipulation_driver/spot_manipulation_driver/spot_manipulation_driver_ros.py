@@ -295,9 +295,13 @@ class SpotManipulationDriverROS(Node):
         return True
     
     def arm_joint_movement_service_callback(self, request: ArmJointMovement.Request, response: ArmJointMovement.Response) -> ArmJointMovement.Response:
-        success, message = self.manipulation_driver.move_arm_to_joint_positions(request.joint_target, request.duration, request.relative)
-        response.success = success
-        response.message = message
+        try:
+            success, message = self.manipulation_driver.move_arm_to_joint_positions(request.joint_target, request.duration, request.relative)
+            response.success = success
+            response.message = message
+        except Exception as e:
+            response.success = False
+            response.message = str(e)
         return response
     
     def arm_goal_cancel_callback(self, cancel_request):

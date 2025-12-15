@@ -180,19 +180,38 @@ class SpotManipulationDriver(object):
             self._lease_manager.robot.logger.error(error_message)
             raise Exception(error_message)
 
-    # Verify that an e-stop exists: function borrowed from arm_joint_long_trajectory example
-    def verify_power_and_estop(self):
+    def verify_power_and_estop(self, estop_retries=60, retry_delay=1.0):
+        # power
         if not self._lease_manager.robot.is_powered_on():
             self._lease_manager.logger.info(
                 "Robot is not powered on. Attempting to power on."
             )
-            self._lease_manager.robot.power_on(timeout_sec=20)
-            assert self._lease_manager.robot.is_powered_on(), "Robot power on failed."
-            self._lease_manager.logger.info("Robot powered on.")
-        else:
-            self._lease_manager.robot.logger.info("Verified that robot is powered on.")
+            try:
+                self._lease_manager.robot.power_on(timeout_sec=20)
+            except Exception as e:
+                raise RuntimeError(f"Power on RPC failed: {e}")
 
-        self.verify_estop()
+            if not self._lease_manager.robot.is_powered_on():
+                raise RuntimeError("Robot power on failed.")
+
+            self._lease_manager.logger.info("Robot powered on.")
+
+        # estop
+        last_error = None
+        for attempt in range(1, estop_retries + 1):
+            try:
+                self.verify_estop()
+                return
+            except (InternalServerError, RpcError) as e:
+                last_error = e
+                self._lease_manager.logger.warn(
+                    f"E-Stop check failed (attempt {attempt}/{estop_retries}): {e}"
+                )
+                time.sleep(retry_delay)
+
+        raise RuntimeError(
+            f"Unable to verify E-Stop status after {estop_retries} attempts: {last_error}"
+        )
 
     # Execute long trajectories
     def arm_long_trajectory_executor(
@@ -977,6 +996,7 @@ class SpotManipulationDriver(object):
                     return True, "Arm reached joint target."
 
             except InternalServerError:
+                print(f'Ignoring InternalServerError while waiting for arm to reach target')
                 pass
 
             if time.time() - start > timeout:
