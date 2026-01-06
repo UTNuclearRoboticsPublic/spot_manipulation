@@ -481,7 +481,7 @@ class SpotManipulationDriver(object):
         Creates a synchronized command for mobile manipulation (i.e. body, arm, and gripper). The body points are expected to be in the vision frame.
         
         Args:
-            traj_point_positions: List of joint positions for each trajectory point in the mobile manipulation trajectory. Includes body and arm joints.
+            traj_point_positions: List of joint positions for each trajectory point in the mobile manipulation trajectory. In each point, the first 3 values are body (x, y, yaw), the next 6 values are arm joints, and the last value is gripper joint.
             times: List of time offsets from reference time
             ref_time: Reference timestamp for the trajectory
         
@@ -550,17 +550,13 @@ class SpotManipulationDriver(object):
         mobility_command.synchronized_command.mobility_command.se2_trajectory_request.end_time.CopyFrom(end_time)
 
         # Se2 trajectory
-        for i in range(len(body_points)):
-            x_vision = body_points[i][0]
-            y_vision = body_points[i][1]
-            yaw_vision = body_points[i][2]
-            
+        for timestamp, (x_vision, y_vision, yaw_vision) in zip(times, body_points):
             # Add points to trajectory
             point = mobility_command.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points.add()
             point.pose.position.x = x_vision
             point.pose.position.y = y_vision
             point.pose.angle = yaw_vision
-            duration = seconds_to_duration(times[i])
+            duration = seconds_to_duration(timestamp)
             point.time_since_reference.CopyFrom(duration)
     
         # Combine gripper, arm and mobility commands into synchronized command
@@ -570,7 +566,7 @@ class SpotManipulationDriver(object):
 
     def get_body_corrected_command(self, robot_cmd):
         """ 
-        Returns the command to correct the body portion of a mobile manipulation command using vision-based odometry.
+        Returns command to correct any SE2 body pose error after execution of a mobile manipulation command using vision-based odometry.
         Extracts the last commanded body position from the input command, computes the error between the current state and the commanded position, and corrects the body position accordingly. Commands are assumed to be in the VISION frame.
         Args:
             robot_cmd: RobotCommand containing synchronized mobility, arm, and gripper commands
@@ -634,7 +630,7 @@ class SpotManipulationDriver(object):
         # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
         try:
             if self._lease_manager.robot.is_powered_on(5):
-                self._logger.info("Spot is about to move its whole body --DEBUG .")
+                self._logger.info("Spot is about to move its whole body.")
             else:
                 self._logger.warn("Cannot execute mobile manipulation long trajectory, robot is not powered on")
                 return False
