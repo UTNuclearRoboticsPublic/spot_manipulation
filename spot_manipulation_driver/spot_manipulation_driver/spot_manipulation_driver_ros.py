@@ -549,10 +549,11 @@ class SpotManipulationDriverROS(Node):
             goal_handle.request.trajectory, WHOLE_BODY_JOINT_ORDER
         )
 
-        # Received body trajectory is expected to be in base_footprint frame; convert to reference frame
+        # Received body trajectory is expected to be in base_footprint frame; convert to vision frame
         ref_frame = 'vision'
         child_frame = 'base_footprint'
         
+        # Lookup transform
         try:
             transform = self.tf_buffer.lookup_transform(
                 ref_frame,
@@ -562,14 +563,16 @@ class SpotManipulationDriverROS(Node):
             )
         except Exception as e:
             raise RuntimeError(f"Failed to lookup transform from {ref_frame} to {child_frame}: {e}")
+
+        # Flatten
+        vision_tform_base_footprint = ros_helpers.MsgToSE2Pose(transform)
         
-        # Helper function to convert 2D pose using transform
+        # Helper function to return mobile manipulation trajectory point with body pose transformed to reference frame
         def convert_point(point):
-            pose_transformed = ros_helpers.transform_2d_pose(transform, point[0], point[1], point[2])
-            return [pose_transformed.x, pose_transformed.y, pose_transformed.theta] + point[3:]
+            pose_transformed = ros_helpers.transform_2d_pose(vision_tform_base_footprint, point[0], point[1], point[2])
+            return [pose_transformed.x, pose_transformed.y, pose_transformed.angle] + point[3:]
         
         traj_point_positions_transformed = [convert_point(pt) for pt in traj_point_positions]
-        #TODO: Convert velocities as well
 
         # Publish the received trajectory (only once) before executing for data-capture purposes
         if self.data_capture_mode:

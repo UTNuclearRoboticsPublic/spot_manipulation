@@ -4,7 +4,7 @@ from tf2_ros import Buffer
 from typing import Tuple, List
 from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2, image_pb2, trajectory_pb2
 from bosdyn.util import seconds_to_duration
-from bosdyn.client.math_helpers import SE3Pose, Quat
+from bosdyn.client.math_helpers import SE3Pose, Quat, SE2Pose
 from bosdyn.client.frame_helpers import ODOM_FRAME_NAME, HAND_FRAME_NAME, get_a_tform_b, WR1_FRAME_NAME
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist, TwistStamped, WrenchStamped, Wrench
@@ -381,44 +381,24 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
 
     return arm_cartesian_request
 
-def transform_2d_pose(transform: TransformStamped, x: float, y: float, theta: float) -> Pose2D:
-    """
-    Transform a 2D pose from source frame to target frame.
-    
-    Example:
-        # Transform from base_footprint to odom
-        transform = tf_buffer.lookup_transform('odom', 'base_footprint', ...)
-        pose_odom = transform_2d_pose(transform, x_base, y_base, theta_base)
-        print(f"Position: ({pose_odom.x}, {pose_odom.y}), Theta: {pose_odom.theta}")
-    
+def transform_2d_pose(transform: SE2Pose, x: float, y: float, theta: float) -> SE2Pose:
+    """Given an SE2 pose as (x,y,theta), apply the given transform to it
     Args:
-        transform: TransformStamped from source frame to target frame
-        x: x position in source frame (meters)
-        y: y position in source frame (meters)
-        theta: yaw angle in source frame (radians)
-    
+        transform: transform to apply
+        x: X position of the SE2 pose
+        y: Y position of the SE2 pose
+        theta: Theta of the SE2 pose
     Returns:
-        Pose2D: (x, y, theta) all expressed in target frame
+        The transformed pose
     """
-    # Create pose in source frame
-    pose_in = PoseStamped()
-    pose_in.pose.position.x = x
-    pose_in.pose.position.y = y
-    pose_in.pose.position.z = 0.0
-    
-    # Convert theta to quaternion (rotation around z-axis in source frame)
-    pose_in.pose.orientation.x = 0.0
-    pose_in.pose.orientation.y = 0.0
-    pose_in.pose.orientation.z = math.sin(theta / 2.0)
-    pose_in.pose.orientation.w = math.cos(theta / 2.0)
-    
-    # Transform the pose from source frame to target frame
-    pose_out = do_transform_pose(pose_in.pose, transform)
-    
-    # Extract and create Pose2D result
-    result = Pose2D()
-    result.x = pose_out.position.x
-    result.y = pose_out.position.y
-    result.theta = 2.0 * math.atan2(pose_out.orientation.z, pose_out.orientation.w)
-    
-    return result
+    pose_transformed = transform.mult(SE2Pose(x, y, theta))
+
+    return pose_transformed
+
+def MsgToSE2Pose(tf_msg: TransformStamped) -> SE2Pose:
+    """Convert a TransformStamped message to an SE2Pose object."""
+
+    pose = SE2Pose.flatten(ros_helpers.MsgToTransform(tf_msg))
+
+    return pose
+
