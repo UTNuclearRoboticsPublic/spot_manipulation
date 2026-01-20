@@ -1,13 +1,13 @@
 # Default initial positions for spot's ros2_control fake system
 
 initial_positions:
-  # Arm - Mini-unstow pose
-  arm0_shoulder_yaw: -0.008624732532881539
-  arm0_shoulder_pitch: -2.349300005579395
-  arm0_elbow_pitch: 2.565561565618062
-  arm0_elbow_roll: 0.07087466657896295
-  arm0_wrist_pitch: -0.2121338447537136
-  arm0_wrist_roll: -0.06703231529036421
+  # Arm - stowed pose
+  arm0_shoulder_yaw: 0.0
+  arm0_shoulder_pitch: -3.14159265
+  arm0_elbow_pitch: 3.12
+  arm0_elbow_roll: 0.00
+  arm0_wrist_pitch: 0.00
+  arm0_wrist_roll: 0.00
   body_height_joint: 0
   body_pitch_joint: 0
   body_roll_joint: 0
