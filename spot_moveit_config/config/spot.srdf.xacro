@@ -78,6 +78,15 @@
         <joint name="arm0_wrist_roll" value="-0.07"/>
     </group_state>
 
+    <group_state name="stowed" group="arm">
+        <joint name="arm0_shoulder_yaw" value="0.0"/>
+        <joint name="arm0_shoulder_pitch" value="-3.14159265"/>
+        <joint name="arm0_elbow_pitch" value="3.12"/>
+        <joint name="arm0_elbow_roll" value="0.00"/>
+        <joint name="arm0_wrist_pitch" value="0.00"/>
+        <joint name="arm0_wrist_roll" value="0.00"/>
+    </group_state>
+
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_elbow_roll" reason="Adjacent"/>
     <disable_collisions link1="arm0_elbow_pitch" link2="arm0_fingers" reason="Never"/>
