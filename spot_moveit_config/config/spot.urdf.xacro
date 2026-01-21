@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="spot">
     <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
+    <xacro:arg name="ros2_control_hardware_type" default="mock_components" />
+
 
     <!-- Import spot urdf file -->
     <xacro:include filename="$(find spot_description)/urdf/spot.urdf.xacro" />
@@ -9,6 +11,6 @@
     <xacro:include filename="spot.ros2_control.xacro" />
 
 
-    <xacro:spot_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
+    <xacro:spot_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)" ros2_control_hardware_type="$(arg ros2_control_hardware_type)"/>
 
 </robot>
