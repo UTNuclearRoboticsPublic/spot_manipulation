@@ -3,9 +3,10 @@ import rclpy.duration
 from tf2_ros import Buffer
 from typing import Tuple, List
 from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2, image_pb2, trajectory_pb2
-from bosdyn.util import seconds_to_duration
+from bosdyn.util import seconds_to_duration, seconds_to_timestamp
 from bosdyn.client.math_helpers import SE3Pose, Quat
 from bosdyn.client.frame_helpers import ODOM_FRAME_NAME, HAND_FRAME_NAME, get_a_tform_b, WR1_FRAME_NAME
+from bosdyn.client.robot_command import RobotCommandBuilder
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist, TwistStamped, WrenchStamped, Wrench
 from google.protobuf import timestamp_pb2
@@ -16,6 +17,8 @@ from tf2_msgs.msg import TFMessage
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 import rclpy.time
+import time
+import geometry_msgs.msg
 
 from .spot_manipulation_driver import SpotManipulationDriver
 from spot_driver import ros_helpers
@@ -377,3 +380,54 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
         arm_cartesian_request.wrench_trajectory_in_task.CopyFrom(wrench_trajectory)
 
     return arm_cartesian_request
+
+def construct_arm_trajectory_cmd(msg: ArmCartesianCommand.Goal):
+
+    assert len(msg.joint_waypoints.points) != len(msg.waypoints), "EE trajectory and joint trajectory must have an equal number of points."
+
+    poses: list[geometry_msgs.msg.Pose] = msg.waypoints
+    # Convert the cartesian waypoints to a list of SE3Poses
+    se3_trajectory = []
+    for pose in poses:
+        position_proto = geometry_pb2.Vec3(x = pose.position.x, 
+                                           y = pose.position.y, 
+                                           z = pose.position.z)
+        orientation_proto = geometry_pb2.Quaternion(w = pose.orientation.w, 
+                                                    x = pose.orientation.x, 
+                                                    y = pose.orientation.y, 
+                                                    z = pose.orientation.z)
+        pose_proto = geometry_pb2.SE3Pose(position = position_proto,rotation = orientation_proto)
+        se3_trajectory.append(pose_proto)
+
+    # Add approach time to reach the first pose in the trajectory.
+    traj_approach_time = 5
+    start_time = time.time() + traj_approach_time
+    ref_time = seconds_to_timestamp(start_time)
+
+    # # If using rclpy.time instead. Totally untested.
+    # start_time = rclpy.time.Time()
+    # ref_time = seconds_to_timestamp(start_time.seconds_nanoseconds())
+
+    arm_command_list = []
+    for index, pose in enumerate(se3_trajectory):
+        arm_trajectory_command = RobotCommandBuilder.arm_cartesian_move_helper(
+            [pose],
+            [msg.times[index]],
+            root_frame_name = msg.header,
+            max_acc = msg.max_acceleration,
+            max_linear_vel = msg.max_linear_velocity,
+            max_angular_vel = msg.max_angular_velocity,
+            ref_time= ref_time)
+        arm_command_list.append(arm_trajectory_command)
+
+    joint_trajectory: list[JointTrajectoryPoint] = msg.joint_waypoints.points
+    for index, point in enumerate(joint_trajectory):
+        joint_positions = point.positions
+        joint_config = arm_command_list[index].synchronized_command.arm_command.arm_cartesian_command.preferred_joint_configuration
+        joint_config.sh0.value = joint_positions[0]
+        joint_config.sh1.value = joint_positions[1]
+        joint_config.el0.value = joint_positions[2]
+        joint_config.el1.value = joint_positions[3]
+        joint_config.wr0.value = joint_positions[4]
+        joint_config.wr1.value = joint_positions[5]
+    return arm_command_list

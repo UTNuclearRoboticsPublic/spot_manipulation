@@ -31,6 +31,7 @@
 ##############################################################################
 
 import time
+import math
 import threading
 from typing import Text, Tuple, List
 from enum import Enum
@@ -798,6 +799,21 @@ class SpotManipulationDriver(object):
         robot_command.synchronized_command.arm_command.arm_cartesian_command.CopyFrom(cartesian_command)
         end_time = time.time() + timeout if timeout is not None else None
         return self.lease_manager.robot_command(robot_command, end_time)
+    
+    def arm_cartesian_command_with_joint_configuration(self, arm_command_list, max_linear_vel = 0.05, fraction_of_move_before_next_cmd = 0.9):
+        
+        sleep_times = [5]
+        for index, position in enumerate(arm_command_list[1:], start=1): 
+            point1 = arm_command_list[index-1].synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.points[0].pose.position
+            point2 = position.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.points[0].pose.position
+            point1 = [point1.x, point1.y, point1.z]
+            point2 = [point2.x, point2.y, point2.z]
+            time_for_move = abs((math.dist(point1, point2)/max_linear_vel)*fraction_of_move_before_next_cmd)
+            sleep_times.append(time_for_move)
+
+        for index, arm_command in enumerate(arm_command_list):
+            self.lease_manager.robot_command(arm_command)
+            time.sleep(sleep_times[index])
     
     def solve_ik(self, target_pose: SE3Pose, gaze_target: Vec3Proto = None, wrist_tform_tool: SE3Pose = None, joint_state: dict[str, float] = {}) -> tuple[bool, dict, SE3Pose]:
         """Request an Inverse Kinematics solution from the Boston Dynamics software stack.

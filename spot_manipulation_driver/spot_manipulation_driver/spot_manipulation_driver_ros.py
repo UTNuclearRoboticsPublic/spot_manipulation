@@ -499,21 +499,25 @@ class SpotManipulationDriverROS(Node):
     def arm_cartesian_command_callback(self, goal_handle: ServerGoalHandle) -> ArmCartesianCommand.Result:
         """Callback for the spot_manipualtion_driver/arm_cartesian_command action server """
 
-        try:
-            robot_command = ros_helpers.cartesian_request_to_command(goal_handle.request, self.tf_buffer)
-            success, message, command_id = self.manipulation_driver.arm_cartesian_command(robot_command)
-            if not success:
-                self._logger.warn(f"Unable to execute arm cartesian command: {message}")
+        if len(goal_handle.request.joint_waypoints) > 0:
+            robot_command_list = ros_helpers.construct_arm_trajectory_cmd(goal_handle.request)
+            self.manipulation_driver.arm_cartesian_command_with_joint_configuration(robot_command_list)
+        else:
+            try:
+                robot_command = ros_helpers.cartesian_request_to_command(goal_handle.request, self.tf_buffer)
+                success, message, command_id = self.manipulation_driver.arm_cartesian_command(robot_command)
+                if not success:
+                    self._logger.warn(f"Unable to execute arm cartesian command: {message}")
+                    goal_handle.abort()
+                    return ArmCartesianCommand.Result(success=False, message=message)
+            except tf2_py.LookupException as e:
+                self._logger.warn(f"Transform lookup error during arm cartesian command execution: {e}")
                 goal_handle.abort()
-                return ArmCartesianCommand.Result(success=False, message=message)
-        except tf2_py.LookupException as e:
-            self._logger.warn(f"Transform lookup error during arm cartesian command execution: {e}")
-            goal_handle.abort()
-            return ArmCartesianCommand.Result(success=False, message=str(e))
-        except Exception as e:
-            self._logger.info(f"Unknown error executing arm cartesian command: {e}")
-            goal_handle.abort()
-            return ArmCartesianCommand.Result(success=False, message=str(e))
+                return ArmCartesianCommand.Result(success=False, message=str(e))
+            except Exception as e:
+                self._logger.info(f"Unknown error executing arm cartesian command: {e}")
+                goal_handle.abort()
+                return ArmCartesianCommand.Result(success=False, message=str(e))
         
         rate = self.create_rate(10.0)
         response = ArmCartesianCommand.Result()
