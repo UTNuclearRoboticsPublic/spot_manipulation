@@ -815,9 +815,9 @@ class SpotManipulationDriver(object):
             self.lease_manager.robot_command(arm_command)
             command_timestamp = arm_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.points.time_since_reference
             if index == 0:
-                time.sleep(command_timestamp)
+                time.sleep(command_timestamp * fraction_of_move_before_next_cmd)
             else:
-                time.sleep(command_timestamp - previous_timestamp) 
+                time.sleep((command_timestamp - previous_timestamp) * fraction_of_move_before_next_cmd) 
             previous_timestamp = command_timestamp
     
     def solve_ik(self, target_pose: SE3Pose, gaze_target: Vec3Proto = None, wrist_tform_tool: SE3Pose = None, joint_state: dict[str, float] = {}) -> tuple[bool, dict, SE3Pose]:
