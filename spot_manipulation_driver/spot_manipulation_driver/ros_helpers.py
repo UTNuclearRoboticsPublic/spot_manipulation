@@ -383,7 +383,7 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
 
 def construct_arm_trajectory_cmd(msg: ArmCartesianCommand.Goal):
 
-    assert len(msg.joint_waypoints.points) != len(msg.waypoints), "EE trajectory and joint trajectory must have an equal number of points."
+    assert len(msg.joint_waypoints.points) == len(msg.waypoints) == len(msg.timestamps), "EE trajectory, joint trajectory, and timestamps must have an equal number of points."
 
     poses: list[geometry_msgs.msg.Pose] = msg.waypoints
     # Convert the cartesian waypoints to a list of SE3Poses
@@ -400,7 +400,7 @@ def construct_arm_trajectory_cmd(msg: ArmCartesianCommand.Goal):
         se3_trajectory.append(pose_proto)
 
     # Add approach time to reach the first pose in the trajectory.
-    traj_approach_time = 5
+    traj_approach_time = 1
     start_time = time.time() + traj_approach_time
     ref_time = seconds_to_timestamp(start_time)
 
@@ -412,11 +412,11 @@ def construct_arm_trajectory_cmd(msg: ArmCartesianCommand.Goal):
     for index, pose in enumerate(se3_trajectory):
         arm_trajectory_command = RobotCommandBuilder.arm_cartesian_move_helper(
             [pose],
-            [msg.times[index]],
+            [msg.timestamps[index]],
             root_frame_name = msg.header,
-            max_acc = msg.max_acceleration,
-            max_linear_vel = msg.max_linear_velocity,
-            max_angular_vel = msg.max_angular_velocity,
+            # max_acc = msg.max_acceleration,
+            # max_linear_vel = msg.max_linear_velocity,
+            # max_angular_vel = msg.max_angular_velocity,
             ref_time= ref_time)
         arm_command_list.append(arm_trajectory_command)
 
