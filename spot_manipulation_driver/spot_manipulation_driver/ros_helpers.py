@@ -4,7 +4,7 @@ from tf2_ros import Buffer
 from typing import Tuple, List
 from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2, image_pb2, trajectory_pb2
 from bosdyn.util import seconds_to_duration, seconds_to_timestamp
-from bosdyn.client.math_helpers import SE3Pose, Quat
+from bosdyn.client.math_helpers import SE3Pose, Quat, SE2Pose
 from bosdyn.client.frame_helpers import ODOM_FRAME_NAME, HAND_FRAME_NAME, get_a_tform_b, WR1_FRAME_NAME
 from bosdyn.client.robot_command import RobotCommandBuilder
 from control_msgs.action import FollowJointTrajectory
@@ -15,6 +15,9 @@ from spot_msgs.action import ArmCartesianCommand
 from sensor_msgs.msg import Image, CameraInfo
 from tf2_msgs.msg import TFMessage
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+import math
+from geometry_msgs.msg import PoseStamped, TransformStamped, Pose2D
+from tf2_geometry_msgs import do_transform_pose
 
 import rclpy.time
 import time
@@ -421,3 +424,25 @@ def construct_arm_trajectory_cmd_sequence(msg: ArmCartesianCommand.Goal) -> list
         joint_config.wr0.value = joint_positions[4]
         joint_config.wr1.value = joint_positions[5]
     return arm_command_list
+
+def transform_2d_pose(transform: SE2Pose, x: float, y: float, theta: float) -> SE2Pose:
+    """Given an SE2 pose as (x,y,theta), apply the given transform to it
+    Args:
+        transform: transform to apply
+        x: X position of the SE2 pose
+        y: Y position of the SE2 pose
+        theta: Theta of the SE2 pose
+    Returns:
+        The transformed pose
+    """
+    pose_transformed = transform.mult(SE2Pose(x, y, theta))
+
+    return pose_transformed
+
+def MsgToSE2Pose(tf_msg: TransformStamped) -> SE2Pose:
+    """Convert a TransformStamped message to an SE2Pose object."""
+
+    pose = SE2Pose.flatten(ros_helpers.MsgToTransform(tf_msg))
+
+    return pose
+

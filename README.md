@@ -10,6 +10,7 @@ This repository contains the `spot_manipulation_driver` package required to oper
   - Execute arm joint trajectories
   - Execute gripper trajectories
   - Execute arm and gripper trajectories as a single synced trajectory
+  - Execute body, arm and gripper trajectories as a single synced trajectory
   - Execute cartesian position/force trajectory for the EE
   - Given pixel coordinates, camera info, and a transform snapshot have the robot go and grasp the pixel-specified object in an image.
 
@@ -33,6 +34,10 @@ ros2 launch spot_moveit_config spot_execution.launch.py # same as above, but lau
 ```
 
 This package is configured to consider environmental obstacles localized to the map frame, so the `spot_navigation` localization capabilities need to be running for this to work. If you wish to operate without obstacle avoidance (which you shouldn't), you can comment out the `spot_mobility_joint` entry in the robot SRDF and comment out all of the 3D sensors in the `sensors_3d.yaml` file.
+
+## Spot_bringup Launch Args
+- `manipulation_action_namespace:="/spot_moveit"` for moveit-related planning
+- `kinematic_model:="mobile_manipulation"` to publish mobile-manipulation-related joint states
 
 ## Authors
 Janak Panthi (aka Crasun Jans) and Alex Navarro
