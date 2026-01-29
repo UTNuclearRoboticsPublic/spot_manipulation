@@ -381,43 +381,33 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
 
     return arm_cartesian_request
 
-def construct_arm_trajectory_cmd(msg: ArmCartesianCommand.Goal):
-
+def construct_arm_trajectory_cmd_sequence(msg: ArmCartesianCommand.Goal) -> list[ArmCartesianCommandProto]:
+    """
+    Given an arm cartesian command request with joint waypoints, create a series of ArmCartesianCommand 
+    robot commands that will achieve the requested goal if fed to the robot in succession
+    
+    :param msg: The ROS arm command message request
+    """
     assert len(msg.joint_waypoints.points) == len(msg.waypoints) == len(msg.timestamps), "EE trajectory, joint trajectory, and timestamps must have an equal number of points."
 
-    poses: list[geometry_msgs.msg.Pose] = msg.waypoints
     # Convert the cartesian waypoints to a list of SE3Poses
     se3_trajectory = []
-    for pose in poses:
-        position_proto = geometry_pb2.Vec3(x = pose.position.x, 
-                                           y = pose.position.y, 
-                                           z = pose.position.z)
-        orientation_proto = geometry_pb2.Quaternion(w = pose.orientation.w, 
-                                                    x = pose.orientation.x, 
-                                                    y = pose.orientation.y, 
-                                                    z = pose.orientation.z)
-        pose_proto = geometry_pb2.SE3Pose(position = position_proto,rotation = orientation_proto)
-        se3_trajectory.append(pose_proto)
+    for pose in msg.waypoints:
+        se3_trajectory.append(ros_helpers.MsgToPose(pose).to_proto())
 
-    # Add approach time to reach the first pose in the trajectory.
-    traj_approach_time = 1
-    start_time = time.time() + traj_approach_time
-    ref_time = seconds_to_timestamp(start_time)
+    ref_time = seconds_to_timestamp(time.time())
 
-    # # If using rclpy.time instead. Totally untested.
-    # start_time = rclpy.time.Time()
-    # ref_time = seconds_to_timestamp(start_time.seconds_nanoseconds())
-
-    arm_command_list = []
-    for index, pose in enumerate(se3_trajectory):
+    arm_command_list: list[ArmCartesianCommandProto] = []
+    for timestamp, pose in zip(msg.timestamps, se3_trajectory):
         arm_trajectory_command = RobotCommandBuilder.arm_cartesian_move_helper(
             [pose],
-            [msg.timestamps[index]],
+            [timestamp],
             root_frame_name = msg.header,
-            # max_acc = msg.max_acceleration,
-            # max_linear_vel = msg.max_linear_velocity,
-            # max_angular_vel = msg.max_angular_velocity,
-            ref_time= ref_time)
+            max_acc = msg.max_acceleration if msg.max_acceleration > 0 else None,
+            max_linear_vel = msg.max_linear_velocity if msg.max_linear_velocity > 0 else None,
+            max_angular_vel = msg.max_angular_velocity if msg.max_angular_velocity > 0 else None,
+            ref_time= ref_time
+        )
         arm_command_list.append(arm_trajectory_command)
 
     joint_trajectory: list[JointTrajectoryPoint] = msg.joint_waypoints.points

@@ -499,9 +499,10 @@ class SpotManipulationDriverROS(Node):
     def arm_cartesian_command_callback(self, goal_handle: ServerGoalHandle) -> ArmCartesianCommand.Result:
         """Callback for the spot_manipualtion_driver/arm_cartesian_command action server """
 
-        if len(goal_handle.request.joint_waypoints) > 0:
-            robot_command_list = ros_helpers.construct_arm_trajectory_cmd(goal_handle.request)
-            self.manipulation_driver.arm_cartesian_command_with_joint_configuration(robot_command_list)
+        # If the command includes a joint trajectory, we have to handle that differently 
+        if len(goal_handle.request.joint_waypoints.points) > 0:
+            robot_command_list = ros_helpers.construct_arm_trajectory_cmd_sequence(goal_handle.request)
+            success, message, command_id = self.manipulation_driver.arm_cartesian_command_with_joint_configuration(robot_command_list)
         else:
             try:
                 robot_command = ros_helpers.cartesian_request_to_command(goal_handle.request, self.tf_buffer)
