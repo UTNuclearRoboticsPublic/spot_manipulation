@@ -23,7 +23,10 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>rviz_common</exec_depend>
   <exec_depend>spot_description</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
   <exec_depend>rviz_default_plugins</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
 
   <exec_depend>moveit_planners</exec_depend>
   <exec_depend>moveit_kinematics</exec_depend>

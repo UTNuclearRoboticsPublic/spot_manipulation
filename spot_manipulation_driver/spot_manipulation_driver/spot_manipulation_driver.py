@@ -33,26 +33,27 @@
 import time
 import threading
 from typing import Text, Tuple, List
+from enum import Enum
+from asyncio import Future
 
-from bosdyn.api import (arm_command_pb2, estop_pb2, image_pb2,
+from bosdyn.api import (arm_command_pb2, estop_pb2, manipulation_api_pb2,
                         robot_command_pb2, robot_state_pb2, trajectory_pb2,
-                        synchronized_command_pb2, basic_command_pb2, geometry_pb2, manipulation_api_pb2)
+                        synchronized_command_pb2, basic_command_pb2, geometry_pb2)
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.api.spot.robot_command_pb2 import BodyControlParams
+from bosdyn.api.spot.inverse_kinematics_pb2 import InverseKinematicsRequest, InverseKinematicsResponse
 from bosdyn.api.robot_command_pb2 import RobotCommandFeedbackResponse
 from bosdyn.api.mobility_command_pb2 import MobilityCommand
-from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand
-from bosdyn.client.image import ImageClient, build_image_request
-from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME,
-                                        GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b)
+from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand, ArmJointPosition
+from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME, BODY_FRAME_NAME,
+                                        GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b, get_vision_tform_body)
 from bosdyn.client.math_helpers import SE3Pose
-from bosdyn.client.robot_command import (CommandFailedErrorWithFeedback,
-                                         RobotCommandBuilder, TimedOutError,
-                                         blocking_stand, blocking_command)
+from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command)
 from bosdyn.client.exceptions import RpcError
-from bosdyn.util import seconds_to_timestamp, seconds_to_duration
+from bosdyn.client.inverse_kinematics import InverseKinematicsClient
+from bosdyn.util import seconds_to_timestamp, seconds_to_duration, timestamp_to_sec
 from google.protobuf import duration_pb2, timestamp_pb2
-from spot_driver.async_queries import AsyncImageService, AsyncRobotState
+from spot_driver.async_queries import AsyncRobotState
 from spot_driver.spot_lease_manager import SpotLeaseManager
 from spot_driver.type_hint_helpers import *
 from .trajectory_manager import TrajectoryManager
@@ -60,6 +61,23 @@ from bosdyn.client.manipulation_api_client import ManipulationApiClient
 
 MAX_BODY_POSES = 100
 MAX_ARM_POINTS = 10
+MAX_MOBILE_MANIPULATION_POINTS = 10
+ARM_NUM_JOINTS = 6
+GRIPPER_NUM_JOINTS = 1
+BODY_MOBILE_NUM_JOINTS = 3
+MOBILE_MANIPULATION_NUM_JOINTS = ARM_NUM_JOINTS + BODY_MOBILE_NUM_JOINTS + GRIPPER_NUM_JOINTS
+GRIPPER_CLOSE_TORQUE = 15.0
+MAX_GRIPPER_JOINT_VEL = 1000  # rad/s
+MAX_GRIPPER_JOINT_ACC = 1000  # rad/s^2
+MAX_ARM_JOINT_VEL = 1000  # rad/s
+MAX_ARM_JOINT_ACC = 1000  # rad/s^2
+MAX_BODY_VEL_LINEAR = 1.5  # m/s
+MAX_BODY_VEL_ANGULAR = 1.5  # rad/s
+BODY_HEIGHT_FOR_MOBILE_MANIPULATION = 0.0  # meters
+
+class GraspStrategy(Enum):
+    TOP_DOWN_GRASP = 1
+    HORIZONTAL_GRASP = 2
 
 class SpotManipulationDriver(object):
 
@@ -73,12 +91,12 @@ class SpotManipulationDriver(object):
         # Clients
         self._robot_state_client = None
         self._lease_manager = None
-        self._image_client = None
+        self._ik_client = None
         self._manipulation_api_client = None
 
         # Tasks
-        self._hand_image_task = None
-        self._robot_state_task = None
+        self._robot_state_future: Future = None
+        self._robot_state_proto = None
 
     def connect(self, lease_manager: SpotLeaseManager, rates={}, callbacks={}) -> bool:
         if lease_manager is None:
@@ -98,39 +116,19 @@ class SpotManipulationDriver(object):
             self._logger.fatal("Robot requires arm to use SpotManipulationDriver")
             return False
 
-        # Configure the hand to publish its depth and color images
-        hand_image_sources = {
-            "hand_image",
-            "hand_depth",
-            "hand_color_image",
-            "hand_depth_in_hand_color_frame",
-        }
-        hand_image_requests = []
-        for source in hand_image_sources:
-            hand_image_requests.append(
-                build_image_request(source, image_format=image_pb2.Image.FORMAT_RAW)
-            )
-
         # Start the service clients
         try:
-            self._image_client = self._lease_manager.robot.ensure_client(
-                ImageClient.default_service_name
-            )
             self._manipulation_api_client = self._lease_manager.robot.ensure_client(
-            ManipulationApiClient.default_service_name
+                ManipulationApiClient.default_service_name
+            )
+            self._ik_client = self._lease_manager.robot.ensure_client(
+                InverseKinematicsClient.default_service_name
             )
         except Exception as e:
             self._logger.error(f"Unable to create client service: {e}")
             return False
 
         # Create asynchronous tasks whose state can be queried
-        self._hand_image_task = AsyncImageService(
-            self._image_client,
-            self._logger,
-            rates.get("hand_image", 1.0),
-            callbacks.get("hand_image", lambda: None),
-            hand_image_requests,
-        )
         self._robot_state_task = AsyncRobotState(
             self._lease_manager._robot_state_client,
             self._logger,
@@ -142,19 +140,19 @@ class SpotManipulationDriver(object):
 
     @property
     def robot_state(self) -> robot_state_pb2:
-        return self._robot_state_task.proto
+        return self._robot_state_proto
 
     @property
     def kinematic_state(self) -> KinematicStateProto:
-        if self._robot_state_task.proto is None:
+        if self._robot_state_proto is None:
             return None
-        return self._robot_state_task.proto.kinematic_state
+        return self._robot_state_proto.kinematic_state
 
     @property
     def arm_state(self) -> ManipulatorStateProto:
-        if self._robot_state_task.proto is None:
+        if self._robot_state_proto is None:
             return None
-        return self._robot_state_task.proto.manipulator_state
+        return self._robot_state_proto.manipulator_state
 
     @property
     def hand_force(self):
@@ -171,12 +169,16 @@ class SpotManipulationDriver(object):
         )
 
     @property
-    def latest_hand_images(self):
-        return self._hand_image_task.proto
-
-    @property
     def lease_manager(self):
         return self._lease_manager
+    
+    def set_robot_state(self, future: Future) -> None:
+        self._robot_state_proto = future.result()
+
+    def update_robot_state(self) -> None:
+        if self._robot_state_future is None or self._robot_state_future.done():
+            self._robot_state_future = self._lease_manager._robot_state_client.get_robot_state_async()
+            self._robot_state_future.add_done_callback(self.set_robot_state)
 
     # Verify that an e-stop exists: function borrowed from arm_joint_long_trajectory example
     def verify_estop(self):
@@ -204,7 +206,7 @@ class SpotManipulationDriver(object):
 
         self.verify_estop()
 
-    # Execute long trajectories
+    # Execute long arm trajectories
     def arm_long_trajectory_executor(
         self, traj_point_positions, traj_point_velocities, timepoints, cancel_event: threading.Event
     ) -> None:
@@ -474,6 +476,201 @@ class SpotManipulationDriver(object):
     #     self._logger.info("Successfully executed arm and gripper trajectory")
     #     return True
 
+    def create_mobile_manipulation_command(self, traj_points: list, times: list[float], ref_time: float) -> robot_command_pb2.RobotCommand:
+        """
+        Creates a synchronized command for mobile manipulation (i.e. body, arm, and gripper). The body points are expected to be in the vision frame.
+        
+        Args:
+            traj_point_positions: List of joint positions for each trajectory point in the mobile manipulation trajectory. In each point, the first 3 values are body (x, y, yaw), the next 6 values are arm joints, and the last value is gripper joint.
+            times: List of time offsets from reference time
+            ref_time: Reference timestamp for the trajectory
+        
+        Returns:
+            RobotCommand with synchronized gripper, arm and mobility commands, or None on error
+        """
+        
+        # Validate length of times and trajectory points
+        if len(times) != len(traj_points):
+            self._logger.error("Length mismatch between times and trajectory points.")
+            return None
+    
+        # Validate number of joints in each trajectory point
+        for i, positions in enumerate(traj_points):
+            if len(positions) != MOBILE_MANIPULATION_NUM_JOINTS:
+                self._logger.error(f"Invalid number of joints at index {i}: expected {MOBILE_MANIPULATION_NUM_JOINTS}, got {len(positions)}")
+                return None
+
+        # Separate body and arm points
+        body_points = [point[:BODY_MOBILE_NUM_JOINTS] for point in traj_points]
+        arm_positions = [point[BODY_MOBILE_NUM_JOINTS:BODY_MOBILE_NUM_JOINTS + ARM_NUM_JOINTS] for point in traj_points]# Next ARM_NUM_JOINTS in each point are arm joints
+        gripper_positions_list = [point[-GRIPPER_NUM_JOINTS:] for point in traj_points] # Last GRIPPER_NUM_JOINTS in each point are gripper joints
+        gripper_positions = [elem for sublist in gripper_positions_list for elem in sublist] # flatten the list
+
+        # Build gripper command
+        gripper_command = RobotCommandBuilder.claw_gripper_command_helper(
+            gripper_positions=gripper_positions,
+            times=times,
+            ref_time=ref_time,
+            max_vel=MAX_GRIPPER_JOINT_VEL,
+            max_acc=MAX_GRIPPER_JOINT_ACC
+        )
+        # Build arm command
+        arm_command = RobotCommandBuilder.arm_joint_move_helper(
+            joint_positions=arm_positions,
+            times=times,
+            ref_time=ref_time,
+            max_vel=MAX_ARM_JOINT_VEL,
+            max_acc=MAX_ARM_JOINT_ACC
+        )
+    
+        # Build mobility command
+        mobility_command = robot_command_pb2.RobotCommand()
+
+        # Reference frame
+        mobility_command.synchronized_command.mobility_command.se2_trajectory_request.se2_frame_name = VISION_FRAME_NAME
+
+        # Mobility params
+        speed_limit = geometry_pb2.SE2VelocityLimit(
+            max_vel=geometry_pb2.SE2Velocity(
+                linear=geometry_pb2.Vec2(x=MAX_BODY_VEL_LINEAR, y=MAX_BODY_VEL_LINEAR), 
+                angular=MAX_BODY_VEL_ANGULAR
+            ),
+            min_vel=geometry_pb2.SE2Velocity(
+                linear=geometry_pb2.Vec2(x=-MAX_BODY_VEL_LINEAR, y=-MAX_BODY_VEL_LINEAR), 
+                angular=-MAX_BODY_VEL_ANGULAR
+            )
+        )
+        
+        mobility_params = spot_command_pb2.MobilityParams(vel_limit=speed_limit)
+        mobility_command.synchronized_command.mobility_command.params.CopyFrom(RobotCommandBuilder._to_any(mobility_params))
+
+        # Reference and end times
+        mobility_command.synchronized_command.mobility_command.se2_trajectory_request.trajectory.reference_time.CopyFrom(ref_time)
+        end_time = seconds_to_timestamp(timestamp_to_sec(ref_time) + times[-1])
+        mobility_command.synchronized_command.mobility_command.se2_trajectory_request.end_time.CopyFrom(end_time)
+
+        # Se2 trajectory
+        for timestamp, (x_vision, y_vision, yaw_vision) in zip(times, body_points):
+            # Add points to trajectory
+            point = mobility_command.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points.add()
+            point.pose.position.x = x_vision
+            point.pose.position.y = y_vision
+            point.pose.angle = yaw_vision
+            duration = seconds_to_duration(timestamp)
+            point.time_since_reference.CopyFrom(duration)
+    
+        # Combine gripper, arm and mobility commands into synchronized command
+        command = RobotCommandBuilder.build_synchro_command(mobility_command, arm_command, gripper_command)
+
+        return command
+
+    def get_body_corrected_command(self, robot_cmd):
+        """ 
+        Returns command to correct any SE2 body pose error after execution of a mobile manipulation command using vision-based odometry.
+        Extracts the last commanded body position from the input command, computes the error between the current state and the commanded position, and corrects the body position accordingly. Commands are assumed to be in the VISION frame.
+        Args:
+            robot_cmd: RobotCommand containing synchronized mobility, arm, and gripper commands
+        Returns:
+            corrected_robot_cmd: RobotCommand with corrected body positions
+            end_time_secs: float indicating the end time for the command execution
+        """
+
+        TIMESTAMP_SHIFT = 0.3
+
+        robot_state = self._lease_manager._robot_state_client.get_robot_state()
+        vision_T_body = get_vision_tform_body(robot_state.kinematic_state.transforms_snapshot)
+
+        # Extract last commanded point for the body
+        commanded = robot_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.points[-1]
+
+        # Compute error
+        dx = vision_T_body.position.x - commanded.pose.position.x
+        dy = vision_T_body.position.y - commanded.pose.position.y
+        dyaw = vision_T_body.rot.to_yaw() - commanded.pose.angle
+
+        # Extract last positions from the robot command
+        # The last point contains body (x, y, yaw), then arm joints, then gripper
+        last_body_x = commanded.pose.position.x
+        last_body_y = commanded.pose.position.y
+        last_body_yaw = commanded.pose.angle
+        
+        # Compute position correction
+        corrected_positions = [last_body_x - dx, last_body_y - dy, last_body_yaw - dyaw]
+        
+        # Extract arm and gripper positions from synchronized command
+        arm_traj = robot_cmd.synchronized_command.arm_command.arm_joint_move_command.trajectory
+        gripper_traj = robot_cmd.synchronized_command.gripper_command.claw_gripper_command.trajectory
+        
+        arm_end_pos = arm_traj.points[-1].position
+        last_arm_positions = [arm_end_pos.sh0.value, arm_end_pos.sh1.value, arm_end_pos.el0.value, arm_end_pos.el1.value, arm_end_pos.wr0.value, arm_end_pos.wr1.value] # shoulder yaw, shoulder pitch, elbow pitch, elbow roll, wrist pitch, wrist roll
+        last_gripper_position = gripper_traj.points[-1].point
+        
+        # Combine into full mobile manipulation point
+        corrected_positions.extend(last_arm_positions)
+        corrected_positions.append(last_gripper_position)
+        
+        # Extract last timestamp and compute corrected timestamp
+        last_timestamp = commanded.time_since_reference.seconds + commanded.time_since_reference.nanos / 1e9
+        corrected_timestamp = last_timestamp + TIMESTAMP_SHIFT
+        
+        # Extract reference time from the original command
+        ref_time_proto = robot_cmd.synchronized_command.mobility_command.se2_trajectory_request.trajectory.reference_time
+        ref_time_seconds = timestamp_to_sec(ref_time_proto) + TIMESTAMP_SHIFT
+        ref_time = seconds_to_timestamp(ref_time_seconds)
+        
+        corrected_robot_cmd = self.create_mobile_manipulation_command([corrected_positions], [corrected_timestamp], ref_time)
+        end_time_secs = time.time() + TIMESTAMP_SHIFT
+        return corrected_robot_cmd, end_time_secs
+
+    # Execute long mobile manipulation trajectories
+    def mobile_manipulation_long_trajectory_executor(
+        self, traj_point_positions, traj_point_velocities, timepoints, cancel_event: threading.Event
+    ) -> None:
+
+        # Make sure the robot is powered on (which implicitly implies that it's estopped as well)
+        try:
+            if self._lease_manager.robot.is_powered_on(5):
+                self._logger.info("Spot is about to move its whole body.")
+            else:
+                self._logger.warn("Cannot execute mobile manipulation long trajectory, robot is not powered on")
+                return False
+        except RpcError as e:
+            self._logger.warn(f"Cannot execute mobile manipulation long trajectory, unable to communicate with robot\n\tMsg: {e}")
+            return False
+
+        start_time = time.time()
+        ref_time = seconds_to_timestamp(start_time)
+
+        # Initialize trajectory manager to extract slices from the original trajectory for execution
+        mobile_manipulation_trajectory_manager = TrajectoryManager(
+            points=traj_point_positions,
+            times_since_ref=timepoints,
+            ref_time=start_time
+        )
+
+        while not mobile_manipulation_trajectory_manager.done():
+            if cancel_event.is_set():
+                self.stop_robot()
+                self._logger.info("Mobile manipulation trajectory action cancelled early. Stopping robot")
+                return False
+
+            window, timestamps, sleep_time = mobile_manipulation_trajectory_manager.get_window(MAX_MOBILE_MANIPULATION_POINTS)
+
+            robot_cmd = self.create_mobile_manipulation_command(window, timestamps, ref_time)
+
+            success, msg, _ = self._lease_manager.robot_command(robot_cmd, end_time_secs=time.time()+sleep_time)
+
+            if not success:
+                self._logger.warn(f"mobile_manipulation_long_trajectory_executor: Error executing robot command: {msg}")
+                return False
+
+            if mobile_manipulation_trajectory_manager.last():
+                time.sleep(sleep_time)
+            else:
+                time.sleep(max(sleep_time - 0.2, 0))
+
+        self._logger.info("Successfully executed mobile manipulation trajectory")
+        return True
 
     def body_manipulation_trajectory_executor(
             self, body_trajectory: List[SE3Pose], arm_trajectory: List[List[float]], timestamps: List[float]
@@ -651,7 +848,47 @@ class SpotManipulationDriver(object):
             traj_index = traj_index + 1
         return success
 
-    def image_to_grasp(self, image, pixel_coordinates):
+    def add_grasp_constraints(self, grasp, grasp_strategy: GraspStrategy) -> None:
+
+        grasp.grasp_params.grasp_params_frame_name = VISION_FRAME_NAME
+        constraint = grasp.grasp_params.allowable_orientation.add()
+
+        if grasp_strategy == GraspStrategy.TOP_DOWN_GRASP or grasp_strategy == GraspStrategy.TOP_DOWN_GRASP.value:
+
+            # Constrain to align the x-axis of the gripper with the -z-axis of the vision frame
+            axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0) # of the gripper
+            axis_to_align_with_ewrt_vo = geometry_pb2.Vec3(x=0, y=0, z=-1) # of the vision frame
+
+            # Add tolerance to the constraints, about 30 degrees
+            constraint.vector_alignment_with_tolerance.threshold_radians = 0.2618
+            grasp.grasp_params.grasp_palm_to_fingertip = (
+                0.6
+            )  # might need to adjust for object size
+
+        elif grasp_strategy == GraspStrategy.HORIZONTAL_GRASP or grasp_strategy == GraspStrategy.HORIZONTAL_GRASP.value:
+
+
+            # Constrain to align the y-axis of the gripper with the z-axis of the vision frame
+            axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=0, y=1, z=0)
+            axis_to_align_with_ewrt_vo = geometry_pb2.Vec3(x=0, y=0, z=1)
+
+            # Add tolerance to the constraints, about 30 degrees
+            constraint.vector_alignment_with_tolerance.threshold_radians = 0.0873
+            grasp.grasp_params.grasp_palm_to_fingertip = (
+                0.3
+            )  # might need to adjust for object size
+        
+        else:
+            raise ValueError(f"Unknown grasp strategy: {grasp_strategy}")
+
+        # Add the constraints to the proto message
+        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
+            axis_on_gripper_ewrt_gripper)
+        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
+            axis_to_align_with_ewrt_vo)
+
+
+    def image_to_grasp(self, image, pixel_coordinates: List, grasp_strategy: GraspStrategy):
 
         # Filling out grasping request
         pick_vec = geometry_pb2.Vec2(x=pixel_coordinates[0], y=pixel_coordinates[1])
@@ -661,35 +898,9 @@ class SpotManipulationDriver(object):
             frame_name_image_sensor=image.shot.frame_name_image_sensor,
             camera_model=image.source.pinhole,
         )
-        grasp.grasp_params.grasp_palm_to_fingertip = (
-            0.6
-        )  # might need to adjust for object size
 
-        # Specify top-down grasp
-
-        # Add a constraint that requests that the x-axis of the gripper is pointing in the
-        # negative-z direction in the vision frame.
-
-        # The axis on the gripper is the x-axis.
-        axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0)
-
-        # The axis in the vision frame is the negative z-axis
-        axis_to_align_with_ewrt_vision = geometry_pb2.Vec3(x=0, y=0, z=-1)
-
-        # Add the vector constraint to our proto.
-        constraint = grasp.grasp_params.allowable_orientation.add()
-        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
-            axis_on_gripper_ewrt_gripper
-        )
-        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
-            axis_to_align_with_ewrt_vision
-        )
-
-        # Tolerance for top-down grasp
-        constraint.vector_alignment_with_tolerance.threshold_radians = 1.22
-
-        # Specify the frame we're using.
-        grasp.grasp_params.grasp_params_frame_name = VISION_FRAME_NAME
+        # Add grasp constraint
+        self.add_grasp_constraints(grasp, grasp_strategy)
 
         # Build the proto
         grasp_request = manipulation_api_pb2.ManipulationApiRequest(
@@ -704,6 +915,8 @@ class SpotManipulationDriver(object):
         # Wait for the grasp to finish
         grasp_done = False
         failed = False
+        timeout = False
+        timeout_duration = 20
         time_start = time.time()
         while not grasp_done:
             feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
@@ -732,22 +945,29 @@ class SpotManipulationDriver(object):
             ]
 
             failed = current_state in failed_states
+
+            # Check if the operation has exceeded the timeout duration
+            if current_time > timeout_duration:
+                self._lease_manager.robot.logger.error("Operation timed out after {time:.1f} seconds.".format(time=current_time))
+                timeout = True  # Exit the loop
+
             grasp_done = (
                 current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED
-                or failed
+                or failed or timeout
             )
 
             time.sleep(0.1)
 
-        holding_trash = not failed
+        holding_trash = not (failed or timeout)
 
-        # Move the arm to a carry position.
-        self._lease_manager.robot.logger.info("Grasp succeeded.")
-        self._lease_manager.robot.logger.info("Going to ready pose.")
-        ready_cmd = RobotCommandBuilder.arm_ready_command()
-        self._lease_manager.robot_command(ready_cmd)
+        if holding_trash: 
+            # Move the arm to the ready position.
+            self._lease_manager.robot.logger.info("Grasp succeeded.")
+            self._lease_manager.robot.logger.info("Going to ready pose.")
+            ready_cmd = RobotCommandBuilder.arm_ready_command()
+            self._lease_manager.robot_command(ready_cmd)
 
-        time.sleep(0.75) # Wait for the ready command to finish
+            time.sleep(0.25) # Wait for the ready command to finish
         return holding_trash
 
 
@@ -785,16 +1005,53 @@ class SpotManipulationDriver(object):
         robot_command.synchronized_command.arm_command.arm_cartesian_command.CopyFrom(cartesian_command)
         end_time = time.time() + timeout if timeout is not None else None
         return self.lease_manager.robot_command(robot_command, end_time)
+    
+    def solve_ik(self, target_pose: SE3Pose, gaze_target: Vec3Proto = None, wrist_tform_tool: SE3Pose = None, joint_state: dict[str, float] = {}) -> tuple[bool, dict, SE3Pose]:
+        """Request an Inverse Kinematics solution from the Boston Dynamics software stack.
+           The solution includes both body and arm state
 
-    def stand_robot(self) -> Tuple[bool, Text]:
-        self._lease_manager.robot.logger.info("Commanding robot to stand...")
-        try:
-            blocking_stand(self._lease_manager.command_client, timeout_sec=10)
-        except CommandFailedErrorWithFeedback as error:
-            return False, error.message
-        except TimedOutError as error:
-            return False, error.error_message
-        return True, "Robot standing"
+        Args:
+            target_pose - The pose for the end effector to reach
+            gaze_target - The point at which the end effector x-axis should point
+            joint_state - A dict of joint targets for the nomial robot state. The IK solution will try
+                          to enforce joint positions close to this if possible
+        Returns:
+            success          - Whether the operation was successful and there was a valid robot config
+            arm_joint_states - The joint values for the robot arm in the solution
+            body_position    - The SE3 pose of the robot in the odom frame in the IK solution
+        """
+
+        nominal_joint_names = ['sh0', 'sh1', 'el0', 'el1', 'wr0', 'wr1']
+        nominal_joint_position = ArmJointPosition()
+        for joint_name in nominal_joint_names:
+            if f'arm0.{joint_name}' in joint_state:
+                getattr(nominal_joint_position, joint_name).value = joint_state[f'arm0.{joint_name}']
+
+        if wrist_tform_tool is not None:
+            wrist_mounted_tool = InverseKinematicsRequest.WristMountedTool(wrist_tform_tool=wrist_tform_tool.to_proto())
+        else:
+            wrist_mounted_tool = InverseKinematicsRequest.WristMountedTool()
+
+        ik_request = InverseKinematicsRequest(
+            root_frame_name=ODOM_FRAME_NAME,
+            nominal_arm_configuration_overrides=nominal_joint_position,
+            wrist_mounted_tool=wrist_mounted_tool
+        )
+
+        if gaze_target is not None:
+            ik_request.tool_gaze_task.CopyFrom(InverseKinematicsRequest.ToolGazeTask(task_tform_desired_tool=target_pose.to_proto(), target_in_task=gaze_target))
+        else:
+            ik_request.tool_pose_task.CopyFrom(InverseKinematicsRequest.ToolPoseTask(task_tform_desired_tool=target_pose.to_proto()))
+
+        response: InverseKinematicsResponseProto = self._ik_client.inverse_kinematics(ik_request)
+        if response.status != InverseKinematicsResponse.Status.STATUS_OK:
+            self._logger.warn('Inverse kinematics request failed, target is unreachable')
+            return False, {}, SE3Pose(0, 0, 0, 0)
+
+        arm_joint_state = {joint.name: joint.position.value for joint in response.robot_configuration.joint_states}
+        odom_tform_body = get_a_tform_b(response.robot_configuration.transforms_snapshot, ODOM_FRAME_NAME, BODY_FRAME_NAME)
+
+        return (True, arm_joint_state, odom_tform_body)
 
     def stow_arm(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.arm_stow_command()
@@ -813,7 +1070,7 @@ class SpotManipulationDriver(object):
         return success, msg
 
     def close_gripper(self) -> Tuple[bool, Text]:
-        robot_cmd = RobotCommandBuilder.claw_gripper_close_command()
+        robot_cmd = RobotCommandBuilder.claw_gripper_close_command(max_torque=GRIPPER_CLOSE_TORQUE)
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
 

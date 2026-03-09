@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<robot name="rl_kit_srdf" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <disable_collisions link1="arm0_base_link" link2="rl_kit_jetson_housing_box" reason="Adjacent"/>
+    <disable_collisions link1="arm0_base_link" link2="rl_kit_wire_housing_box" reason="Adjacent"/>
+    <disable_collisions link1="arm0_shoulder_pitch" link2="rl_kit_jetson_housing_box" reason="Never"/>
+    <disable_collisions link1="arm0_shoulder_pitch" link2="rl_kit_wire_housing_box" reason="Never"/>
+    <disable_collisions link1="arm0_shoulder_roll" link2="rl_kit_jetson_housing_box" reason="Never"/>
+    <disable_collisions link1="arm0_shoulder_yaw" link2="rl_kit_jetson_housing_box" reason="Never"/>
+    <disable_collisions link1="arm0_shoulder_yaw" link2="rl_kit_wire_housing_box" reason="Never"/>
+    <disable_collisions link1="body" link2="rl_kit_jetson_housing_box" reason="Adjacent"/>
+    <disable_collisions link1="body" link2="rl_kit_wire_housing_box" reason="Adjacent"/>
+    <disable_collisions link1="front_left_hip" link2="rl_kit_jetson_housing_box" reason="Never"/>
+    <disable_collisions link1="front_left_hip" link2="rl_kit_wire_housing_box" reason="Never"/>
+    <disable_collisions link1="front_left_upper_leg" link2="rl_kit_jetson_housing_box" reason="Never"/>
+    <disable_collisions link1="front_right_hip" link2="rl_kit_jetson_housing_box" reason="Never"/>
+    <disable_collisions link1="front_right_hip" link2="rl_kit_wire_housing_box" reason="Never"/>
+    <disable_collisions link1="front_right_upper_leg" link2="rl_kit_jetson_housing_box" reason="Never"/>
+    <disable_collisions link1="rear_left_hip" link2="rl_kit_jetson_housing_box" reason="Never"/>
+    <disable_collisions link1="rear_left_hip" link2="rl_kit_wire_housing_box" reason="Never"/>
+    <disable_collisions link1="rear_left_upper_leg" link2="rl_kit_wire_housing_box" reason="Never"/>
+    <disable_collisions link1="rear_right_hip" link2="rl_kit_jetson_housing_box" reason="Never"/>
+    <disable_collisions link1="rear_right_hip" link2="rl_kit_wire_housing_box" reason="Never"/>
+    <disable_collisions link1="rear_right_upper_leg" link2="rl_kit_wire_housing_box" reason="Never"/>
+    <disable_collisions link1="rl_kit_jetson_housing_box" link2="rl_kit_wire_housing_box" reason="Adjacent"/>
+</robot>

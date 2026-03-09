@@ -2,9 +2,9 @@ moveit_setup_assistant_config:
   urdf:
     package: spot_description
     relative_path: urdf/spot.urdf.xacro
-    xacro_args: has_arm:=true has_eap:=true
+    xacro_args: has_arm:=true has_rl_kit:=true kinematic_model:=body_assist
   srdf:
-    relative_path: config/spot.srdf
+    relative_path: config/spot.srdf.xacro
   package_settings:
     author_name: Alex Navarro
     author_email: alexnavtt@utexas.edu

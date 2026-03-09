@@ -2,10 +2,31 @@
 
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 
+trajectory_execution:
+  allowed_start_tolerance: 0.10
+  execution_duration_monitoring: False
+
 moveit_simple_controller_manager:
   controller_names:
+    - mobile_manipulation_controller
     - body_manipulation_controller
     - arm_controller
+
+  mobile_manipulation_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - body_x
+      - body_y
+      - body_or
+      - arm0_shoulder_yaw
+      - arm0_shoulder_pitch
+      - arm0_elbow_pitch
+      - arm0_elbow_roll
+      - arm0_wrist_pitch
+      - arm0_wrist_roll
+      - arm0_fingers
 
   body_manipulation_controller:
     type: FollowJointTrajectory
