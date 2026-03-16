@@ -6,7 +6,9 @@
 #include <moveit/utils/moveit_error_code.h>
 #include <moveit/robot_model/robot_model.h>
 #include <moveit/robot_state/robot_state.h>
+#include <moveit/robot_state/conversions.h>
 #include <moveit/robot_model_loader/robot_model_loader.h>
+#include <moveit/planning_scene_monitor/planning_scene_monitor.h>
 
 #include <std_msgs/msg/string.hpp>
 #include <moveit_msgs/srv/get_motion_plan.hpp>
@@ -78,6 +80,9 @@ public:
         robot_model_loader_ = std::make_shared<robot_model_loader::RobotModelLoader>(shared_from_this(), opts);
         robot_model_ = robot_model_loader_->getModel();
         robot_state_ = std::make_shared<moveit::core::RobotState>(robot_model_);
+        scene_monitor_ = std::make_shared<planning_scene_monitor::PlanningSceneMonitor>(shared_from_this(), robot_model_loader_);
+        scene_monitor_->startSceneMonitor();
+        scene_monitor_->startStateMonitor();
         init_timer_.reset();
     }
 
@@ -235,6 +240,13 @@ public:
                 case action_msgs::msg::GoalStatus::STATUS_EXECUTING:
                 case action_msgs::msg::GoalStatus::STATUS_CANCELING:
                 {
+                    // Check to see if the motion is still valid
+                    planning_scene_monitor::LockedPlanningSceneRO scene_reader(scene_monitor_);
+                    if (!scene_reader->isPathValid(active_trajectory_start_state_, active_trajectory_)) {
+                        RCLCPP_WARN(get_logger(), "The active trajectory is no longer collision free. Aborting");
+                        cancelActiveQuery();
+                    }
+
                     const rclcpp::Duration elapsed_time = now() - motion_start_time_;
                     if (elapsed_time.seconds() > 10.0) {
                         RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5, "Still waiting for Spot driver to complete motion");
@@ -243,9 +255,9 @@ public:
                 }
                 
                 case action_msgs::msg::GoalStatus::STATUS_UNKNOWN:
-                RCLCPP_WARN(get_logger(), "Stable motion returned status UNKNOWN, aborting");
-                cancelActiveQuery();
-                return;
+                    RCLCPP_WARN(get_logger(), "Stable motion returned status UNKNOWN, aborting");
+                    cancelActiveQuery();
+                    return;
                 
                 case action_msgs::msg::GoalStatus::STATUS_ABORTED:
                 case action_msgs::msg::GoalStatus::STATUS_CANCELED:
@@ -265,6 +277,11 @@ public:
     // --------------------------------------------------------------------------------------------
 
     spot_msgs::action::ArmCartesianCommand::Goal generateFullTrajectory(const trajectory_msgs::msg::JointTrajectory& joint_traj) {
+        // Mark this as the active trajectory
+        active_trajectory_.joint_trajectory = joint_traj;
+        planning_scene_monitor::LockedPlanningSceneRO scene_reader(scene_monitor_);
+        moveit::core::robotStateToRobotStateMsg(scene_reader->getCurrentState(), active_trajectory_start_state_);
+
         spot_msgs::action::ArmCartesianCommand::Goal spot_arm_command;
         spot_arm_command.joint_waypoints = joint_traj;
         spot_arm_command.x_axis_mode = spot_arm_command.AXIS_MODE_POSITION;
@@ -324,6 +341,11 @@ private:
     robot_model_loader::RobotModelLoaderPtr robot_model_loader_;
     moveit::core::RobotModelPtr robot_model_;
     moveit::core::RobotStatePtr robot_state_;
+
+    // Collision Monitoring
+    moveit_msgs::msg::RobotTrajectory active_trajectory_;
+    moveit_msgs::msg::RobotState active_trajectory_start_state_;
+    planning_scene_monitor::PlanningSceneMonitorPtr scene_monitor_;
 
     // MoveIt Planning Requests
     rclcpp::Time motion_plan_request_start_time_;
