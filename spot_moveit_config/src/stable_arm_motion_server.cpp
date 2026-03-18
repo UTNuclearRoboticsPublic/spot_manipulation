@@ -14,6 +14,7 @@
 #include <moveit_msgs/srv/get_motion_plan.hpp>
 #include <moveit_msgs/srv/get_cartesian_path.hpp>
 #include <spot_msgs/action/arm_cartesian_command.hpp>
+#include <spot_msgs/action/stable_arm_command.hpp>
 #include <moveit_msgs/action/move_group.hpp>
 #include <moveit_msgs/action/execute_trajectory.hpp>
 
@@ -41,6 +42,13 @@ public:
             std::bind(&StableArmMotionServer::handleTrajectoryActionRequest, this, _1, _2),
             std::bind(&StableArmMotionServer::handleTrajectoryActionCancel, this, _1),
             std::bind(&StableArmMotionServer::handleTrajectoryActionAccepted, this, _1)
+        );
+
+        stable_command_server_ = rclcpp_action::create_server<spot_msgs::action::StableArmCommand>(this,
+            "/spot_moveit/execute_ee_trajectory",
+            std::bind(&StableArmMotionServer::handleEETrajectoryActionRequest, this, _1, _2),
+            std::bind(&StableArmMotionServer::handleEETrajectoryActionCancel, this, _1),
+            std::bind(&StableArmMotionServer::handleEETrajectoryActionAccepted, this, _1)
         );
 
         urdf_sub_ = create_subscription<std_msgs::msg::String>("/spot_driver/robot_description", rclcpp::QoS(1).transient_local(),
@@ -118,6 +126,7 @@ public:
             auto result = std::make_shared<moveit_msgs::action::MoveGroup::Result>();
             result->error_code.val = moveit_msgs::msg::MoveItErrorCodes::COMMUNICATION_FAILURE;
             goal->abort(result);
+            return;
         }
 
         auto planning_goal = std::make_shared<moveit_msgs::srv::GetMotionPlan::Request>();
@@ -158,9 +167,60 @@ public:
             auto result = std::make_shared<moveit_msgs::action::ExecuteTrajectory::Result>();
             result->error_code.val = moveit_msgs::msg::MoveItErrorCodes::COMMUNICATION_FAILURE;
             goal->abort(result);
+            return;
         }
 
         spot_msgs::action::ArmCartesianCommand::Goal full_trajectory = generateFullTrajectory(goal->get_goal()->trajectory.joint_trajectory);
+        spot_driver_motion_request_future_ = spot_driver_motion_client_->async_send_goal(full_trajectory);
+        motion_request_start_time_ = now();
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
+
+    rclcpp_action::GoalResponse handleEETrajectoryActionRequest(const rclcpp_action::GoalUUID&, spot_msgs::action::StableArmCommand::Goal::ConstSharedPtr goal) {
+        RCLCPP_INFO(get_logger(), "Received known end effector trajectory execution request");
+        if (isQueryActive()) {
+            RCLCPP_WARN(get_logger(), "Cancelling previously active request");
+            cancelActiveQuery();
+        }
+        if (goal->pose_waypoints.header.frame_id != "odom") {
+            RCLCPP_ERROR(get_logger(), "Waypoints must be defined in the robot's odometry frame");
+            return rclcpp_action::GoalResponse::REJECT;
+        }
+        if (goal->pose_waypoints.poses.size() != goal->joint_trajectory.points.size()) {
+            RCLCPP_ERROR(get_logger(), "You must provide an equal number of joint and Cartesian waypoints. You gave %zd and %zd", goal->joint_trajectory.points.size(), goal->pose_waypoints.poses.size());
+            return rclcpp_action::GoalResponse::REJECT;
+        }
+        return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
+
+    rclcpp_action::CancelResponse handleEETrajectoryActionCancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<spot_msgs::action::StableArmCommand>> goal) {
+        auto result = std::make_shared<spot_msgs::action::StableArmCommand::Result>();
+        result->success = false;
+        result->message = "Trajectory action cancelled by user";
+        goal->abort(result);
+        return rclcpp_action::CancelResponse::ACCEPT;
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
+
+    void handleEETrajectoryActionAccepted (const std::shared_ptr<rclcpp_action::ServerGoalHandle<spot_msgs::action::StableArmCommand>> goal) {
+        // Make planning request of moveit
+        if (!spot_driver_motion_client_->wait_for_action_server(std::chrono::seconds(5))) {
+            auto result = std::make_shared<spot_msgs::action::StableArmCommand::Result>();
+            result->success = false;
+            result->message = "Did not detect Spot drvier action server wtihin 5 seconds";
+            RCLCPP_ERROR(get_logger(), result->message.c_str());
+            goal->abort(result);
+            return;
+        }
+
+        spot_msgs::action::ArmCartesianCommand::Goal full_trajectory = populateKnownTrajectory(goal->get_goal()->joint_trajectory, goal->get_goal()->pose_waypoints);
         spot_driver_motion_request_future_ = spot_driver_motion_client_->async_send_goal(full_trajectory);
         motion_request_start_time_ = now();
     }
@@ -318,6 +378,30 @@ public:
     // --------------------------------------------------------------------------------------------
     // --------------------------------------------------------------------------------------------
 
+    spot_msgs::action::ArmCartesianCommand::Goal populateKnownTrajectory(const trajectory_msgs::msg::JointTrajectory& joint_traj, const geometry_msgs::msg::PoseArray& cartesian_traj) {
+        // Mark this as the active trajectory
+        active_trajectory_.joint_trajectory = joint_traj;
+        planning_scene_monitor::LockedPlanningSceneRO scene_reader(scene_monitor_);
+        moveit::core::robotStateToRobotStateMsg(scene_reader->getCurrentState(), active_trajectory_start_state_);
+
+        spot_msgs::action::ArmCartesianCommand::Goal spot_arm_command;
+        spot_arm_command.joint_waypoints = joint_traj;
+        spot_arm_command.x_axis_mode = spot_arm_command.AXIS_MODE_POSITION;
+        spot_arm_command.y_axis_mode = spot_arm_command.AXIS_MODE_POSITION;
+        spot_arm_command.z_axis_mode = spot_arm_command.AXIS_MODE_POSITION;
+        spot_arm_command.header.frame_id = "odom";
+
+         for (std::size_t traj_idx = 0; traj_idx < joint_traj.points.size(); traj_idx++) {
+            spot_arm_command.waypoints.push_back(cartesian_traj.poses[traj_idx]);
+            spot_arm_command.timestamps.push_back(rclcpp::Duration(joint_traj.points[traj_idx].time_from_start).seconds());
+        }
+
+        return spot_arm_command;
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
+
     bool isQueryActive() {
         return moveit_plan_future_.has_value() || spot_driver_motion_request_future_.valid() || spot_driver_goal_handle_;
     }
@@ -363,6 +447,7 @@ private:
     // Advertised MoveIt Server
     rclcpp_action::Server<moveit_msgs::action::MoveGroup>::SharedPtr move_group_server_;
     rclcpp_action::Server<moveit_msgs::action::ExecuteTrajectory>::SharedPtr trajectory_server_;
+    rclcpp_action::Server<spot_msgs::action::StableArmCommand>::SharedPtr stable_command_server_;
 };
 
 int main(int argc, char* argv[]) {
