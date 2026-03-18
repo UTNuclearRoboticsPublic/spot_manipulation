@@ -1,6 +1,8 @@
 sensors:
   - velodyne
-  - arm_cam
+  - hand_depth
+  - frontleft_depth
+  - frontright_depth
 
 velodyne:
   point_cloud_topic: /velodyne_points
@@ -12,12 +14,35 @@ velodyne:
   filtered_cloud_topic: spot_moveit_pointcloud
   sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
 
-arm_cam:
-  point_cloud_topic: /spot_pointclouds/hand_tof_points_mux
-  max_range: 2.0
+hand_depth:
+  sensor_plugin: occupancy_map_monitor/DepthImageOctomapUpdater
+  image_topic: /spot_image_server/depth/hand_rgb/image
+  queue_size: 5
+  near_clipping_plane_distance: 0.3
+  far_clipping_plane_distance: 5.0
+  shadow_threshold: 0.2
+  padding_scale: 1.0
   max_update_rate: 1.0
-  padding_offset: 0.1
-  padding_scale: 2.0
-  point_subsample: 1
-  filtered_cloud_topic: spot_cam_pointcloud
-  sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
+  filtered_cloud_topic: /spot_image_server/depth/hand_rgb/image/filtered_points
+
+frontleft_depth:
+  sensor_plugin: occupancy_map_monitor/DepthImageOctomapUpdater
+  image_topic: /spot_image_server/depth/frontleft/image
+  queue_size: 5
+  near_clipping_plane_distance: 0.3
+  far_clipping_plane_distance: 5.0
+  shadow_threshold: 0.2
+  padding_scale: 1.0
+  max_update_rate: 1.0
+  filtered_cloud_topic: /spot_image_server/depth/frontleft/image/filtered_points
+
+frontright_depth:
+  sensor_plugin: occupancy_map_monitor/DepthImageOctomapUpdater
+  image_topic: /spot_image_server/depth/frontright/image
+  queue_size: 5
+  near_clipping_plane_distance: 0.3
+  far_clipping_plane_distance: 5.0
+  shadow_threshold: 0.2
+  padding_scale: 1.0
+  max_update_rate: 1.0
+  filtered_cloud_topic: /spot_image_server/depth/frontleft/image/filtered_points
