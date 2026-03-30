@@ -270,7 +270,7 @@ public:
             } else if (status == std::future_status::timeout) {
                 const float elapsed_time = (now() - motion_plan_request_start_time_).seconds();
                 if (elapsed_time > 5.0) {
-                    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5, "Still waiting on response from MoveIt planning server");
+                    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "Still waiting on response from MoveIt planning server");
                 }
             }
         }
@@ -286,7 +286,7 @@ public:
             } else if (status == std::future_status::timeout) {
                 const float elapsed_time = (now() - motion_request_start_time_).seconds();
                 if (elapsed_time > 5.0) {
-                    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5, "Still waiting on response from Spot driver");
+                    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "Still waiting on response from Spot driver");
                 }
             }
         }
@@ -309,7 +309,7 @@ public:
 
                     const rclcpp::Duration elapsed_time = now() - motion_start_time_;
                     if (elapsed_time.seconds() > 10.0) {
-                        RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5, "Still waiting for Spot driver to complete motion");
+                        RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000, "Still waiting for Spot driver to complete motion");
                     }
                     return;
                 }
