@@ -405,7 +405,7 @@ def construct_arm_trajectory_cmd_sequence(msg: ArmCartesianCommand.Goal) -> list
         arm_trajectory_command = RobotCommandBuilder.arm_cartesian_move_helper(
             [pose],
             [timestamp],
-            root_frame_name = msg.header,
+            root_frame_name = msg.header.frame_id,
             max_acc = msg.max_acceleration if msg.max_acceleration > 0 else None,
             max_linear_vel = msg.max_linear_velocity if msg.max_linear_velocity > 0 else None,
             max_angular_vel = msg.max_angular_velocity if msg.max_angular_velocity > 0 else None,
