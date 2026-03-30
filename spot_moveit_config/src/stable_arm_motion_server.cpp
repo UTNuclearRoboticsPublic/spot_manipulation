@@ -302,7 +302,7 @@ public:
                 {
                     // Check to see if the motion is still valid
                     planning_scene_monitor::LockedPlanningSceneRO scene_reader(scene_monitor_);
-                    if (!scene_reader->isPathValid(active_trajectory_start_state_, active_trajectory_)) {
+                    if (!scene_reader->isPathValid(active_trajectory_start_state_, active_trajectory_, "arm")) {
                         RCLCPP_WARN(get_logger(), "The active trajectory is no longer collision free. Aborting");
                         cancelActiveQuery();
                     }
