@@ -38,14 +38,14 @@ public:
         );
 
         trajectory_server_ = rclcpp_action::create_server<moveit_msgs::action::ExecuteTrajectory>(this,
-            "/spot_moveit/execute_stable_trajectory",
+            "/spot_moveit/stable_execute_trajectory",
             std::bind(&StableArmMotionServer::handleTrajectoryActionRequest, this, _1, _2),
             std::bind(&StableArmMotionServer::handleTrajectoryActionCancel, this, _1),
             std::bind(&StableArmMotionServer::handleTrajectoryActionAccepted, this, _1)
         );
 
         stable_command_server_ = rclcpp_action::create_server<spot_msgs::action::StableArmCommand>(this,
-            "/spot_moveit/execute_ee_trajectory",
+            "/spot_moveit/execute_known_stable_trajectory",
             std::bind(&StableArmMotionServer::handleEETrajectoryActionRequest, this, _1, _2),
             std::bind(&StableArmMotionServer::handleEETrajectoryActionCancel, this, _1),
             std::bind(&StableArmMotionServer::handleEETrajectoryActionAccepted, this, _1)
