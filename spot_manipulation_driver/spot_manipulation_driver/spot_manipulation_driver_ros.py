@@ -668,7 +668,7 @@ class SpotManipulationDriverROS(Node):
         # If the command includes a joint trajectory, we have to handle that differently 
         if len(goal_handle.request.joint_waypoints.points) > 0:
             robot_command_list = ros_helpers.construct_arm_trajectory_cmd_sequence(goal_handle.request)
-            success, message, command_id = self.manipulation_driver.arm_cartesian_command_with_joint_configuration(robot_command_list)
+            success, message, command_id = self.manipulation_driver.arm_cartesian_command_with_joint_configuration(robot_command_list, 0.5)
         else:
             try:
                 robot_command = ros_helpers.cartesian_request_to_command(goal_handle.request, self.tf_buffer)
