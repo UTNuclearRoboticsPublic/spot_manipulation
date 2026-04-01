@@ -341,8 +341,8 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
             )
             for (ros_pose, time_offset) in zip(msg.waypoints, msg.timestamps)
         ],
-        pos_interpolation = trajectory_pb2.POS_INTERP_CUBIC,
-        ang_interpolation = trajectory_pb2.ANG_INTERP_CUBIC_EULER
+        pos_interpolation = trajectory_pb2.POS_INTERP_LINEAR,
+        ang_interpolation = trajectory_pb2.ANG_INTERP_LINEAR
     )
 
     # Form the wrench trajectory
@@ -411,6 +411,8 @@ def construct_arm_trajectory_cmd_sequence(msg: ArmCartesianCommand.Goal) -> list
             max_angular_vel = msg.max_angular_velocity if msg.max_angular_velocity > 0 else None,
             ref_time= ref_time
         )
+        arm_trajectory_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.pos_interpolation = trajectory_pb2.POS_INTERP_LINEAR
+        arm_trajectory_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.ang_interpolation = trajectory_pb2.ANG_INTERP_LINEAR
         arm_command_list.append(arm_trajectory_command)
 
     joint_trajectory: list[JointTrajectoryPoint] = msg.joint_waypoints.points
