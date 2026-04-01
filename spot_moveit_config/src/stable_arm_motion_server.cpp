@@ -133,6 +133,7 @@ public:
         planning_goal->motion_plan_request = goal->get_goal()->request;
         moveit_plan_future_ = moveit_plan_client_->async_send_request(planning_goal);
         motion_plan_request_start_time_ = now();
+        move_group_goal_handle_ = goal;
     }
 
     // --------------------------------------------------------------------------------------------
@@ -173,6 +174,7 @@ public:
         spot_msgs::action::ArmCartesianCommand::Goal full_trajectory = generateFullTrajectory(goal->get_goal()->trajectory.joint_trajectory);
         spot_driver_motion_request_future_ = spot_driver_motion_client_->async_send_goal(full_trajectory);
         motion_request_start_time_ = now();
+        trajectory_goal_handle_ = goal;
     }
 
     // --------------------------------------------------------------------------------------------
@@ -223,6 +225,7 @@ public:
         spot_msgs::action::ArmCartesianCommand::Goal full_trajectory = populateKnownTrajectory(goal->get_goal()->joint_trajectory, goal->get_goal()->pose_waypoints);
         spot_driver_motion_request_future_ = spot_driver_motion_client_->async_send_goal(full_trajectory);
         motion_request_start_time_ = now();
+        stable_command_goal_handle_ = goal;
     }
 
     // --------------------------------------------------------------------------------------------
@@ -238,6 +241,28 @@ public:
             spot_driver_motion_client_->async_cancel_all_goals();
             spot_driver_motion_request_future_ = decltype(spot_driver_motion_request_future_){};
             spot_driver_goal_handle_.reset();
+        }
+
+        if (move_group_goal_handle_) {
+            auto result = std::make_shared<moveit_msgs::action::MoveGroup::Result>();
+            result->error_code.val = moveit_msgs::msg::MoveItErrorCodes::PREEMPTED;
+            move_group_goal_handle_->abort(result);
+            move_group_goal_handle_.reset();
+        }
+        
+        if (trajectory_goal_handle_) {
+            auto result = std::make_shared<moveit_msgs::action::ExecuteTrajectory::Result>();
+            result->error_code.val = moveit_msgs::msg::MoveItErrorCodes::PREEMPTED;
+            trajectory_goal_handle_->abort(result);
+            trajectory_goal_handle_.reset();
+        }
+
+        if (stable_command_goal_handle_) {
+            auto result = std::make_shared<spot_msgs::action::StableArmCommand::Result>();
+            result->success = false;
+            result->message = "Preempted";
+            stable_command_goal_handle_->abort(result);
+            stable_command_goal_handle_.reset();
         }
     }
 
@@ -326,6 +351,28 @@ public:
                     return;
 
                 case action_msgs::msg::GoalStatus::STATUS_SUCCEEDED:
+                    if (move_group_goal_handle_) {
+                        auto result = std::make_shared<moveit_msgs::action::MoveGroup::Result>();
+                        result->error_code.val = moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+                        move_group_goal_handle_->succeed(result);
+                        move_group_goal_handle_.reset();
+                    }
+                    
+                    if (trajectory_goal_handle_) {
+                        auto result = std::make_shared<moveit_msgs::action::ExecuteTrajectory::Result>();
+                        result->error_code.val = moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+                        trajectory_goal_handle_->succeed(result);
+                        trajectory_goal_handle_.reset();
+                    }
+
+                    if (stable_command_goal_handle_) {
+                        auto result = std::make_shared<spot_msgs::action::StableArmCommand::Result>();
+                        result->success = true;
+                        result->message = "Succeeded";
+                        stable_command_goal_handle_->succeed(result);
+                        stable_command_goal_handle_.reset();
+                    }
+
                     RCLCPP_INFO(get_logger(), "Stable arm motion complete");
                     spot_driver_goal_handle_.reset();
                     return;
@@ -448,6 +495,9 @@ private:
     rclcpp_action::Server<moveit_msgs::action::MoveGroup>::SharedPtr move_group_server_;
     rclcpp_action::Server<moveit_msgs::action::ExecuteTrajectory>::SharedPtr trajectory_server_;
     rclcpp_action::Server<spot_msgs::action::StableArmCommand>::SharedPtr stable_command_server_;
+    std::shared_ptr<rclcpp_action::ServerGoalHandle<moveit_msgs::action::MoveGroup>> move_group_goal_handle_;
+    std::shared_ptr<rclcpp_action::ServerGoalHandle<moveit_msgs::action::ExecuteTrajectory>> trajectory_goal_handle_;
+    std::shared_ptr<rclcpp_action::ServerGoalHandle<spot_msgs::action::StableArmCommand>> stable_command_goal_handle_;
 };
 
 int main(int argc, char* argv[]) {
