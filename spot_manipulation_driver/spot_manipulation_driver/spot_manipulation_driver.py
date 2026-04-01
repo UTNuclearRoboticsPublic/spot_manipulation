@@ -49,7 +49,7 @@ from bosdyn.api.arm_command_pb2 import ArmCommand, ArmJointMoveCommand, ArmJoint
 from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAME, HAND_FRAME_NAME, BODY_FRAME_NAME,
                                         GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b, get_vision_tform_body)
 from bosdyn.client.math_helpers import SE3Pose
-from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command)
+from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command, block_until_arm_arrives)
 from bosdyn.client.exceptions import RpcError
 from bosdyn.client.inverse_kinematics import InverseKinematicsClient
 from bosdyn.util import seconds_to_timestamp, seconds_to_duration, timestamp_to_sec
@@ -1017,6 +1017,8 @@ class SpotManipulationDriver(object):
             time_to_go = command_timestamp - elapsed_time
             if time_to_go > 0:
                 time.sleep(time_to_go * fraction_of_move_before_next_cmd)
+
+        block_until_arm_arrives(self._lease_manager.command_client, command_id)
         self._logger.info('Finished arm cartesian trajectory')
         return success, message, command_id
     
