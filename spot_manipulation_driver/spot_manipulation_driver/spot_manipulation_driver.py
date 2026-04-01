@@ -1010,14 +1010,15 @@ class SpotManipulationDriver(object):
     def arm_cartesian_command_with_joint_configuration(self, arm_command_list, fraction_of_move_before_next_cmd = 0.9):
         start_time = time.time()
         for arm_command in arm_command_list:
-            res = self.lease_manager.robot_command(arm_command)
+            success, message, command_id = self.lease_manager.robot_command(arm_command)
             command_timestamp = arm_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.points[0].time_since_reference.seconds + \
                                 arm_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.points[0].time_since_reference.nanos / 1000000000
             elapsed_time = time.time() - start_time
             time_to_go = command_timestamp - elapsed_time
             if time_to_go > 0:
                 time.sleep(time_to_go * fraction_of_move_before_next_cmd)
-        return res
+        self._logger.info('Finished arm cartesian trajectory')
+        return success, message, command_id
     
     def solve_ik(self, target_pose: SE3Pose, gaze_target: Vec3Proto = None, wrist_tform_tool: SE3Pose = None, joint_state: dict[str, float] = {}) -> tuple[bool, dict, SE3Pose]:
         """Request an Inverse Kinematics solution from the Boston Dynamics software stack.
