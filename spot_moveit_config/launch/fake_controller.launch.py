@@ -11,10 +11,14 @@ from spot_description.get_accessories import get_accessories_from_env
 def generate_launch_description():
     launch_args = [
         DeclareLaunchArgument('rviz', default_value='True'),
+        DeclareLaunchArgument('kinematic_model',
+                            description='The kinematic model to use for the Spot description',
+                            choices=['none', 'body_assist', 'mobile_manipulation'],
+                            default_value='none')
     ]
 
     xacro_args = get_accessories_from_env()
-    xacro_args['kinematic_model'] = 'none'
+    xacro_args['kinematic_model'] = LaunchConfiguration('kinematic_model')
     moveit_config_builder = MoveItConfigsBuilder('spot', package_name='spot_moveit_config')
     moveit_config_builder.robot_description(mappings=xacro_args)
     moveit_config_builder.robot_description_semantic(mappings=xacro_args)
@@ -76,6 +80,17 @@ def generate_launch_description():
         output='screen',
     )
 
+    # Joint state publisher to fill in zero values for virtual joints (e.g. body_x, body_y, body_or)
+    jsp = Node(
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        parameters=[
+            moveit_config.robot_description,
+            {'source_list': ['/spot_driver/joint_states'], 'rate': 50}
+        ],
+        output='screen',
+    )
+    
     # MoveGroup
     move_group_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -108,6 +123,7 @@ def generate_launch_description():
                     SetRemap(src='/spot_moveit/controller_manager/robot_description', dst='/spot_driver/robot_description'),
                     ros2_control_node,
                     rsp,
+                    jsp,
                     joint_state_broadcaster_spawner,
                     arm_spawner,
                 ]
