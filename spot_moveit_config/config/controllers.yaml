@@ -42,7 +42,7 @@ spot_moveit/mobile_manipulation_controller:
       - arm0_elbow_roll
       - arm0_wrist_pitch
       - arm0_wrist_roll
-      - arm0_fingers
+      # - arm0_fingers
     command_interfaces:
       - position
     state_interfaces:

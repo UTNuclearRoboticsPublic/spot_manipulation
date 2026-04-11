@@ -10,22 +10,23 @@
     <!--CHAINS: When a chain is specified, all the links along the chain (including endpoints) are included in the group. Additionally, all the joints that are parents to included links are also included. This means that joints along the chain and the parent joint of the base link are included in the group-->
     <!--SUBGROUPS: Groups can also be formed by referencing to already defined group names-->
     <group name="arm">
-        <chain base_link="arm0_base_link" tip_link="arm0_hand"/>
+        <chain base_link="arm0_base_link" tip_link="arm0_wrist_roll"/>
     </group>
+    <passive_joint name="arm0_fingers"/>
 
     <!-- Add the extra group if full body control is enabled -->
     <xacro:arg name="kinematic_model" default="none"/>
     <xacro:property name="kinematic_model" value="$(arg kinematic_model)"/>
     <xacro:if value="${kinematic_model == 'body_assist'}">
         <group name="arm_with_body">
-            <chain base_link="base_footprint" tip_link="arm0_hand"/>
+            <chain base_link="base_footprint" tip_link="arm0_wrist_roll"/>
         </group>
         <end_effector name="arm0_hand" parent_link="arm0_wrist_roll" group="arm_with_body"/>
     </xacro:if>
 
     <xacro:if value="${kinematic_model == 'mobile_manipulation'}">
         <group name="mobile_body_and_arm">
-            <chain base_link="base_footprint" tip_link="arm0_fingers"/>
+            <chain base_link="base_footprint" tip_link="arm0_wrist_roll"/>
         </group>
         <end_effector name="arm0_hand" parent_link="arm0_wrist_roll" group="arm_with_body"/>
     </xacro:if>
