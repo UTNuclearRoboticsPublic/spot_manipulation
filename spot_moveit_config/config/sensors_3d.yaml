@@ -45,4 +45,4 @@ frontright_depth:
   shadow_threshold: 0.2
   padding_scale: 1.0
   max_update_rate: 1.0
-  filtered_cloud_topic: /spot_image_server/depth/frontleft/image/filtered_points
+  filtered_cloud_topic: /spot_image_server/depth/frontright/image/filtered_points
