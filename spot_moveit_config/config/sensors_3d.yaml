@@ -3,6 +3,9 @@ sensors:
   - hand_depth
   - frontleft_depth
   - frontright_depth
+  - left_depth
+  - right_depth
+  - back_depth
 
 velodyne:
   point_cloud_topic: /velodyne_points
@@ -46,3 +49,36 @@ frontright_depth:
   padding_scale: 1.0
   max_update_rate: 1.0
   filtered_cloud_topic: /spot_image_server/depth/frontright/image/filtered_points
+
+left_depth:
+  sensor_plugin: occupancy_map_monitor/DepthImageOctomapUpdater
+  image_topic: /spot_image_server/depth/left/image
+  queue_size: 5
+  near_clipping_plane_distance: 0.3
+  far_clipping_plane_distance: 5.0
+  shadow_threshold: 0.2
+  padding_scale: 1.0
+  max_update_rate: 1.0
+  filtered_cloud_topic: /spot_image_server/depth/left/image/filtered_points
+
+right_depth:
+  sensor_plugin: occupancy_map_monitor/DepthImageOctomapUpdater
+  image_topic: /spot_image_server/depth/right/image
+  queue_size: 5
+  near_clipping_plane_distance: 0.3
+  far_clipping_plane_distance: 5.0
+  shadow_threshold: 0.2
+  padding_scale: 1.0
+  max_update_rate: 1.0
+  filtered_cloud_topic: /spot_image_server/depth/right/image/filtered_points
+
+back_depth:
+  sensor_plugin: occupancy_map_monitor/DepthImageOctomapUpdater
+  image_topic: /spot_image_server/depth/back/image
+  queue_size: 5
+  near_clipping_plane_distance: 0.3
+  far_clipping_plane_distance: 5.0
+  shadow_threshold: 0.2
+  padding_scale: 1.0
+  max_update_rate: 1.0
+  filtered_cloud_topic: /spot_image_server/depth/back/image/filtered_points
