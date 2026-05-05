@@ -75,6 +75,9 @@ MAX_BODY_VEL_LINEAR = 1.5  # m/s
 MAX_BODY_VEL_ANGULAR = 1.5  # rad/s
 BODY_HEIGHT_FOR_MOBILE_MANIPULATION = 0.0  # meters
 
+# New named configurations
+MINI_UNSTOWN_ARM_CONFIG = [-2.671809196472168, 2.8863441944122314, 0.019753217697143555, -0.23188066482543945, -0.019681930541992188, -0.011407256126403809] # In the ARM_JOINT_ORDER
+
 class GraspStrategy(Enum):
     TOP_DOWN_GRASP = 1
     HORIZONTAL_GRASP = 2
@@ -1061,6 +1064,31 @@ class SpotManipulationDriver(object):
 
     def unstow_arm(self) -> Tuple[bool, Text]:
         robot_cmd = RobotCommandBuilder.arm_ready_command()
+        (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
+        block_until_arm_arrives(self._lease_manager.command_client, id)
+        return success, msg
+
+    def mini_unstow_arm(self) -> Tuple[bool, Text]:
+        # Create the mini-unstow joint trajectory (will do miminal time)
+        sh0 = MINI_UNSTOWN_ARM_CONFIG[0]
+        sh1 = MINI_UNSTOWN_ARM_CONFIG[1]
+        el0 = MINI_UNSTOWN_ARM_CONFIG[2]
+        el1 = MINI_UNSTOWN_ARM_CONFIG[3]
+        wr0 = MINI_UNSTOWN_ARM_CONFIG[4]
+        wr1 = MINI_UNSTOWN_ARM_CONFIG[5]
+
+        traj_point = RobotCommandBuilder.create_arm_joint_trajectory_point(
+            sh0, sh1, el0, el1, wr0, wr1)
+        arm_joint_traj = arm_command_pb2.ArmJointTrajectory(points=[traj_point])
+
+        # Build the command
+        joint_move_command = arm_command_pb2.ArmJointMoveCommand.Request(trajectory=arm_joint_traj)
+        arm_command = arm_command_pb2.ArmCommand.Request(arm_joint_move_command=joint_move_command)
+        sync_arm = synchronized_command_pb2.SynchronizedCommand.Request(arm_command=arm_command)
+        arm_sync_robot_cmd = robot_command_pb2.RobotCommand(synchronized_command=sync_arm)
+        robot_cmd = RobotCommandBuilder.build_synchro_command(arm_sync_robot_cmd)
+
+        # Send the request
         (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         block_until_arm_arrives(self._lease_manager.command_client, id)
         return success, msg
