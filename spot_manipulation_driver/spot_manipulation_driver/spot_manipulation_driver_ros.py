@@ -884,14 +884,12 @@ class SpotManipulationDriverROS(Node):
         (success, msg) = self.manipulation_driver.stow_arm()
         resp.success = success
         resp.message = msg
-        time.sleep(1) # sleep to ensure end config is reached
         return resp
 
     def unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         (success, msg) = self.manipulation_driver.unstow_arm()
         resp.success = success
         resp.message = msg
-        time.sleep(1) # sleep to ensure end config is reached
         return resp
     
     def mini_unstow_service_callback(self, _: Trigger.Request, resp: Trigger.Response) -> Trigger.Response :
