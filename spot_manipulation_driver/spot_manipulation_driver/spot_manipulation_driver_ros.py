@@ -106,7 +106,6 @@ class SpotManipulationDriverROS(Node):
         )
         self._recorded_collision_window = [False, False, False]
 
-        self._arm_trajectory_cancel_event = threading.Event()
         self._arm_and_finger_trajectory_cancel_event = threading.Event()
         self._mobile_manipulation_trajectory_cancel_event = threading.Event()
         self._arm_cartesian_command_cancel_event = threading.Event()
@@ -319,11 +318,13 @@ class SpotManipulationDriverROS(Node):
         return True
     
     def arm_goal_cancel_callback(self, cancel_request):
-        self._arm_trajectory_cancel_event.set()
         return CancelResponse.ACCEPT
 
     def arm_goal_callback(self, goal_handle: ServerGoalHandle):
         """Callback for the /spot_arm/arm_controller/follow_joint_trajectory action server """
+
+        # Create a local cancel event for this trajectory execution
+        cancel_event = threading.Event()
 
         # Translate message and execute trajectory while publishing feedback
         traj_point_positions, traj_point_velocities, timepoints = ros_helpers.joint_trajectory_to_lists(
@@ -353,7 +354,7 @@ class SpotManipulationDriverROS(Node):
             nonlocal trajectory_success
             try:
                 trajectory_success = self.manipulation_driver.arm_long_trajectory_executor(
-                    traj_point_positions, traj_point_velocities, timepoints, self._arm_trajectory_cancel_event
+                    traj_point_positions, traj_point_velocities, timepoints, cancel_event
                 ) 
             except Exception as e:
                 self._logger.info(f"Error executing arm long trajectory: {e}")
@@ -364,6 +365,10 @@ class SpotManipulationDriverROS(Node):
         
         rate = self.create_rate(10.0)
         while arm_execution_thread.is_alive():
+            # Signal the executor to stop
+            if goal_handle.is_cancel_requested and not cancel_event.is_set():
+                cancel_event.set()
+            # Publish feedback
             goal_handle.publish_feedback(
                 ros_helpers.get_joint_state_feedback(self.manipulation_driver)
             )
@@ -374,9 +379,8 @@ class SpotManipulationDriverROS(Node):
         if self.data_capture_mode:
             arm_goal_publisher_thread.join()
 
-        if self._arm_trajectory_cancel_event.is_set():
+        if cancel_event.is_set():
             goal_handle.canceled()
-            self._arm_trajectory_cancel_event.clear()
         elif trajectory_success:
             goal_handle.succeed()
         else:
