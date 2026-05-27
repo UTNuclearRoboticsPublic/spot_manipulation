@@ -666,15 +666,16 @@ class SpotManipulationDriverROS(Node):
         """Callback for the spot_manipualtion_driver/arm_cartesian_command action server """
 
         # If the command includes a joint trajectory, we have to handle that differently 
+        response = ArmCartesianCommand.Result()
         if len(goal_handle.request.joint_waypoints.points) > 0:
             self._logger.info("Executing arm cartesian trajectory with joint waypoints")
             robot_command_list = ros_helpers.construct_arm_trajectory_cmd_sequence(goal_handle.request)
             success, message, command_id = self.manipulation_driver.arm_cartesian_command_with_joint_configuration(robot_command_list, 0.5)
+            response.success = success
+            response.message = message
             if success: 
-                response.success = True
                 goal_handle.succeed()
             else:
-                response.success = False
                 goal_handle.abort()
             return response
         else:
@@ -695,7 +696,6 @@ class SpotManipulationDriverROS(Node):
                 return ArmCartesianCommand.Result(success=False, message=str(e))
         
         rate = self.create_rate(10.0)
-        response = ArmCartesianCommand.Result()
         while True:
             if self._arm_cartesian_command_cancel_event.is_set():
                 self.manipulation_driver.stop_robot()
