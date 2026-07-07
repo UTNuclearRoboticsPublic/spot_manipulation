@@ -664,18 +664,20 @@ class SpotManipulationDriverROS(Node):
     
     def arm_cartesian_command_callback(self, goal_handle: ServerGoalHandle) -> ArmCartesianCommand.Result:
         """Callback for the spot_manipualtion_driver/arm_cartesian_command action server """
+        response = ArmCartesianCommand.Result()
 
         # If the command includes a joint trajectory, we have to handle that differently 
-        response = ArmCartesianCommand.Result()
         if len(goal_handle.request.joint_waypoints.points) > 0:
             self._logger.info("Executing arm cartesian trajectory with joint waypoints")
             robot_command_list = ros_helpers.construct_arm_trajectory_cmd_sequence(goal_handle.request)
             success, message, command_id = self.manipulation_driver.arm_cartesian_command_with_joint_configuration(robot_command_list, 0.5)
-            response.success = success
-            response.message = message
+
+            # TODO: Figure out how to properly parallelize this so that we can get Feedback updates
             if success: 
+                response.success = True
                 goal_handle.succeed()
             else:
+                response.success = False
                 goal_handle.abort()
             return response
         else:
