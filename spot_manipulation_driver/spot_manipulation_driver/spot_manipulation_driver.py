@@ -1083,13 +1083,8 @@ class SpotManipulationDriver(object):
         closed = 0.349066
         opened = -1.396263
         angle = angle / 90.0 * (opened - closed) + closed
-
-        (
-            success,
-            msg,
-            id,
-        ) = robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(angle)
-        self._lease_manager.robot_command(robot_cmd)
+        robot_cmd = RobotCommandBuilder.claw_gripper_open_angle_command(angle)
+        (success, msg, id) = self._lease_manager.robot_command(robot_cmd)
         return success, msg
     
     def stop_robot(self) -> Tuple[bool, Text]:
