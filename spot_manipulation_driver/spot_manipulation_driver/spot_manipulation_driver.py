@@ -50,7 +50,7 @@ from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAM
                                         GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b, get_vision_tform_body)
 from bosdyn.client.math_helpers import SE3Pose
 from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command, block_until_arm_arrives)
-from bosdyn.client.exceptions import RpcError
+from bosdyn.client.exceptions import RpcError, InternalServerError
 from bosdyn.client.inverse_kinematics import InverseKinematicsClient
 from bosdyn.util import seconds_to_timestamp, seconds_to_duration, timestamp_to_sec
 from google.protobuf import duration_pb2, timestamp_pb2
@@ -197,18 +197,38 @@ class SpotManipulationDriver(object):
             raise Exception(error_message)
 
     # Verify that an e-stop exists: function borrowed from arm_joint_long_trajectory example
-    def verify_power_and_estop(self):
+    def verify_power_and_estop(self, estop_retries=60, retry_delay=1.0):
+        # power
         if not self._lease_manager.robot.is_powered_on():
             self._lease_manager.logger.info(
                 "Robot is not powered on. Attempting to power on."
             )
-            self._lease_manager.robot.power_on(timeout_sec=20)
-            assert self._lease_manager.robot.is_powered_on(), "Robot power on failed."
-            self._lease_manager.logger.info("Robot powered on.")
-        else:
-            self._lease_manager.robot.logger.info("Verified that robot is powered on.")
+            try:
+                self._lease_manager.robot.power_on(timeout_sec=20)
+            except Exception as e:
+                raise RuntimeError(f"Power on RPC failed: {e}")
 
-        self.verify_estop()
+            if not self._lease_manager.robot.is_powered_on():
+                raise RuntimeError("Robot power on failed.")
+
+            self._lease_manager.logger.info("Robot powered on.")
+
+        # estop
+        last_error = None
+        for attempt in range(1, estop_retries + 1):
+            try:
+                self.verify_estop()
+                return
+            except (InternalServerError, RpcError) as e:
+                last_error = e
+                self._lease_manager.logger.warn(
+                    f"E-Stop check failed (attempt {attempt}/{estop_retries}): {e}"
+                )
+                time.sleep(retry_delay)
+
+        raise RuntimeError(
+            f"Unable to verify E-Stop status after {estop_retries} attempts: {last_error}"
+        )
 
     # Execute long arm trajectories
     def arm_long_trajectory_executor(

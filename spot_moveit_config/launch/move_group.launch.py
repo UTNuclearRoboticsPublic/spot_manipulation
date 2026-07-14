@@ -3,10 +3,11 @@ from launch.actions import GroupAction
 from launch_ros.actions import SetRemap, SetParameter, PushRosNamespace, Node
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from launch_ros.parameter_descriptions import ParameterValue
 from moveit_configs_utils import MoveItConfigsBuilder
 from moveit_configs_utils.launches import generate_move_group_launch
-from spot_description.get_accessories import get_accessories_from_env    
-    
+from spot_description.get_accessories import get_accessories_from_env
+
 def generate_launch_description():
 
     # Launch args
@@ -14,7 +15,12 @@ def generate_launch_description():
         DeclareLaunchArgument('kinematic_model',
                             description='The kinematic model to use for the Spot description',
                             choices=['none', 'body_assist', 'mobile_manipulation'],
-                            default_value='none')
+                            default_value='none'),
+        DeclareLaunchArgument('use_sim_time',
+                            description='Drive move_group off the /clock topic instead of the '
+                                        'system clock. Required under Gazebo, where joint states '
+                                        'are sim-time stamped. Leave false on hardware.',
+                            default_value='false'),
     ]
 
     xacro_args = get_accessories_from_env()
@@ -36,6 +42,9 @@ def generate_launch_description():
                 PushRosNamespace("spot_moveit"),
                 SetRemap(src='/spot_moveit/joint_states', dst='/spot_driver/joint_states'),
                 SetRemap(src='/spot_moveit/robot_description', dst='/spot_driver/robot_description'),
+                SetParameter(name='use_sim_time',
+                             value=ParameterValue(LaunchConfiguration('use_sim_time'),
+                                                  value_type=bool)),
                 SetParameter(name="octomap_resolution", value=0.075),
                 SetParameter(name="octomap_frame", value="spot_nav/map"),
                 generate_move_group_launch(moveit_config),
