@@ -112,7 +112,7 @@ public:
     rclcpp_action::CancelResponse handleMoveActionCancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<moveit_msgs::action::MoveGroup>> goal) {
         auto result = std::make_shared<moveit_msgs::action::MoveGroup::Result>();
         result->error_code.val = moveit_msgs::msg::MoveItErrorCodes::PREEMPTED;
-        goal->abort(result);
+        cancelActiveQuery();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -154,7 +154,7 @@ public:
     rclcpp_action::CancelResponse handleTrajectoryActionCancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<moveit_msgs::action::ExecuteTrajectory>> goal) {
         auto result = std::make_shared<moveit_msgs::action::ExecuteTrajectory::Result>();
         result->error_code.val = moveit_msgs::msg::MoveItErrorCodes::PREEMPTED;
-        goal->abort(result);
+        cancelActiveQuery();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -204,7 +204,7 @@ public:
         auto result = std::make_shared<spot_msgs::action::StableArmCommand::Result>();
         result->success = false;
         result->message = "Trajectory action cancelled by user";
-        goal->abort(result);
+        cancelActiveQuery();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -217,7 +217,7 @@ public:
             auto result = std::make_shared<spot_msgs::action::StableArmCommand::Result>();
             result->success = false;
             result->message = "Did not detect Spot drvier action server wtihin 5 seconds";
-            RCLCPP_ERROR(get_logger(), result->message.c_str());
+            RCLCPP_ERROR_STREAM(get_logger(), result->message);
             goal->abort(result);
             return;
         }
@@ -238,6 +238,7 @@ public:
         }
 
         if (spot_driver_motion_request_future_.valid() || spot_driver_goal_handle_) {
+            RCLCPP_INFO(get_logger(), "Movement already started: Stopping robot");
             spot_driver_motion_client_->async_cancel_all_goals();
             spot_driver_motion_request_future_ = decltype(spot_driver_motion_request_future_){};
             spot_driver_goal_handle_.reset();

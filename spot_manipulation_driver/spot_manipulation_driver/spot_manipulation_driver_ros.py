@@ -313,7 +313,8 @@ class SpotManipulationDriverROS(Node):
             ArmCartesianCommand,
             "~/arm_cartesian_command",
             self.arm_cartesian_command_callback,
-            callback_group=motion_callback_group
+            callback_group=motion_callback_group,
+            cancel_callback=self.arm_cartesian_command_cancel_callback
         )
 
         return True
@@ -659,7 +660,9 @@ class SpotManipulationDriverROS(Node):
         return self.mobile_manipulation_result
     
     def arm_cartesian_command_cancel_callback(self, cancel_request):
+        self.get_logger().info('Received cancel request for arm cartesian command')
         self._arm_cartesian_command_cancel_event.set()
+        self.manipulation_driver.stop_robot()
         return CancelResponse.ACCEPT
     
     def arm_cartesian_command_callback(self, goal_handle: ServerGoalHandle) -> ArmCartesianCommand.Result:
@@ -702,6 +705,14 @@ class SpotManipulationDriverROS(Node):
                 self._logger.info(f"Unknown error executing arm cartesian command: {e}")
                 goal_handle.abort()
                 return ArmCartesianCommand.Result(success=False, message=str(e))
+            
+        def abort(message: str):
+            self._arm_cartesian_command_cancel_event.set()
+            self.manipulation_driver.stop_robot()
+            goal_handle.abort()
+            response.success = False
+            response.message = message
+            self.get_logger().warn(message)
         
         rate = self.create_rate(10.0)
         while True:
@@ -710,7 +721,6 @@ class SpotManipulationDriverROS(Node):
                 response.success = False
                 response.message = "Cartesian command cancelled early, aborting movement"
                 goal_handle.canceled()
-                self._arm_cartesian_command_cancel_event.clear()
                 break
 
             with shared_command_id.lock:
@@ -729,28 +739,23 @@ class SpotManipulationDriverROS(Node):
             feedback = self.manipulation_driver.lease_manager.robot_command_feedback(command_id)
             arm_feedback = feedback.feedback.synchronized_feedback.arm_command_feedback
             if not arm_feedback.HasField("arm_cartesian_feedback"):
-                self.manipulation_driver.stop_robot()
-                response.success = False
-                response.message = "Feedback message was not filled out, presumably because the motion was preempted. Aborting movement"
+                abort("Feedback message was not filled out, presumably because the motion was preempted. Aborting movement")
+                break
+
+            elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_STALLED:
+                abort("Unable to complete arm cartesian command, it has been stalled")
+                break
+
+            elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_CANCELLED:
+                abort("Unable to complete arm cartesian command, it has been cancelled")
                 break
 
             elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_COMPLETE:
                 if command_done:
                     response.success = True
                     response.message = "Arm cartesian command completed successfully"
+                    goal_handle.succeed()
                     break
-
-            elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_STALLED:
-                self.manipulation_driver.stop_robot()
-                response.success = False
-                response.message = "Unable to complete arm cartesian command, it has been stalled"
-                break
-
-            elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_CANCELLED:
-                self.manipulation_driver.stop_robot()
-                response.success = False
-                response.message = "Unable to complete arm cartesian command, it has been cancelled"
-                break
 
             else:
                 ros_feedback = ArmCartesianCommand.Feedback()
@@ -763,14 +768,9 @@ class SpotManipulationDriverROS(Node):
 
             rate.sleep()
 
-        if response.success:
-            goal_handle.succeed()
-        elif not goal_handle.is_cancel_requested:
-            goal_handle.abort()
-            self._logger.warn(response.message)
-
         if command_thread:
             command_thread.join()
+        self._arm_cartesian_command_cancel_event.clear()
         return response
 
     def image_to_grasp_goal_callback(self, goal_handle):

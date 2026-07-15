@@ -1046,7 +1046,7 @@ class SpotManipulationDriver(object):
                 # Command the robot and update the command metadata
                 with shared_command_id.lock:
                     shared_command_id.success, shared_command_id.message, shared_command_id.command_id = self.lease_manager.robot_command(arm_command)
-
+                    
                 # Sleep until it's time to execute the next command
                 command_timestamp = arm_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.points[0].time_since_reference.seconds + \
                                     arm_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.points[0].time_since_reference.nanos / 1000000000
@@ -1056,7 +1056,7 @@ class SpotManipulationDriver(object):
                     time.sleep(time_to_go * fraction_of_move_before_next_cmd)
             
             # After the final waypoint, wait for the arm motion to complete
-            block_until_arm_arrives(self._lease_manager.command_client, shared_command_id.command_id)
+            block_until_arm_arrives(self._lease_manager.command_client, shared_command_id.command_id, timeout_sec=time_to_go)
             self._logger.info('Finished arm cartesian trajectory')
             with shared_command_id.lock:
                 shared_command_id.done = True

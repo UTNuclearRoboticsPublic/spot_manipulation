@@ -1,3 +1,4 @@
+import time
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
@@ -69,13 +70,23 @@ def main():
         nonlocal node
         node.get_logger().info(f'Feedback:\n{feedback_msg.feedback}')
 
+    cancel_goal = False
+
     node.get_logger().info('Sending goal')
     fut = action_client.send_goal_async(goal, feedback_callback=feedback_callback)
     rclpy.spin_until_future_complete(node, fut)
     goal_handle = fut.result()
-    result_fut = goal_handle.get_result_async()
-    rclpy.spin_until_future_complete(node, result_fut)
-    node.get_logger().info('Action complete')
+    if cancel_goal:
+        time.sleep(1)
+        cancel_fut = goal_handle.cancel_goal_async()
+        rclpy.spin_until_future_complete(node, cancel_fut)
+        cancel_result = cancel_fut.result()
+        node.get_logger().info(f"Cancel result: {cancel_result}")
+    else:
+        result_fut = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(node, result_fut)
+        action_result = result_fut.result()
+        node.get_logger().info(f'Action complete: {action_result}')
 
 if __name__ == '__main__':
     rclpy.init()
