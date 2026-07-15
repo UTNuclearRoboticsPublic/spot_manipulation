@@ -1,7 +1,7 @@
 # Default initial positions for spot's ros2_control fake system
 
 initial_positions:
-  # Arm - Mini-unstow pose
+  # Arm - Stowed state
   arm0_elbow_pitch: 3.12
   arm0_wrist_pitch: 0.0
   arm0_wrist_roll: 0.0
