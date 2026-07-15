@@ -231,7 +231,7 @@ def manipulator_state_to_twist(
     stamp = driver.lease_manager.robotToLocalTime(driver.robot_time)
     twist = TwistStamped()
     twist.header.frame_id = HAND_FRAME_NAME
-    twist.header.stamp = rclpy.time.Time(nanoseconds=stamp.ToNanoseconds()).to_msg()
+    twist.header.stamp = rclpy.time.Time(seconds=stamp.seconds, nanoseconds=stamp.nanos).to_msg()
     hand_tform_odom = get_a_tform_b(driver.kinematic_state.transforms_snapshot, HAND_FRAME_NAME, ODOM_FRAME_NAME)
     twist.twist.linear = ros_helpers.Vec3ToMsg(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.linear))
     twist.twist.angular = ros_helpers.Vec3ToMsg(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.angular))
