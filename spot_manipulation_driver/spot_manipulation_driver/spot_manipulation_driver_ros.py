@@ -664,30 +664,36 @@ class SpotManipulationDriverROS(Node):
     
     def arm_cartesian_command_callback(self, goal_handle: ServerGoalHandle) -> ArmCartesianCommand.Result:
         """Callback for the spot_manipualtion_driver/arm_cartesian_command action server """
+
+        # Helper class for synchronizing between this callback and an execution thread
+        class SharedCommandID:
+            def __init__(self, cancel_event):
+                self.command_id = -1
+                self.lock = threading.Lock()
+                self.cancel_event = cancel_event
+                self.done = False
+                self.success = False
+                self.message = ''
+        command_thread: threading.Thread = None
+        shared_command_id = SharedCommandID(self._arm_cartesian_command_cancel_event)
+        
         response = ArmCartesianCommand.Result()
 
         # If the command includes a joint trajectory, we have to handle that differently 
-        if len(goal_handle.request.joint_waypoints.points) > 0:
+        if len(goal_handle.request.joint_waypoints.points) > 1:
             self._logger.info("Executing arm cartesian trajectory with joint waypoints")
             robot_command_list = ros_helpers.construct_arm_trajectory_cmd_sequence(goal_handle.request)
-            success, message, command_id = self.manipulation_driver.arm_cartesian_command_with_joint_configuration(robot_command_list, 0.5)
-
-            # TODO: Figure out how to properly parallelize this so that we can get Feedback updates
-            if success: 
-                response.success = True
-                goal_handle.succeed()
-            else:
-                response.success = False
-                goal_handle.abort()
-            return response
+            command_thread = threading.Thread(target=self.manipulation_driver.arm_cartesian_command_with_joint_configuration, args=(robot_command_list, shared_command_id, 0.5))
+            command_thread.start()
         else:
             try:
                 robot_command = ros_helpers.cartesian_request_to_command(goal_handle.request, self.tf_buffer)
-                success, message, command_id = self.manipulation_driver.arm_cartesian_command(robot_command)
-                if not success:
-                    self._logger.warn(f"Unable to execute arm cartesian command: {message}")
+                shared_command_id.success, shared_command_id.message, shared_command_id.command_id = self.manipulation_driver.arm_cartesian_command(robot_command)
+                shared_command_id.done = True
+                if not shared_command_id.success:
+                    self._logger.warn(f"Unable to execute arm cartesian command: {shared_command_id.message}")
                     goal_handle.abort()
-                    return ArmCartesianCommand.Result(success=False, message=message)
+                    return ArmCartesianCommand.Result(success=False, message=shared_command_id.message)
             except tf2_py.LookupException as e:
                 self._logger.warn(f"Transform lookup error during arm cartesian command execution: {e}")
                 goal_handle.abort()
@@ -707,33 +713,43 @@ class SpotManipulationDriverROS(Node):
                 self._arm_cartesian_command_cancel_event.clear()
                 break
 
+            with shared_command_id.lock:
+                command_id = shared_command_id.command_id
+                command_done = shared_command_id.done
+
+            if command_id < 0:
+                if command_done:
+                    response.success = shared_command_id.success
+                    response.message = shared_command_id.message
+                    break
+                else:
+                    rate.sleep()
+                    continue
+
             feedback = self.manipulation_driver.lease_manager.robot_command_feedback(command_id)
             arm_feedback = feedback.feedback.synchronized_feedback.arm_command_feedback
             if not arm_feedback.HasField("arm_cartesian_feedback"):
                 self.manipulation_driver.stop_robot()
                 response.success = False
                 response.message = "Feedback message was not filled out, presumably because the motion was preempted. Aborting movement"
-                goal_handle.abort()
                 break
 
             elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_COMPLETE:
-                response.success = True
-                response.message = "Arm cartesian command completed successfully"
-                goal_handle.succeed()
-                break
+                if command_done:
+                    response.success = True
+                    response.message = "Arm cartesian command completed successfully"
+                    break
 
             elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_STALLED:
                 self.manipulation_driver.stop_robot()
                 response.success = False
                 response.message = "Unable to complete arm cartesian command, it has been stalled"
-                goal_handle.abort()
                 break
 
             elif arm_feedback.arm_cartesian_feedback.status == ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_CANCELLED:
                 self.manipulation_driver.stop_robot()
                 response.success = False
                 response.message = "Unable to complete arm cartesian command, it has been cancelled"
-                goal_handle.abort()
                 break
 
             else:
@@ -747,8 +763,14 @@ class SpotManipulationDriverROS(Node):
 
             rate.sleep()
 
-        if not response.success:
+        if response.success:
+            goal_handle.succeed()
+        elif not goal_handle.is_cancel_requested:
+            goal_handle.abort()
             self._logger.warn(response.message)
+
+        if command_thread:
+            command_thread.join()
         return response
 
     def image_to_grasp_goal_callback(self, goal_handle):

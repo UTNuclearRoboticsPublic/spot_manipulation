@@ -25,7 +25,7 @@ def main():
     goal.request.workspace_parameters.max_corner.z = 5.0
     goal.request.workspace_parameters.min_corner.x = \
     goal.request.workspace_parameters.min_corner.y = \
-    goal.request.workspace_parameters.min_corner.z = 5.0
+    goal.request.workspace_parameters.min_corner.z = -5.0
 
     goal_pose = PoseStamped()
     goal_pose.header.frame_id = 'body'
