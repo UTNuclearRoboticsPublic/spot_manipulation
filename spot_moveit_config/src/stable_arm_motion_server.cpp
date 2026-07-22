@@ -201,9 +201,6 @@ public:
     // --------------------------------------------------------------------------------------------
 
     rclcpp_action::CancelResponse handleEETrajectoryActionCancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<spot_msgs::action::StableArmCommand>> goal) {
-        auto result = std::make_shared<spot_msgs::action::StableArmCommand::Result>();
-        result->success = false;
-        result->message = "Trajectory action cancelled by user";
         cancelActiveQuery();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
@@ -216,7 +213,7 @@ public:
         if (!spot_driver_motion_client_->wait_for_action_server(std::chrono::seconds(5))) {
             auto result = std::make_shared<spot_msgs::action::StableArmCommand::Result>();
             result->success = false;
-            result->message = "Did not detect Spot drvier action server wtihin 5 seconds";
+            result->message = "Did not detect Spot driver action server within 5 seconds";
             RCLCPP_ERROR_STREAM(get_logger(), result->message);
             goal->abort(result);
             return;
