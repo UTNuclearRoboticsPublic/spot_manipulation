@@ -186,10 +186,6 @@ public:
             RCLCPP_WARN(get_logger(), "Cancelling previously active request");
             cancelActiveQuery();
         }
-        if (goal->pose_waypoints.header.frame_id != "odom") {
-            RCLCPP_ERROR(get_logger(), "Waypoints must be defined in the robot's odometry frame");
-            return rclcpp_action::GoalResponse::REJECT;
-        }
         if (goal->pose_waypoints.poses.size() != goal->joint_trajectory.points.size()) {
             RCLCPP_ERROR(get_logger(), "You must provide an equal number of joint and Cartesian waypoints. You gave %zd and %zd", goal->joint_trajectory.points.size(), goal->pose_waypoints.poses.size());
             return rclcpp_action::GoalResponse::REJECT;
@@ -285,14 +281,9 @@ public:
                 }
 
                 // Create and send full trajectory
-                try {
-                    spot_msgs::action::ArmCartesianCommand::Goal full_trajectory = generateFullTrajectory(resp->motion_plan_response.trajectory.joint_trajectory);
-                    spot_driver_motion_request_future_ = spot_driver_motion_client_->async_send_goal(full_trajectory);
-                    motion_request_start_time_ = now();
-                } catch (tf2::TransformException& e) {
-                    RCLCPP_ERROR(get_logger(), "Unable to transform trajectory to the odom frame: %s", e.what());
-                    cancelActiveQuery();
-                }        
+                spot_msgs::action::ArmCartesianCommand::Goal full_trajectory = generateFullTrajectory(resp->motion_plan_response.trajectory.joint_trajectory);
+                spot_driver_motion_request_future_ = spot_driver_motion_client_->async_send_goal(full_trajectory);
+                motion_request_start_time_ = now();
             } else if (status == std::future_status::timeout) {
                 const float elapsed_time = (now() - motion_plan_request_start_time_).seconds();
                 if (elapsed_time > 5.0) {
@@ -395,14 +386,9 @@ public:
         spot_arm_command.x_axis_mode = spot_arm_command.AXIS_MODE_POSITION;
         spot_arm_command.y_axis_mode = spot_arm_command.AXIS_MODE_POSITION;
         spot_arm_command.z_axis_mode = spot_arm_command.AXIS_MODE_POSITION;
-        spot_arm_command.header.frame_id = "odom";
+        spot_arm_command.header.frame_id = robot_model_->getRootLinkName();
 
-        // Transform the targets into the odom frame for spot
-        geometry_msgs::msg::TransformStamped odom_tform_body_ros = tf_buffer_.lookupTransform(
-            "odom", robot_model_->getRootLinkName(), rclcpp::Time(0)
-        );
-        const Eigen::Isometry3d odom_tform_body = tf2::transformToEigen(odom_tform_body_ros);
-
+        // Transform the targets into the odom frame
         for (const trajectory_msgs::msg::JointTrajectoryPoint& joint_pos : joint_traj.points) {
             // Update the arm state
             moveit::core::JointModelGroup* arm_group = robot_model_->getJointModelGroup("arm");
@@ -413,10 +399,7 @@ public:
 
             // Get the end effector position and set it in the trajectory
             const Eigen::Isometry3d ee_pose_in_body = robot_state_->getGlobalLinkTransform("arm0_hand");
-
-            // Convert to the odom frame
-            const Eigen::Isometry3d ee_pose_in_odom = odom_tform_body * ee_pose_in_body;
-            spot_arm_command.waypoints.push_back(tf2::toMsg(ee_pose_in_odom));
+            spot_arm_command.waypoints.push_back(tf2::toMsg(ee_pose_in_body));
             spot_arm_command.timestamps.push_back(rclcpp::Duration(joint_pos.time_from_start).seconds());
         }
 

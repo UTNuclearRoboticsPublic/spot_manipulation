@@ -16,8 +16,9 @@ from sensor_msgs.msg import Image, CameraInfo
 from tf2_msgs.msg import TFMessage
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import math
-from geometry_msgs.msg import PoseStamped, TransformStamped, Pose2D
-from tf2_geometry_msgs import do_transform_pose
+from geometry_msgs.msg import TransformStamped, Pose2D
+from tf2_geometry_msgs import PoseStamped # needed for tf_buffer.transform
+from tf2_py import TransformException
 
 import rclpy.time
 import time
@@ -384,7 +385,7 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
 
     return arm_cartesian_request
 
-def construct_arm_trajectory_cmd_sequence(msg: ArmCartesianCommand.Goal) -> list[ArmCartesianCommandProto]:
+def construct_arm_trajectory_cmd_sequence(msg: ArmCartesianCommand.Goal, tf_buffer: Buffer) -> list[ArmCartesianCommandProto]:
     """
     Given an arm cartesian command request with joint waypoints, create a series of ArmCartesianCommand 
     robot commands that will achieve the requested goal if fed to the robot in succession
@@ -396,6 +397,8 @@ def construct_arm_trajectory_cmd_sequence(msg: ArmCartesianCommand.Goal) -> list
     # Convert the cartesian waypoints to a list of SE3Poses
     se3_trajectory = []
     for pose in msg.waypoints:
+        if msg.header.frame_id != ODOM_FRAME_NAME:
+            pose = tf_buffer.transform(PoseStamped(header=msg.header, pose=pose), ODOM_FRAME_NAME, rclpy.duration.Duration(seconds=1.0)).pose
         se3_trajectory.append(ros_helpers.MsgToPose(pose).to_proto())
 
     ref_time = seconds_to_timestamp(time.time())
@@ -405,7 +408,7 @@ def construct_arm_trajectory_cmd_sequence(msg: ArmCartesianCommand.Goal) -> list
         arm_trajectory_command = RobotCommandBuilder.arm_cartesian_move_helper(
             [pose],
             [timestamp],
-            root_frame_name = msg.header.frame_id,
+            root_frame_name = ODOM_FRAME_NAME,
             max_acc = msg.max_acceleration if msg.max_acceleration > 0 else None,
             max_linear_vel = msg.max_linear_velocity if msg.max_linear_velocity > 0 else None,
             max_angular_vel = msg.max_angular_velocity if msg.max_angular_velocity > 0 else None,

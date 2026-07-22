@@ -685,7 +685,7 @@ class SpotManipulationDriverROS(Node):
         # If the command includes a joint trajectory, we have to handle that differently 
         if len(goal_handle.request.joint_waypoints.points) > 1:
             self._logger.info("Executing arm cartesian trajectory with joint waypoints")
-            robot_command_list = ros_helpers.construct_arm_trajectory_cmd_sequence(goal_handle.request)
+            robot_command_list = ros_helpers.construct_arm_trajectory_cmd_sequence(goal_handle.request, self.tf_buffer)
             command_thread = threading.Thread(target=self.manipulation_driver.arm_cartesian_command_with_joint_configuration, args=(robot_command_list, shared_command_id, 0.5))
             command_thread.start()
         else:
