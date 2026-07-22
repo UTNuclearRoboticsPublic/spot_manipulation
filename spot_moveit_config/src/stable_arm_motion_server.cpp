@@ -190,6 +190,10 @@ public:
             RCLCPP_ERROR(get_logger(), "You must provide an equal number of joint and Cartesian waypoints. You gave %zd and %zd", goal->joint_trajectory.points.size(), goal->pose_waypoints.poses.size());
             return rclcpp_action::GoalResponse::REJECT;
         }
+        if (goal->pose_waypoints.poses.empty()) {
+            RCLCPP_WARN(get_logger(), "Cannot execute an empty trajectory");
+            return rclcpp_action::GoalResponse::REJECT;
+        }
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
 
