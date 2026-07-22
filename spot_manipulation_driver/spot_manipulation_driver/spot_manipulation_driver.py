@@ -7,6 +7,7 @@
 ##############################################################################
 
 import time
+import math
 import threading
 from typing import Text, Tuple, List
 from enum import Enum
@@ -25,7 +26,7 @@ from bosdyn.client.frame_helpers import (ODOM_FRAME_NAME, GROUND_PLANE_FRAME_NAM
                                         GRAV_ALIGNED_BODY_FRAME_NAME, VISION_FRAME_NAME, get_a_tform_b, get_vision_tform_body)
 from bosdyn.client.math_helpers import SE3Pose
 from bosdyn.client.robot_command import (RobotCommandBuilder, blocking_command, block_until_arm_arrives)
-from bosdyn.client.exceptions import RpcError
+from bosdyn.client.exceptions import RpcError, InternalServerError
 from bosdyn.client.inverse_kinematics import InverseKinematicsClient
 from bosdyn.util import seconds_to_timestamp, seconds_to_duration, timestamp_to_sec
 from google.protobuf import duration_pb2, timestamp_pb2
@@ -172,18 +173,38 @@ class SpotManipulationDriver(object):
             raise Exception(error_message)
 
     # Verify that an e-stop exists: function borrowed from arm_joint_long_trajectory example
-    def verify_power_and_estop(self):
+    def verify_power_and_estop(self, estop_retries=60, retry_delay=1.0):
+        # power
         if not self._lease_manager.robot.is_powered_on():
             self._lease_manager.logger.info(
                 "Robot is not powered on. Attempting to power on."
             )
-            self._lease_manager.robot.power_on(timeout_sec=20)
-            assert self._lease_manager.robot.is_powered_on(), "Robot power on failed."
-            self._lease_manager.logger.info("Robot powered on.")
-        else:
-            self._lease_manager.robot.logger.info("Verified that robot is powered on.")
+            try:
+                self._lease_manager.robot.power_on(timeout_sec=20)
+            except Exception as e:
+                raise RuntimeError(f"Power on RPC failed: {e}")
 
-        self.verify_estop()
+            if not self._lease_manager.robot.is_powered_on():
+                raise RuntimeError("Robot power on failed.")
+
+            self._lease_manager.logger.info("Robot powered on.")
+
+        # estop
+        last_error = None
+        for attempt in range(1, estop_retries + 1):
+            try:
+                self.verify_estop()
+                return
+            except (InternalServerError, RpcError) as e:
+                last_error = e
+                self._lease_manager.logger.warn(
+                    f"E-Stop check failed (attempt {attempt}/{estop_retries}): {e}"
+                )
+                time.sleep(retry_delay)
+
+        raise RuntimeError(
+            f"Unable to verify E-Stop status after {estop_retries} attempts: {last_error}"
+        )
 
     # Execute long arm trajectories
     def arm_long_trajectory_executor(
@@ -984,6 +1005,42 @@ class SpotManipulationDriver(object):
         robot_command.synchronized_command.arm_command.arm_cartesian_command.CopyFrom(cartesian_command)
         end_time = time.time() + timeout if timeout is not None else None
         return self.lease_manager.robot_command(robot_command, end_time)
+    
+    def arm_cartesian_command_with_joint_configuration(self, arm_command_list, shared_command_id, fraction_of_move_before_next_cmd = 0.9):
+        start_time = time.time()
+        try:
+            for arm_command in arm_command_list:
+                # Check to see if the motion has been canceled
+                if shared_command_id.cancel_event.is_set():
+                    self.stop_robot()
+                    with shared_command_id.lock:
+                        shared_command_id.success = False
+                        shared_command_id.message = 'Cartesian command cancelled early, aborting movement'
+                        shared_command_id.done = True
+                    break
+
+                # Command the robot and update the command metadata
+                with shared_command_id.lock:
+                    shared_command_id.success, shared_command_id.message, shared_command_id.command_id = self.lease_manager.robot_command(arm_command)
+                    
+                # Sleep until it's time to execute the next command
+                command_timestamp = arm_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.points[0].time_since_reference.seconds + \
+                                    arm_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.points[0].time_since_reference.nanos / 1000000000
+                elapsed_time = time.time() - start_time
+                time_to_go = command_timestamp - elapsed_time
+                if time_to_go > 0:
+                    time.sleep(time_to_go * fraction_of_move_before_next_cmd)
+            
+            # After the final waypoint, wait for the arm motion to complete
+            block_until_arm_arrives(self._lease_manager.command_client, shared_command_id.command_id, timeout_sec=time_to_go)
+            self._logger.info('Finished arm cartesian trajectory')
+            with shared_command_id.lock:
+                shared_command_id.done = True
+
+        except Exception as e:
+            self._logger.warn(f'Unknown error executing arm command with joint configuration: {e}')
+            with shared_command_id.lock:
+                shared_command_id.done = True
     
     def solve_ik(self, target_pose: SE3Pose, gaze_target: Vec3Proto = None, wrist_tform_tool: SE3Pose = None, joint_state: dict[str, float] = {}) -> tuple[bool, dict, SE3Pose]:
         """Request an Inverse Kinematics solution from the Boston Dynamics software stack.

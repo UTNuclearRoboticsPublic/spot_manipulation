@@ -3,9 +3,10 @@ import rclpy.duration
 from tf2_ros import Buffer
 from typing import Tuple, List
 from bosdyn.api import arm_command_pb2, geometry_pb2, robot_state_pb2, image_pb2, trajectory_pb2
-from bosdyn.util import seconds_to_duration
+from bosdyn.util import seconds_to_duration, seconds_to_timestamp
 from bosdyn.client.math_helpers import SE3Pose, Quat, SE2Pose
 from bosdyn.client.frame_helpers import ODOM_FRAME_NAME, HAND_FRAME_NAME, get_a_tform_b, WR1_FRAME_NAME
+from bosdyn.client.robot_command import RobotCommandBuilder
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist, TwistStamped, WrenchStamped, Wrench
 from google.protobuf import timestamp_pb2
@@ -15,10 +16,13 @@ from sensor_msgs.msg import Image, CameraInfo
 from tf2_msgs.msg import TFMessage
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import math
-from geometry_msgs.msg import PoseStamped, TransformStamped, Pose2D
-from tf2_geometry_msgs import do_transform_pose
+from geometry_msgs.msg import TransformStamped, Pose2D
+from tf2_geometry_msgs import PoseStamped # needed for tf_buffer.transform
+from tf2_py import TransformException
 
 import rclpy.time
+import time
+import geometry_msgs.msg
 
 from .spot_manipulation_driver import SpotManipulationDriver
 from spot_driver import ros_helpers
@@ -228,7 +232,7 @@ def manipulator_state_to_twist(
     stamp = driver.lease_manager.robotToLocalTime(driver.robot_time)
     twist = TwistStamped()
     twist.header.frame_id = HAND_FRAME_NAME
-    twist.header.stamp = rclpy.time.Time(nanoseconds=stamp.ToNanoseconds()).to_msg()
+    twist.header.stamp = rclpy.time.Time(seconds=stamp.seconds, nanoseconds=stamp.nanos).to_msg()
     hand_tform_odom = get_a_tform_b(driver.kinematic_state.transforms_snapshot, HAND_FRAME_NAME, ODOM_FRAME_NAME)
     twist.twist.linear = ros_helpers.Vec3ToMsg(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.linear))
     twist.twist.angular = ros_helpers.Vec3ToMsg(hand_tform_odom.rotation.transform_vec3(manipulator_state.velocity_of_hand_in_odom.angular))
@@ -338,8 +342,8 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
             )
             for (ros_pose, time_offset) in zip(msg.waypoints, msg.timestamps)
         ],
-        pos_interpolation = trajectory_pb2.POS_INTERP_CUBIC,
-        ang_interpolation = trajectory_pb2.ANG_INTERP_CUBIC_EULER
+        pos_interpolation = trajectory_pb2.POS_INTERP_LINEAR,
+        ang_interpolation = trajectory_pb2.ANG_INTERP_LINEAR
     )
 
     # Form the wrench trajectory
@@ -380,6 +384,51 @@ def cartesian_request_to_command(msg: ArmCartesianCommand.Goal, tf_buffer: Buffe
         arm_cartesian_request.wrench_trajectory_in_task.CopyFrom(wrench_trajectory)
 
     return arm_cartesian_request
+
+def construct_arm_trajectory_cmd_sequence(msg: ArmCartesianCommand.Goal, tf_buffer: Buffer) -> list[ArmCartesianCommandProto]:
+    """
+    Given an arm cartesian command request with joint waypoints, create a series of ArmCartesianCommand 
+    robot commands that will achieve the requested goal if fed to the robot in succession
+    
+    :param msg: The ROS arm command message request
+    """
+    assert len(msg.joint_waypoints.points) == len(msg.waypoints) == len(msg.timestamps), "EE trajectory, joint trajectory, and timestamps must have an equal number of points."
+
+    # Convert the cartesian waypoints to a list of SE3Poses
+    se3_trajectory = []
+    for pose in msg.waypoints:
+        if msg.header.frame_id != ODOM_FRAME_NAME:
+            pose = tf_buffer.transform(PoseStamped(header=msg.header, pose=pose), ODOM_FRAME_NAME, rclpy.duration.Duration(seconds=1.0)).pose
+        se3_trajectory.append(ros_helpers.MsgToPose(pose).to_proto())
+
+    ref_time = seconds_to_timestamp(time.time())
+
+    arm_command_list: list[ArmCartesianCommandProto] = []
+    for timestamp, pose in zip(msg.timestamps, se3_trajectory):
+        arm_trajectory_command = RobotCommandBuilder.arm_cartesian_move_helper(
+            [pose],
+            [timestamp],
+            root_frame_name = ODOM_FRAME_NAME,
+            max_acc = msg.max_acceleration if msg.max_acceleration > 0 else None,
+            max_linear_vel = msg.max_linear_velocity if msg.max_linear_velocity > 0 else None,
+            max_angular_vel = msg.max_angular_velocity if msg.max_angular_velocity > 0 else None,
+            ref_time= ref_time
+        )
+        arm_trajectory_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.pos_interpolation = trajectory_pb2.POS_INTERP_LINEAR
+        arm_trajectory_command.synchronized_command.arm_command.arm_cartesian_command.pose_trajectory_in_task.ang_interpolation = trajectory_pb2.ANG_INTERP_LINEAR
+        arm_command_list.append(arm_trajectory_command)
+
+    joint_trajectory: list[JointTrajectoryPoint] = msg.joint_waypoints.points
+    for index, point in enumerate(joint_trajectory):
+        joint_positions = point.positions
+        joint_config = arm_command_list[index].synchronized_command.arm_command.arm_cartesian_command.preferred_joint_configuration
+        joint_config.sh0.value = joint_positions[0]
+        joint_config.sh1.value = joint_positions[1]
+        joint_config.el0.value = joint_positions[2]
+        joint_config.el1.value = joint_positions[3]
+        joint_config.wr0.value = joint_positions[4]
+        joint_config.wr1.value = joint_positions[5]
+    return arm_command_list
 
 def transform_2d_pose(transform: SE2Pose, x: float, y: float, theta: float) -> SE2Pose:
     """Given an SE2 pose as (x,y,theta), apply the given transform to it
