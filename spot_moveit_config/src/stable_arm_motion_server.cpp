@@ -186,11 +186,11 @@ public:
             RCLCPP_WARN(get_logger(), "Cancelling previously active request");
             cancelActiveQuery();
         }
-        if (goal->end_effector_waypoints.poses.size() != goal->joint_trajectory.points.size()) {
-            RCLCPP_ERROR(get_logger(), "You must provide an equal number of joint and Cartesian waypoints. You gave %zd and %zd", goal->joint_trajectory.points.size(), goal->end_effector_waypoints.poses.size());
+        if (goal->pose_waypoints.poses.size() != goal->joint_trajectory.points.size()) {
+            RCLCPP_ERROR(get_logger(), "You must provide an equal number of joint and Cartesian waypoints. You gave %zd and %zd", goal->joint_trajectory.points.size(), goal->pose_waypoints.poses.size());
             return rclcpp_action::GoalResponse::REJECT;
         }
-        if (goal->end_effector_waypoints.poses.empty()) {
+        if (goal->pose_waypoints.poses.empty()) {
             RCLCPP_WARN(get_logger(), "Cannot execute an empty trajectory");
             return rclcpp_action::GoalResponse::REJECT;
         }
@@ -219,7 +219,7 @@ public:
             return;
         }
 
-        spot_msgs::action::ArmCartesianCommand::Goal full_trajectory = populateKnownTrajectory(goal->get_goal()->joint_trajectory, goal->get_goal()->end_effector_waypoints);
+        spot_msgs::action::ArmCartesianCommand::Goal full_trajectory = populateKnownTrajectory(goal->get_goal()->joint_trajectory, goal->get_goal()->pose_waypoints);
         spot_driver_motion_request_future_ = spot_driver_motion_client_->async_send_goal(full_trajectory);
         motion_request_start_time_ = now();
         stable_command_goal_handle_ = goal;
